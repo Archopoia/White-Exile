@@ -1,8 +1,8 @@
 {
-  "name": "realtime-room-skeleton",
+  "name": "white-exile",
   "private": true,
   "version": "0.0.0",
-  "description": "Authoritative multiplayer room skeleton (Fastify, Socket.io, Vite, shared Zod protocol)",
+  "description": "White Exile — authoritative multiplayer room (Fastify, Socket.io, Vite, shared Zod protocol)",
   "type": "module",
   "engines": {
     "node": ">=20.0.0"

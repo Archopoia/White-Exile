@@ -1,5 +1,7 @@
 # Architecture
 
+**White Exile** — this document describes the authoritative multiplayer room stack in this repository.
+
 ## Overview
 
 ```mermaid

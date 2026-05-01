@@ -1,8 +1,8 @@
-# Realtime room skeleton
+# White Exile
 
 TypeScript monorepo: **one authoritative room**, Socket.io to browsers and tooling, **Zod** wire schemas in `packages/shared`, optional **headless bots**, **dev JSON persistence** for the room, **resume tokens**, and a **minimal Three.js** client (move intents + ESC session panel for a shared room note).
 
-This repo is intentionally **not** a shipped game — it is a clean baseline to grow your own simulation and UI.
+The stack is a focused multiplayer foundation you can grow into full simulation and UI for **White Exile**.
 
 ## Stack
 
