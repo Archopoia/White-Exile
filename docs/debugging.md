@@ -100,7 +100,7 @@ Enable debug logging:
 - `?debug=1` on the client URL, or
 - `localStorage.rtRoomDebug=1`
 
-World labels (CSS2D): **T** cycles **off → keywords → full** (default full). URL `?labels=off|keywords|full` or `?labels=0|1|2`; `localStorage.rtRoomLabelsMode`. Strings in `apps/client/src/worldLabels.ts`.
+World labels (CSS2D): **T** cycles **off → keywords → full** (default full). Strings in `apps/client/src/worldLabels.ts`. Full key list is under **Esc → Session**.
 
 ## Bots
 

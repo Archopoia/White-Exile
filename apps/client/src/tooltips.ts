@@ -1,8 +1,6 @@
 /**
  * World-space HTML billboards (CSS2D). **T** cycles label mode: off → keywords → full.
- *
- * URL: `?labels=off|keywords|full` or `?labels=0|1|2` (0 off, 1 full, 2 keywords).
- * Storage: `localStorage.rtRoomLabelsMode`; legacy `rtRoomLabels` `0`/`1` is migrated.
+ * Initial mode may be read from the page URL / `localStorage` (see `readLabelMode`).
  */
 import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 

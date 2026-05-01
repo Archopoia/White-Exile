@@ -45,6 +45,7 @@ import {
   labelRelic,
   labelRuin,
   labelYou,
+  type LabelProximity,
 } from './worldLabels.js';
 
 export interface SceneCallbacks {
@@ -229,6 +230,13 @@ export class RoomScene {
     this.labelRenderer.domElement.style.display = this.labelMode === 'off' ? 'none' : 'block';
   }
 
+  private labelProximity(x: number, y: number, z: number): LabelProximity {
+    const dx = x - this.localPos.x;
+    const dy = y - this.localPos.y;
+    const dz = z - this.localPos.z;
+    return { distSqToLocal: dx * dx + dy * dy + dz * dz, localLightRadius: this.localLightRadius };
+  }
+
   private refreshLabelTexts(): void {
     const mode = this.labelMode;
     setTooltipText(this.groundTip, labelGround(mode));
@@ -244,11 +252,17 @@ export class RoomScene {
     }
     for (const f of snap.followers) {
       const entry = this.followerMeshes.get(f.id);
-      if (entry) setTooltipText(entry.label, labelFollower(f, mode));
+      if (entry) {
+        const prox = this.labelProximity(f.position.x, f.position.y, f.position.z);
+        setTooltipText(entry.label, labelFollower(f, mode, prox));
+      }
     }
     for (const r of snap.ruins) {
       const entry = this.ruinMeshes.get(r.id);
-      if (entry) setTooltipText(entry.label, labelRuin(r, mode));
+      if (entry) {
+        const prox = this.labelProximity(r.position.x, r.position.y, r.position.z);
+        setTooltipText(entry.label, labelRuin(r, mode, prox));
+      }
     }
     for (const r of snap.relics) {
       const entry = this.relicMeshes.get(r.id);
@@ -608,6 +622,10 @@ export class RoomScene {
     TMP.copy(this.localPos).add(this.cameraOffset);
     this.camera.position.lerp(TMP, 0.14);
     this.camera.lookAt(this.localPos);
+
+    if (this.labelMode !== 'off' && this.lastSnap) {
+      this.refreshLabelTexts();
+    }
 
     this.renderer.render(this.scene, this.camera);
     this.labelRenderer.render(this.scene, this.camera);

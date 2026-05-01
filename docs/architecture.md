@@ -77,7 +77,7 @@ Pure-data results (`derived`, `caravans`, counters) feed `Room.snapshot()`.
 - [`scene.ts`](../apps/client/src/scene.ts) renders ground + grid, race-tinted local core with a halo whose scale tracks the server's `lightRadius`, race-tinted markers + haloes for other players, follower spheres, ruin pillars (warm glow when activated), and rotating relic octahedrons. CSS2D labels (**T** = off → keywords → full) use [`worldLabels.ts`](../apps/client/src/worldLabels.ts) and [`tooltips.ts`](../apps/client/src/tooltips.ts) for mode persistence.
 - Fog density is set per zone using `fogDensityForZone`.
 - Local prediction for movement; server clamps and rebroadcasts.
-- `R` rescues; `F` activates the closest ruin; `ESC` opens the session panel.
+- **Esc** opens the Session dialog ([`options.ts`](../apps/client/src/options.ts)): room note plus the full control reference. In-world labels can still surface **R** / **F** when you are close to a stranded follower (inside your light) or an inactive ruin.
 
 ## Dev persistence
 

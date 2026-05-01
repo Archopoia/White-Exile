@@ -48,13 +48,9 @@ pnpm smoke:net
 
 ## Client
 
-- Click the canvas for **pointer-lock mouse-look** (orbit camera); **Esc** unlocks. **Right-drag** orbits without lock; **wheel** zooms distance.
-- **WASD** to move on the ground plane (no vertical flight controls).
-- **R** rescues the nearest stranded follower inside your light radius.
-- **F** activates the ruin you're standing in (releases its follower charge).
-- **T** cycles **floating world labels** (CSS2D): **off** → **keywords** → **full**. Default **full**. URL `?labels=off|keywords|full` or `?labels=0|1|2`; storage `localStorage.rtRoomLabelsMode`. `apps/client/src/worldLabels.ts`.
-- **ESC** opens the session panel for the shared room note.
-- HUD shows: race, zone, light radius, fuel, follower count, caravan size, tick.
+- **Esc** opens **Session**: room note editor plus movement, camera, and actions (pointer-lock, WASD, R/F/T). Those live there instead of on the HUD.
+- **T** cycles floating **CSS2D** world labels (**off** → **keywords** → **full**; default **full**). Copy in `apps/client/src/worldLabels.ts`; proximity can surface **R** / **F** on nearby followers and ruins.
+- HUD (corners): connection, room note, tick, race, zone, light, caravan, fuel, followers.
 
 Race selection: append `?race=emberfolk|ashborn|lumen-kin` to the URL, set `localStorage.rtRoom.race`, or let the client pick a random one. The server echoes back the assigned race in the welcome.
 

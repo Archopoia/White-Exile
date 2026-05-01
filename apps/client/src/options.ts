@@ -7,7 +7,7 @@ export interface RoomOptionsOverlay {
   dispose(): void;
 }
 
-function helpBlock(title: string, body: string): HTMLDivElement {
+function helpBlock(title: string, body: string): HTMLElement {
   const wrap = document.createElement('div');
   wrap.style.cssText = 'margin-bottom:10px';
   const t = document.createElement('div');
@@ -74,10 +74,6 @@ export function createRoomOptionsOverlay(onApply: (roomNote: string) => void): R
     helpBlock(
       'Actions',
       'R — rescue a stranded follower while they are inside your light bubble. F — activate the ruin you are closest to. T — cycle floating world labels: off, then keywords, then full.',
-    ),
-    helpBlock(
-      'URLs',
-      '?labels=off | keywords | full — or ?labels=0 | 1 | 2 (0 off, 1 full, 2 keywords). ?race=emberfolk | ashborn | lumen-kin',
     ),
   );
 
