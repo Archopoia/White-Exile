@@ -1,16 +1,20 @@
 /**
- * Three.js scene for Tutelary.
+ * Three.js scene for Tutelary - SMG-style surface walker.
  *
- * A real WebGL scene with:
- *   - A lit, emissive planet mesh whose radius scales from server snapshots.
- *   - A starfield + atmosphere shell for depth.
- *   - World-space dust particles spawned on local + remote bursts.
- *   - Per-player spirit markers driven by snapshot positions.
+ * Gameplay model:
+ *   - Each spirit walks on the surface of a shared "sphere of dust" planet,
+ *     anchored radially with a small offset (third-person camera trails
+ *     behind, oriented to local up).
+ *   - WASD drives the local spirit: W/S walk forward/back along great
+ *     circles, A/D turn left/right around the local vertical.
+ *   - Click or Space spawns a burst at the spirit's current position.
+ *   - E (or click that hits the planet) requests an extract.
+ *   - Every spirit, local or remote, continuously emits a slow visual dust
+ *     trail toward the planet center (the "passive drop" from the pitch).
  *
- * Input:
- *   - Mouse hover -> projects to a sphere around the planet, sent as cursor.
- *   - Click in space -> burst at the projected target.
- *   - Click on the planet (raycast hit) -> extract.
+ * Wire side-effects: only `onCursorMove`, `onBurst`, and `onExtract`
+ * callbacks fire - the server still owns `totalDust`, essence, and per-tick
+ * snapshots that drive `applySnapshot()`.
  */
 import * as THREE from 'three';
 import {
@@ -26,8 +30,22 @@ interface SpiritMarker {
   core: THREE.Mesh;
 }
 
-const PLAY_SPHERE_RADIUS = 18;
-const MAX_DUST_PARTICLES = 4096;
+const MAX_DUST_PARTICLES = 6144;
+/** Radial offset above the planet surface so spirits read as floating, not glued. */
+const SPIRIT_HEIGHT = 1.45;
+const MOVE_SPEED_RAD_PER_SEC = 1.1;
+const TURN_SPEED_RAD_PER_SEC = 1.6;
+const CAMERA_DISTANCE = 5;
+const CAMERA_HEIGHT = 1.7;
+const CAMERA_LOOK_HEIGHT = 0.4;
+const CAMERA_LERP = 0.12;
+const PASSIVE_DUST_PER_SPIRIT_PER_SEC = 6;
+const DUST_COLOR = 0xffd9a3;
+
+const TMP_VEC3_A = new THREE.Vector3();
+const TMP_VEC3_B = new THREE.Vector3();
+const WORLD_X = new THREE.Vector3(1, 0, 0);
+const WORLD_Y = new THREE.Vector3(0, 1, 0);
 
 export interface SceneCallbacks {
   onCursorMove: (target: Vec3) => void;
@@ -49,6 +67,11 @@ export class TutelaryScene {
   private readonly spirits = new Map<string, SpiritMarker>();
   private readonly localSpirit: THREE.Group;
 
+  // Surface-frame state for the local spirit.
+  private spiritPos = new THREE.Vector3(0, 1, 0); // unit vector on sphere
+  private spiritFacing = new THREE.Vector3(0, 0, -1); // tangent forward
+  private readonly worldPos = new THREE.Vector3();
+
   private readonly dustGeometry: THREE.BufferGeometry;
   private readonly dustMaterial: THREE.PointsMaterial;
   private readonly dustPositions: Float32Array;
@@ -59,7 +82,7 @@ export class TutelaryScene {
 
   private readonly raycaster = new THREE.Raycaster();
   private readonly pointer = new THREE.Vector2();
-  private hoverTarget = new THREE.Vector3(PLAY_SPHERE_RADIUS, 0, 0);
+  private readonly keys = new Set<string>();
 
   private currentRadius = planetRadiusFromTotalDust(0);
   private playerId: string | null = null;
@@ -67,6 +90,7 @@ export class TutelaryScene {
   private rafHandle = 0;
   private cursorAccumulator = 0;
   private readonly cursorSendInterval = 1 / 15;
+  private passiveDustAccumulator = 0;
   private readonly preferReducedMotion: boolean;
 
   constructor(canvas: HTMLCanvasElement, callbacks: SceneCallbacks) {
@@ -85,19 +109,19 @@ export class TutelaryScene {
     this.renderer.setClearColor(0x02030a, 1);
 
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.FogExp2(0x02030a, 0.005);
+    this.scene.fog = new THREE.FogExp2(0x02030a, 0.004);
 
     this.camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
-    this.camera.position.set(0, 6, 28);
+    this.camera.position.set(0, 4, 8);
     this.camera.lookAt(0, 0, 0);
 
     this.clock = new THREE.Clock();
 
-    this.scene.add(new THREE.AmbientLight(0x7080ff, 0.25));
-    const sun = new THREE.DirectionalLight(0xfff2c0, 1.1);
+    this.scene.add(new THREE.AmbientLight(0x6878a0, 0.35));
+    const sun = new THREE.DirectionalLight(0xfff2c0, 1.2);
     sun.position.set(8, 12, 6);
     this.scene.add(sun);
-    const rim = new THREE.PointLight(0x6890ff, 1.5, 80, 1.6);
+    const rim = new THREE.PointLight(0xffb070, 1.0, 80, 1.6);
     rim.position.set(-12, -4, 8);
     this.scene.add(rim);
 
@@ -110,7 +134,7 @@ export class TutelaryScene {
     this.starfield = TutelaryScene.makeStarfield();
     this.scene.add(this.starfield);
 
-    this.localSpirit = TutelaryScene.makeSpiritMarker(0xfff2b0, 1.2);
+    this.localSpirit = TutelaryScene.makeSpiritMarker(0xfff2b0, 0.6);
     this.scene.add(this.localSpirit);
 
     this.dustGeometry = new THREE.BufferGeometry();
@@ -119,11 +143,11 @@ export class TutelaryScene {
     this.dustLife = new Float32Array(MAX_DUST_PARTICLES);
     this.dustGeometry.setAttribute('position', new THREE.BufferAttribute(this.dustPositions, 3));
     this.dustMaterial = new THREE.PointsMaterial({
-      size: 0.18,
+      size: 0.16,
       sizeAttenuation: true,
-      color: 0xffd9a3,
+      color: DUST_COLOR,
       transparent: true,
-      opacity: 0.85,
+      opacity: 0.9,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
     });
@@ -135,13 +159,15 @@ export class TutelaryScene {
   }
 
   private static makePlanet(radius: number): THREE.Mesh {
+    // "Sphere of dust": same warm sandy color as the dust particles, with
+    // flat shading + roughness so the icosphere reads as packed grain.
     const geom = new THREE.IcosahedronGeometry(1, 4);
     const mat = new THREE.MeshStandardMaterial({
-      color: 0x3a4868,
-      emissive: 0x182040,
-      emissiveIntensity: 0.45,
-      roughness: 0.55,
-      metalness: 0.05,
+      color: DUST_COLOR,
+      emissive: 0x4a2e10,
+      emissiveIntensity: 0.18,
+      roughness: 0.92,
+      metalness: 0.0,
       flatShading: true,
     });
     const mesh = new THREE.Mesh(geom, mat);
@@ -153,20 +179,20 @@ export class TutelaryScene {
   private static makeAtmosphere(radius: number): THREE.Mesh {
     const geom = new THREE.SphereGeometry(1, 48, 48);
     const mat = new THREE.MeshBasicMaterial({
-      color: 0x6c8cff,
+      color: 0xffc888,
       transparent: true,
-      opacity: 0.08,
+      opacity: 0.07,
       side: THREE.BackSide,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
     });
     const mesh = new THREE.Mesh(geom, mat);
-    mesh.scale.setScalar(radius * 1.2);
+    mesh.scale.setScalar(radius * 1.35);
     return mesh;
   }
 
   private static makeStarfield(): THREE.Points {
-    const COUNT = 1200;
+    const COUNT = 1400;
     const positions = new Float32Array(COUNT * 3);
     for (let i = 0; i < COUNT; i++) {
       const r = 600 + Math.random() * 400;
@@ -196,7 +222,7 @@ export class TutelaryScene {
       new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95 }),
     );
     const halo = new THREE.Mesh(
-      new THREE.SphereGeometry(0.9 * scale, 16, 16),
+      new THREE.SphereGeometry(0.95 * scale, 16, 16),
       new THREE.MeshBasicMaterial({
         color,
         transparent: true,
@@ -213,48 +239,59 @@ export class TutelaryScene {
   private bindInput(): void {
     this.canvas.addEventListener('pointermove', this.handlePointerMove);
     this.canvas.addEventListener('click', this.handleClick);
+    window.addEventListener('keydown', this.handleKeyDown);
+    window.addEventListener('keyup', this.handleKeyUp);
+    window.addEventListener('blur', this.handleBlur);
   }
 
   private handlePointerMove = (event: PointerEvent): void => {
     const rect = this.canvas.getBoundingClientRect();
     this.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     this.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-    this.updateHoverTarget();
-    this.localSpirit.position.copy(this.hoverTarget);
   };
 
   private handleClick = (): void => {
-    this.updateHoverTarget();
-    const target: Vec3 = {
-      x: this.hoverTarget.x,
-      y: this.hoverTarget.y,
-      z: this.hoverTarget.z,
-    };
     const planetHit = this.raycastPlanet();
     if (planetHit) {
       this.callbacks.onExtract({ x: planetHit.x, y: planetHit.y, z: planetHit.z });
       this.spawnDustBurst(planetHit, 0.7);
-      debugLogger.debug('input.extract', { surface: planetHit.toArray() });
-    } else {
-      this.callbacks.onBurst(target, 1);
-      this.spawnDustBurst(this.hoverTarget, 1);
-      debugLogger.debug('input.burst', { target });
+      debugLogger.debug('input.extract.click', { surface: planetHit.toArray() });
+      return;
+    }
+    this.emitBurstAtSpirit();
+  };
+
+  private handleKeyDown = (event: KeyboardEvent): void => {
+    const code = event.code;
+    this.keys.add(code);
+    if (code === 'Space') {
+      event.preventDefault();
+      this.emitBurstAtSpirit();
+    } else if (code === 'KeyE') {
+      this.emitExtractAtFeet();
     }
   };
 
-  private updateHoverTarget(): void {
-    this.raycaster.setFromCamera(this.pointer, this.camera);
-    // Project onto a play sphere centered on the planet so spirits orbit
-    // in a stable shell, regardless of mesh scale.
-    const dir = this.raycaster.ray.direction.clone().normalize();
-    const origin = this.raycaster.ray.origin.clone();
-    const a = dir.dot(dir);
-    const b = 2 * origin.dot(dir);
-    const c = origin.dot(origin) - PLAY_SPHERE_RADIUS * PLAY_SPHERE_RADIUS;
-    const discriminant = b * b - 4 * a * c;
-    if (discriminant < 0) return;
-    const t = (-b + Math.sqrt(discriminant)) / (2 * a);
-    this.hoverTarget.copy(origin).add(dir.multiplyScalar(t));
+  private handleKeyUp = (event: KeyboardEvent): void => {
+    this.keys.delete(event.code);
+  };
+
+  private handleBlur = (): void => {
+    this.keys.clear();
+  };
+
+  private emitBurstAtSpirit(): void {
+    const pos = { x: this.worldPos.x, y: this.worldPos.y, z: this.worldPos.z };
+    this.callbacks.onBurst(pos, 1);
+    this.spawnDustBurst(this.worldPos, 1);
+    debugLogger.debug('input.burst', { pos });
+  }
+
+  private emitExtractAtFeet(): void {
+    const surface = this.spiritPos.clone().multiplyScalar(this.currentRadius);
+    this.callbacks.onExtract({ x: surface.x, y: surface.y, z: surface.z });
+    this.spawnDustBurst(surface, 0.7);
+    debugLogger.debug('input.extract.key', { surface: surface.toArray() });
   }
 
   private raycastPlanet(): THREE.Vector3 | null {
@@ -272,8 +309,8 @@ export class TutelaryScene {
       this.dustPositions[idx * 3 + 0] = at.x;
       this.dustPositions[idx * 3 + 1] = at.y;
       this.dustPositions[idx * 3 + 2] = at.z;
-      const dirToPlanet = new THREE.Vector3(-at.x, -at.y, -at.z).normalize();
-      const jitter = new THREE.Vector3(
+      const dirToPlanet = TMP_VEC3_A.set(-at.x, -at.y, -at.z).normalize();
+      const jitter = TMP_VEC3_B.set(
         (Math.random() - 0.5) * 1.5,
         (Math.random() - 0.5) * 1.5,
         (Math.random() - 0.5) * 1.5,
@@ -286,34 +323,65 @@ export class TutelaryScene {
     }
   }
 
+  /**
+   * Drop a single passive dust particle "below" the spirit, drifting toward
+   * the planet center. Used for the continuous falling trail that every
+   * spirit emits while idle.
+   */
+  private spawnPassiveDustBelow(at: THREE.Vector3): void {
+    const idx = this.dustHead;
+    this.dustHead = (this.dustHead + 1) % MAX_DUST_PARTICLES;
+    const inward = TMP_VEC3_A.copy(at).normalize().multiplyScalar(-1);
+    const jitterScale = 0.18;
+    this.dustPositions[idx * 3 + 0] =
+      at.x + inward.x * 0.05 + (Math.random() - 0.5) * jitterScale;
+    this.dustPositions[idx * 3 + 1] =
+      at.y + inward.y * 0.05 + (Math.random() - 0.5) * jitterScale;
+    this.dustPositions[idx * 3 + 2] =
+      at.z + inward.z * 0.05 + (Math.random() - 0.5) * jitterScale;
+    const speed = 0.6 + Math.random() * 0.7;
+    this.dustVelocities[idx * 3 + 0] = inward.x * speed;
+    this.dustVelocities[idx * 3 + 1] = inward.y * speed;
+    this.dustVelocities[idx * 3 + 2] = inward.z * speed;
+    this.dustLife[idx] = 1.0 + Math.random() * 0.6;
+  }
+
   applyServerBurst(evt: ServerEventBurst): void {
     if (evt.playerId === this.playerId) return;
-    const v = new THREE.Vector3(evt.origin.x, evt.origin.y, evt.origin.z);
+    const v = TMP_VEC3_A.set(evt.origin.x, evt.origin.y, evt.origin.z).clone();
     this.spawnDustBurst(v, evt.intensity);
   }
 
   applySnapshot(snap: RoomSnapshot): void {
     this.currentRadius = THREE.MathUtils.lerp(this.currentRadius, snap.planetRadius, 0.3);
     this.planet.scale.setScalar(this.currentRadius);
-    this.atmosphere.scale.setScalar(this.currentRadius * 1.18);
+    this.atmosphere.scale.setScalar(this.currentRadius * 1.35);
 
     const seen = new Set<string>();
+    const surfaceR = this.currentRadius + SPIRIT_HEIGHT;
     for (const player of snap.players) {
       seen.add(player.id);
       let marker = this.spirits.get(player.id);
       if (!marker) {
-        const color = player.id === this.playerId ? 0xfff2b0 : tierColor(player.tier, player.isBot);
-        const group = TutelaryScene.makeSpiritMarker(color, player.id === this.playerId ? 1.2 : 1);
+        const isLocal = player.id === this.playerId;
+        const color = isLocal ? 0xfff2b0 : tierColor(player.tier, player.isBot);
+        const group = isLocal ? this.localSpirit : TutelaryScene.makeSpiritMarker(color, 0.5);
         const core = group.children[0] as THREE.Mesh;
         marker = { group, core };
-        if (player.id !== this.playerId) this.scene.add(group);
+        if (!isLocal) this.scene.add(group);
         this.spirits.set(player.id, marker);
       }
       if (player.id === this.playerId) {
-        // local spirit position is driven by hover for responsiveness
+        // Local sim is authoritative for our own marker - skip server pos.
         continue;
       }
-      marker.group.position.set(player.position.x, player.position.y, player.position.z);
+      const dir = TMP_VEC3_A.set(player.position.x, player.position.y, player.position.z);
+      if (dir.lengthSq() < 1e-6) {
+        dir.set(0, 1, 0);
+      } else {
+        dir.normalize();
+      }
+      marker.group.position.copy(dir).multiplyScalar(surfaceR);
     }
 
     for (const [id, marker] of this.spirits) {
@@ -344,28 +412,120 @@ export class TutelaryScene {
   }
 
   private update(dt: number): void {
-    const wobble = this.preferReducedMotion ? 0 : 0.1;
-    this.planet.rotation.y += dt * 0.05;
-    this.atmosphere.rotation.y -= dt * 0.02;
-    this.starfield.rotation.y += dt * 0.005;
+    // Prevent tab-restore frame jumps that would tunnel the spirit through
+    // the planet or pin the camera at the world origin.
+    const stepDt = Math.min(dt, 0.1);
+    this.updateSurfaceMotion(stepDt);
+    this.updateCamera();
+    this.maybeSendCursor(stepDt);
+    this.spawnPassiveDust(stepDt);
+    this.integrateDust(stepDt);
 
+    this.planet.rotation.y += stepDt * 0.02;
+    this.atmosphere.rotation.y -= stepDt * 0.01;
+    this.starfield.rotation.y += stepDt * 0.003;
+
+    if (!this.preferReducedMotion) {
+      const wobble = 0.1 * Math.sin(this.clock.elapsedTime * 6);
+      this.localSpirit.scale.setScalar(1 + wobble);
+    }
+  }
+
+  private updateSurfaceMotion(dt: number): void {
+    const up = TMP_VEC3_A.copy(this.spiritPos).normalize();
+
+    // Re-orthogonalize facing onto the tangent plane. If we've drifted
+    // toward parallel with up, pick a stable fallback so the basis never
+    // collapses.
+    this.spiritFacing.sub(up.clone().multiplyScalar(this.spiritFacing.dot(up)));
+    if (this.spiritFacing.lengthSq() < 1e-6) {
+      const ref = Math.abs(up.dot(WORLD_X)) < 0.9 ? WORLD_X : WORLD_Y;
+      this.spiritFacing.crossVectors(ref, up).normalize();
+    } else {
+      this.spiritFacing.normalize();
+    }
+
+    const turnLeft = this.keys.has('KeyA') || this.keys.has('ArrowLeft');
+    const turnRight = this.keys.has('KeyD') || this.keys.has('ArrowRight');
+    if (turnLeft) this.spiritFacing.applyAxisAngle(up, TURN_SPEED_RAD_PER_SEC * dt);
+    if (turnRight) this.spiritFacing.applyAxisAngle(up, -TURN_SPEED_RAD_PER_SEC * dt);
+
+    const forward = this.keys.has('KeyW') || this.keys.has('ArrowUp');
+    const back = this.keys.has('KeyS') || this.keys.has('ArrowDown');
+    let move = 0;
+    if (forward) move += 1;
+    if (back) move -= 1;
+    if (move !== 0) {
+      const moveAxis = TMP_VEC3_B.crossVectors(up, this.spiritFacing).normalize();
+      const angle = MOVE_SPEED_RAD_PER_SEC * dt * move;
+      // Walking forward rotates the position around (up x facing) by `angle`.
+      this.spiritPos.applyAxisAngle(moveAxis, angle);
+      this.spiritFacing.applyAxisAngle(moveAxis, angle);
+      this.spiritPos.normalize();
+    }
+
+    const surfaceR = this.currentRadius + SPIRIT_HEIGHT;
+    this.worldPos.copy(this.spiritPos).multiplyScalar(surfaceR);
+    this.localSpirit.position.copy(this.worldPos);
+  }
+
+  private updateCamera(): void {
+    const up = TMP_VEC3_A.copy(this.spiritPos).normalize();
+    const back = TMP_VEC3_B.copy(this.spiritFacing).multiplyScalar(-CAMERA_DISTANCE);
+    const camTarget = this.worldPos.clone().add(back).add(up.clone().multiplyScalar(CAMERA_HEIGHT));
+    this.camera.position.lerp(camTarget, CAMERA_LERP);
+    this.camera.up.copy(up);
+    const lookAt = this.worldPos.clone().add(up.clone().multiplyScalar(CAMERA_LOOK_HEIGHT));
+    this.camera.lookAt(lookAt);
+  }
+
+  private maybeSendCursor(dt: number): void {
     this.cursorAccumulator += dt;
     if (this.cursorAccumulator >= this.cursorSendInterval) {
       this.cursorAccumulator = 0;
       this.callbacks.onCursorMove({
-        x: this.hoverTarget.x,
-        y: this.hoverTarget.y,
-        z: this.hoverTarget.z,
+        x: this.worldPos.x,
+        y: this.worldPos.y,
+        z: this.worldPos.z,
       });
     }
+  }
 
+  /**
+   * Spawn passive dust below every spirit (local + remote) at a steady rate.
+   * Uses a fractional accumulator so low-FPS frames still emit predictably.
+   */
+  private spawnPassiveDust(dt: number): void {
+    const spiritsCount = this.spirits.size + (this.spirits.has(this.playerId ?? '') ? 0 : 1);
+    if (spiritsCount === 0) return;
+    this.passiveDustAccumulator += dt * spiritsCount * PASSIVE_DUST_PER_SPIRIT_PER_SEC;
+    while (this.passiveDustAccumulator >= 1) {
+      this.passiveDustAccumulator -= 1;
+      const target = this.pickPassiveDustSpawnPoint();
+      if (target) this.spawnPassiveDustBelow(target);
+    }
+  }
+
+  private pickPassiveDustSpawnPoint(): THREE.Vector3 | null {
+    // Build a flat list of every spirit's current world position, including
+    // the local spirit (which doesn't necessarily have a snapshot entry yet).
+    const positions: THREE.Vector3[] = [this.worldPos.clone()];
+    for (const [id, marker] of this.spirits) {
+      if (id === this.playerId) continue;
+      positions.push(marker.group.position.clone());
+    }
+    if (positions.length === 0) return null;
+    const idx = Math.floor(Math.random() * positions.length);
+    return positions[idx] ?? null;
+  }
+
+  private integrateDust(dt: number): void {
     // Hot loop: dust particle integration. Float32Array reads are guaranteed
-    // numbers within bounds, but noUncheckedIndexedAccess flags them — the
-    // cast helpers below keep this efficient without scattering `!`s.
+    // numbers within bounds, but noUncheckedIndexedAccess flags them - the
+    // local casts below keep this efficient without scattering `!`s.
     const positions = this.dustPositions;
     const velocities = this.dustVelocities;
     const lives = this.dustLife;
-    let alive = 0;
     for (let i = 0; i < MAX_DUST_PARTICLES; i++) {
       const ix = i * 3;
       const iy = ix + 1;
@@ -394,13 +554,9 @@ export class TutelaryScene {
       positions[ix] = px + vx * dt;
       positions[iy] = py + vy * dt;
       positions[iz] = pz + vz * dt;
-      alive++;
     }
     const positionAttr = this.dustGeometry.attributes['position'];
     if (positionAttr) positionAttr.needsUpdate = true;
-
-    this.localSpirit.scale.setScalar(1 + wobble * Math.sin(this.clock.elapsedTime * 6));
-    void alive;
   }
 
   private handleResize = (): void => {
@@ -414,6 +570,9 @@ export class TutelaryScene {
   dispose(): void {
     this.stop();
     window.removeEventListener('resize', this.handleResize);
+    window.removeEventListener('keydown', this.handleKeyDown);
+    window.removeEventListener('keyup', this.handleKeyUp);
+    window.removeEventListener('blur', this.handleBlur);
     this.canvas.removeEventListener('pointermove', this.handlePointerMove);
     this.canvas.removeEventListener('click', this.handleClick);
     this.renderer.dispose();

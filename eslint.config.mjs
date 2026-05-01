@@ -46,6 +46,7 @@ export default [
         WebGLRenderingContext: 'readonly',
         ResizeObserver: 'readonly',
         PointerEvent: 'readonly',
+        KeyboardEvent: 'readonly',
         NodeJS: 'readonly',
       },
     },
