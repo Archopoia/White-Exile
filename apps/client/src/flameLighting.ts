@@ -10,8 +10,8 @@
  *     plus a PointLight at the player position. The PointLight casts shadows
  *     (cube map) on med/high. **Torch** shadows are one cubemap split over the
  *     whole flame reach: big props (ruins) span many texels; small props
- *     (followers, relics) need tighter PCF + bias and enough map size or they
- *     disappear into blur/self-offset — same `castShadow` flags as everything else.
+ *     (followers, relics) need modest bias / small PCF radius or contact shows a lit
+ *     gap (Peter Panning); map size still matters for blur — same `castShadow` flags as else.
  *   - All flame lights are pre-pooled. Tier change toggles `castShadow` and
  *     resizes shadow maps in place — no shader recompiles, no allocations
  *     during play.
@@ -394,11 +394,11 @@ export function createFlameLighting(
     heroLight.shadow.camera.far = far;
     heroLight.shadow.camera.updateProjectionMatrix();
     const inv = THREE.MathUtils.clamp(HERO_SHADOW_FAR_REF / far, 0.1, 1);
-    // Lower caps than before: residual Peter Panning shows as a lit sliver under props.
-    heroLight.shadow.normalBias = 0.011 * inv;
-    heroLight.shadow.bias = -0.00075 * inv;
-    // Fixed PCF `radius` in texels = wider *world* blur as `far` grows → lit gap under feet.
-    heroLight.shadow.radius = THREE.MathUtils.clamp(4.2 * inv, 1.2, 4.5);
+    // Keep normalBias + PCFSoft radius low: both inflate a bright band at contact (Peter Panning).
+    // Cubemap res is already med/high; if dunes pick up acne, nudge normalBias up slightly, not radius.
+    heroLight.shadow.normalBias = 0.0038 * inv;
+    heroLight.shadow.bias = -0.00042 * inv;
+    heroLight.shadow.radius = THREE.MathUtils.clamp(2.35 * inv, 0.7, 2.65);
   }
 
   function syncPoolTorchShadowBias(light: THREE.PointLight): void {
@@ -408,9 +408,9 @@ export function createFlameLighting(
     light.shadow.camera.far = far;
     light.shadow.camera.updateProjectionMatrix();
     const inv = THREE.MathUtils.clamp(50 / far, 0.1, 1);
-    light.shadow.normalBias = 0.014 * inv;
-    light.shadow.bias = -0.00065 * inv;
-    light.shadow.radius = THREE.MathUtils.clamp(8 * inv, 2, 9);
+    light.shadow.normalBias = 0.0065 * inv;
+    light.shadow.bias = -0.00042 * inv;
+    light.shadow.radius = THREE.MathUtils.clamp(4.2 * inv, 1.25, 4.75);
   }
 
   function applyShadowSettings(): void {
