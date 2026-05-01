@@ -397,6 +397,8 @@ export function createFlameLighting(
     // Lower caps than before: residual Peter Panning shows as a lit sliver under props.
     heroLight.shadow.normalBias = 0.011 * inv;
     heroLight.shadow.bias = -0.00075 * inv;
+    // Fixed PCF `radius` in texels = wider *world* blur as `far` grows → lit gap under feet.
+    heroLight.shadow.radius = THREE.MathUtils.clamp(4.2 * inv, 1.2, 4.5);
   }
 
   function syncPoolTorchShadowBias(light: THREE.PointLight): void {
@@ -408,6 +410,7 @@ export function createFlameLighting(
     const inv = THREE.MathUtils.clamp(50 / far, 0.1, 1);
     light.shadow.normalBias = 0.014 * inv;
     light.shadow.bias = -0.00065 * inv;
+    light.shadow.radius = THREE.MathUtils.clamp(8 * inv, 2, 9);
   }
 
   function applyShadowSettings(): void {
@@ -436,8 +439,6 @@ export function createFlameLighting(
     heroLight.castShadow = cfg.heroShadow;
     if (cfg.heroShadow && cfg.heroShadowMapSize > 0) {
       heroLight.shadow.mapSize.set(cfg.heroShadowMapSize, cfg.heroShadowMapSize);
-      // Smaller radius = tighter PCF footprint at contact (less “air gap” under props).
-      heroLight.shadow.radius = 4;
       heroLight.shadow.camera.near = 0.2;
       syncHeroTorchShadowBias();
       heroLight.shadow.map?.dispose();
@@ -452,7 +453,6 @@ export function createFlameLighting(
       slot.light.castShadow = enable;
       if (enable && cfg.poolShadowMapSize > 0) {
         slot.light.shadow.mapSize.set(cfg.poolShadowMapSize, cfg.poolShadowMapSize);
-        slot.light.shadow.radius = 8;
         slot.light.shadow.camera.near = 0.2;
         syncPoolTorchShadowBias(slot.light);
         slot.light.shadow.map?.dispose();
