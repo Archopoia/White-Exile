@@ -2,7 +2,8 @@
  * Three.js view of White Exile.
  *
  * What's on screen:
- *   - Endless ash/snow dune terrain (shader displacement: height + chaos with radius from origin)
+ *   - Endless ash/snow dune terrain (shader displacement: height + chaos with radius from origin;
+ *     terrain casts/receives shadows using custom depth/distance materials so shadow maps match displacement)
  *   - Moon-gold sun sky dome (`sky.ts`) — gradient + horizon haze + smothered sun disk
  *   - Local player core lit by a real shadow-casting torch flame (`flameLighting.ts`):
  *     hero `SpotLight` (one shadow map), fill `PointLight`, and a custom
@@ -13,7 +14,7 @@
  *     the dunes. No fake halo spheres anywhere; what you see lit IS lit.
  *   - Stranded followers (cool tone) waiting in the fog
  *   - Owned followers trail their owner with a small core
- *   - Ruins (square pillars) and relics (octahedrons), warm emissive when active
+ *   - Ruins (square pillars) and relics (octahedrons) — dusty ash-tinted materials so sun/hemi shade them like terrain
  *
  * Local movement is client-side prediction; the server clamps and rebroadcasts.
  *
@@ -39,7 +40,12 @@ import {
   fogDensityForZone,
 } from '@realtime-room/shared';
 import { getLabelMode, setLabelMode as persistLabelMode } from './clientSettings.js';
-import { applyAshDuneTerrainShader, getAshDuneTerrainUniforms } from './duneTerrainMaterial.js';
+import {
+  applyAshDuneTerrainShader,
+  createAshDuneShadowMaterials,
+  getAshDuneTerrainUniforms,
+  type AshDuneShadowMaterials,
+} from './duneTerrainMaterial.js';
 import {
   type FlameLighting,
   type FxTier,
@@ -79,7 +85,8 @@ export interface SceneVisualSettings {
 export const DEFAULT_SCENE_VISUAL: SceneVisualSettings = Object.freeze({
   fogDensityMul: 1,
   fillLightMul: 1,
-  toneMappingExposure: 1.15,
+  /** Lifted so lower ambient + stronger sun still lands in a playable range. */
+  toneMappingExposure: 1.32,
   skyHazeMul: 1,
 });
 
@@ -95,6 +102,52 @@ const ORBIT_DIST_MAX = 52;
 const RUIN_HEIGHT = 6;
 const RUIN_RANGE = 6;
 
+/** Dune-adjacent neutral so lit vs shaded reads on props, not neon stickers. */
+const ASH_PROP_COOL = new THREE.Color(0x3c4450);
+const ASH_PROP_WARM = new THREE.Color(0x403c38);
+
+function applyAshCaravanCoreMaterial(mat: THREE.MeshStandardMaterial, raceLightHex: number): void {
+  const tint = new THREE.Color(raceLightHex);
+  mat.color.copy(ASH_PROP_COOL).lerp(tint, 0.24);
+  mat.emissive.copy(tint).multiplyScalar(0.18);
+  mat.emissiveIntensity = 0.038;
+  mat.roughness = 0.91;
+  mat.metalness = 0.05;
+}
+
+function applyAshFollowerMaterial(mat: THREE.MeshStandardMaterial, stranded: boolean): void {
+  const tint = new THREE.Color(stranded ? 0x668fff : 0xffd6a8);
+  const base = stranded ? ASH_PROP_COOL : ASH_PROP_WARM;
+  mat.color.copy(base).lerp(tint, stranded ? 0.14 : 0.2);
+  mat.emissive.copy(tint).multiplyScalar(0.14);
+  mat.emissiveIntensity = 0.034;
+  mat.roughness = 0.92;
+  mat.metalness = 0.045;
+}
+
+function applyAshRuinMaterial(mat: THREE.MeshStandardMaterial, activated: boolean): void {
+  if (activated) {
+    mat.color.setHex(0x686055);
+    mat.emissive.setHex(0x4a423c);
+    mat.emissiveIntensity = 0.045;
+  } else {
+    mat.color.setHex(0x383e4a);
+    mat.emissive.setHex(0x000000);
+    mat.emissiveIntensity = 0;
+  }
+  mat.roughness = 0.88;
+  mat.metalness = 0.06;
+}
+
+function applyAshRelicMaterial(mat: THREE.MeshStandardMaterial, claimed: boolean): void {
+  mat.color.setHex(claimed ? 0x566068 : 0x6a7780);
+  mat.emissive.setHex(0x000000);
+  mat.emissiveIntensity = 0;
+  mat.metalness = 0.04;
+  mat.roughness = 0.9;
+  mat.opacity = claimed ? 0.3 : 1.0;
+}
+
 export class RoomScene {
   private readonly canvas: HTMLCanvasElement;
   private readonly renderer: THREE.WebGLRenderer;
@@ -104,6 +157,7 @@ export class RoomScene {
   private readonly clock: THREE.Clock;
   private readonly ground: THREE.Mesh;
   private readonly groundMat: THREE.MeshStandardMaterial;
+  private readonly groundShadowMats: AshDuneShadowMaterials;
   private readonly groundTip: CSS2DObject;
   private readonly lighting: FlameLighting;
   private readonly sky: DeadSky;
@@ -198,21 +252,20 @@ export class RoomScene {
       metalness: 0.02,
       emissive: 0x0c0a12,
     });
-    applyAshDuneTerrainShader(this.groundMat);
+    const duneUniforms = applyAshDuneTerrainShader(this.groundMat);
+    this.groundShadowMats = createAshDuneShadowMaterials(duneUniforms);
     this.ground = new THREE.Mesh(groundGeom, this.groundMat);
     this.ground.rotation.x = -Math.PI / 2;
     this.ground.position.y = -2;
     this.ground.receiveShadow = true;
+    this.ground.castShadow = true;
+    this.ground.customDepthMaterial = this.groundShadowMats.depth;
+    this.ground.customDistanceMaterial = this.groundShadowMats.distance;
     this.scene.add(this.ground);
 
-    const coreGeom = new THREE.SphereGeometry(0.75, 22, 18);
-    const coreMat = new THREE.MeshStandardMaterial({
-      color: 0x1a1620,
-      emissive: RACE_PROFILES.emberfolk.lightColor,
-      emissiveIntensity: 0.3,
-      metalness: 0.2,
-      roughness: 0.55,
-    });
+    const coreGeom = new THREE.SphereGeometry(0.75, 28, 22);
+    const coreMat = new THREE.MeshStandardMaterial({ color: 0x3c4450, roughness: 0.91, metalness: 0.05 });
+    applyAshCaravanCoreMaterial(coreMat, RACE_PROFILES.emberfolk.lightColor);
     this.localCore = new THREE.Mesh(coreGeom, coreMat);
     this.localCore.castShadow = true;
     this.localCore.receiveShadow = true;
@@ -256,8 +309,7 @@ export class RoomScene {
 
   setLocalRace(race: Race): void {
     this.localRace = race;
-    const color = new THREE.Color(RACE_PROFILES[race].lightColor);
-    (this.localCore.material as THREE.MeshStandardMaterial).emissive.copy(color);
+    applyAshCaravanCoreMaterial(this.localCore.material as THREE.MeshStandardMaterial, RACE_PROFILES[race].lightColor);
     this.lighting.setRace(race);
   }
 
@@ -395,14 +447,9 @@ export class RoomScene {
       let entry = this.markers.get(p.id);
       const profile = RACE_PROFILES[p.race];
       if (!entry) {
-        const coreMat = new THREE.MeshStandardMaterial({
-          color: 0x1a1620,
-          emissive: profile.lightColor,
-          emissiveIntensity: 0.25,
-          metalness: 0.2,
-          roughness: 0.55,
-        });
-        const core = new THREE.Mesh(new THREE.SphereGeometry(0.55, 18, 14), coreMat);
+        const coreMat = new THREE.MeshStandardMaterial({ color: 0x3c4450, roughness: 0.91, metalness: 0.05 });
+        applyAshCaravanCoreMaterial(coreMat, profile.lightColor);
+        const core = new THREE.Mesh(new THREE.SphereGeometry(0.55, 24, 18), coreMat);
         core.castShadow = true;
         core.receiveShadow = true;
         const label = makeTooltip('');
@@ -412,8 +459,7 @@ export class RoomScene {
         entry = { core, label };
         this.markers.set(p.id, entry);
       } else {
-        const coreMat = entry.core.material as THREE.MeshStandardMaterial;
-        coreMat.emissive.setHex(profile.lightColor);
+        applyAshCaravanCoreMaterial(entry.core.material as THREE.MeshStandardMaterial, profile.lightColor);
       }
       entry.core.position.set(
         p.position.x,
@@ -450,15 +496,9 @@ export class RoomScene {
       seen.add(f.id);
       let entry = this.followerMeshes.get(f.id);
       const stranded = f.ownerId === null;
-      const color = stranded ? 0x668fff : 0xffd6a8;
       if (!entry) {
-        const mat = new THREE.MeshStandardMaterial({
-          color: 0x14121a,
-          emissive: color,
-          emissiveIntensity: stranded ? 0.4 : 0.7,
-          metalness: 0.1,
-          roughness: 0.55,
-        });
+        const mat = new THREE.MeshStandardMaterial({ color: 0x3c4450, roughness: 0.92, metalness: 0.045 });
+        applyAshFollowerMaterial(mat, stranded);
         const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.32, 12, 10), mat);
         mesh.castShadow = true;
         mesh.receiveShadow = true;
@@ -469,9 +509,7 @@ export class RoomScene {
         entry = { mesh, label };
         this.followerMeshes.set(f.id, entry);
       } else {
-        const mat = entry.mesh.material as THREE.MeshStandardMaterial;
-        mat.emissive.setHex(color);
-        mat.emissiveIntensity = stranded ? 0.4 : 0.7;
+        applyAshFollowerMaterial(entry.mesh.material as THREE.MeshStandardMaterial, stranded);
       }
       entry.mesh.position.set(
         f.position.x,
@@ -496,13 +534,8 @@ export class RoomScene {
       seen.add(r.id);
       let entry = this.ruinMeshes.get(r.id);
       if (!entry) {
-        const mat = new THREE.MeshStandardMaterial({
-          color: 0x404a66,
-          emissive: r.activated ? 0xffce6f : 0x202736,
-          emissiveIntensity: r.activated ? 1.4 : 0.4,
-          metalness: 0.4,
-          roughness: 0.5,
-        });
+        const mat = new THREE.MeshStandardMaterial({ color: 0x404a66, roughness: 0.88, metalness: 0.06 });
+        applyAshRuinMaterial(mat, r.activated);
         const mesh = new THREE.Mesh(new THREE.BoxGeometry(2, RUIN_HEIGHT, 2), mat);
         mesh.castShadow = true;
         mesh.receiveShadow = true;
@@ -513,9 +546,7 @@ export class RoomScene {
         entry = { mesh, label };
         this.ruinMeshes.set(r.id, entry);
       } else {
-        const mat = entry.mesh.material as THREE.MeshStandardMaterial;
-        mat.emissive.setHex(r.activated ? 0xffce6f : 0x202736);
-        mat.emissiveIntensity = r.activated ? 1.4 : 0.4;
+        applyAshRuinMaterial(entry.mesh.material as THREE.MeshStandardMaterial, r.activated);
       }
       entry.mesh.position.set(r.position.x, r.position.y, r.position.z);
     }
@@ -535,17 +566,11 @@ export class RoomScene {
       seen.add(r.id);
       let entry = this.relicMeshes.get(r.id);
       if (!entry) {
-        const mat = new THREE.MeshStandardMaterial({
-          color: 0xb6f0ff,
-          emissive: 0xb6f0ff,
-          emissiveIntensity: r.claimed ? 0.2 : 1.6,
-          metalness: 0.3,
-          roughness: 0.2,
-          transparent: true,
-          opacity: r.claimed ? 0.3 : 1.0,
-        });
+        const mat = new THREE.MeshStandardMaterial({ transparent: true, opacity: r.claimed ? 0.3 : 1.0 });
+        applyAshRelicMaterial(mat, r.claimed);
         const mesh = new THREE.Mesh(new THREE.OctahedronGeometry(0.9, 0), mat);
         mesh.castShadow = true;
+        mesh.receiveShadow = true;
         const label = makeTooltip('');
         label.position.set(0, 1.05, 0);
         mesh.add(label);
@@ -553,9 +578,7 @@ export class RoomScene {
         entry = { mesh, label };
         this.relicMeshes.set(r.id, entry);
       } else {
-        const mat = entry.mesh.material as THREE.MeshStandardMaterial;
-        mat.emissiveIntensity = r.claimed ? 0.2 : 1.6;
-        mat.opacity = r.claimed ? 0.3 : 1.0;
+        applyAshRelicMaterial(entry.mesh.material as THREE.MeshStandardMaterial, r.claimed);
       }
       entry.mesh.position.set(r.position.x, r.position.y, r.position.z);
       entry.mesh.rotation.y += 0.02;
@@ -791,6 +814,10 @@ export class RoomScene {
     });
     this.localGroup.clear();
     this.ground.geometry.dispose();
+    this.groundShadowMats.depth.dispose();
+    this.groundShadowMats.distance.dispose();
+    this.ground.customDepthMaterial = undefined;
+    this.ground.customDistanceMaterial = undefined;
     this.groundMat.dispose();
     this.lighting.dispose();
     this.sky.dispose();

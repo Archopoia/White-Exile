@@ -8,6 +8,12 @@ export interface AshDuneTerrainUniforms {
   readonly uDuneHeightScale: THREE.IUniform<number>;
 }
 
+/** Depth + distance materials so shadow maps match vertex-displaced dunes. */
+export interface AshDuneShadowMaterials {
+  readonly depth: THREE.MeshDepthMaterial;
+  readonly distance: THREE.MeshDistanceMaterial;
+}
+
 const DUNE_USERDATA_KEY = 'ashDuneTerrain';
 
 function isAshDuneUserData(v: unknown): v is { uniforms: AshDuneTerrainUniforms } {
@@ -20,70 +26,9 @@ function isAshDuneUserData(v: unknown): v is { uniforms: AshDuneTerrainUniforms 
 }
 
 /**
- * Injects vertex displacement for endless ash/snow dunes.
- * Height grows and warps with distance from world origin (aligned with server zone rings).
- * Slow time term reads as drifting aeolian relief, not ocean swells.
- *
- * Normals are recomputed after displacement (Three's default `vNormal` is pre-displacement).
- * Fragment: procedural snow/ash grain (2-octave value noise + slope mask), roughness breakup,
- * view rim — no texture fetches.
+ * Shared GLSL: uniforms + elevation (must match shadow depth/distance passes).
  */
-export function applyAshDuneTerrainShader(material: THREE.MeshStandardMaterial): AshDuneTerrainUniforms {
-  const existing = material.userData[DUNE_USERDATA_KEY];
-  if (isAshDuneUserData(existing)) {
-    return existing.uniforms;
-  }
-
-  const uniforms: AshDuneTerrainUniforms = {
-    uTime: { value: 0 },
-    uWindDir: { value: new THREE.Vector2(0.91, 0.42).normalize() },
-    uDuneHeightScale: { value: ASH_DUNE_DEFAULT_HEIGHT_SCALE },
-  };
-
-  material.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, {
-      uTime: uniforms.uTime,
-      uWindDir: uniforms.uWindDir,
-      uDuneHeightScale: uniforms.uDuneHeightScale,
-    });
-
-    shader.vertexShader = shader.vertexShader.replace(
-      '#include <common>',
-      `
-      varying vec2 vAshDuneWorldXZ;
-      varying float vAshFlatness;
-      #include <common>`,
-    );
-
-    shader.fragmentShader = shader.fragmentShader.replace(
-      '#include <common>',
-      `
-      varying vec2 vAshDuneWorldXZ;
-      varying float vAshFlatness;
-
-      /** Cheap 2D value noise (2 octaves max in callers) — keep fragment cost low. */
-      float ashHash(vec2 p) {
-        return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
-      }
-      float ashNoise(vec2 p) {
-        vec2 i = floor(p);
-        vec2 f = fract(p);
-        float a = ashHash(i);
-        float b = ashHash(i + vec2(1.0, 0.0));
-        float c = ashHash(i + vec2(0.0, 1.0));
-        float d = ashHash(i + vec2(1.0, 1.0));
-        vec2 u = f * f * (3.0 - 2.0 * f);
-        return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
-      }
-      float ashGrain(vec2 xz) {
-        return ashNoise(xz * 0.042) * 0.55 + ashNoise(xz * 0.13 + vec2(11.0, 3.0)) * 0.35;
-      }
-
-      #include <common>`,
-    );
-
-    shader.vertexShader =
-      `
+const ASH_DUNE_VERTEX_LIB = /* glsl */ `
       uniform float uTime;
       uniform vec2 uWindDir;
       uniform float uDuneHeightScale;
@@ -115,7 +60,6 @@ export function applyAshDuneTerrainShader(material: THREE.MeshStandardMaterial):
         return v;
       }
 
-      /** Cosine-mound cross-section (0..1 period) — stoss/lee asymmetric via exponent. */
       float duneMound(float t, float sharp) {
         t = clamp(t, 0.0, 1.0);
         float rise = 1.0 - cos(t * 3.14159265 * sharp);
@@ -164,11 +108,34 @@ export function applyAshDuneTerrainShader(material: THREE.MeshStandardMaterial):
 
         return h * uDuneHeightScale;
       }
-    ` + shader.vertexShader;
+    `;
 
+function attachDuneVertexDisplacement(
+  shader: { vertexShader: string; uniforms: { [key: string]: THREE.IUniform } },
+  uniforms: AshDuneTerrainUniforms,
+  mode: 'standard' | 'shadow',
+): void {
+  Object.assign(shader.uniforms, {
+    uTime: uniforms.uTime,
+    uWindDir: uniforms.uWindDir,
+    uDuneHeightScale: uniforms.uDuneHeightScale,
+  });
+
+  if (mode === 'standard') {
     shader.vertexShader = shader.vertexShader.replace(
-      '#include <begin_vertex>',
+      '#include <common>',
       `
+      varying vec2 vAshDuneWorldXZ;
+      varying float vAshFlatness;
+      #include <common>`,
+    );
+  }
+
+  shader.vertexShader = ASH_DUNE_VERTEX_LIB + shader.vertexShader;
+
+  const beginPatch =
+    mode === 'standard'
+      ? `
       #include <begin_vertex>
       vec4 duneWorld4 = modelMatrix * vec4(position, 1.0);
       vec2 duneXZ = duneWorld4.xz;
@@ -176,9 +143,18 @@ export function applyAshDuneTerrainShader(material: THREE.MeshStandardMaterial):
       vAshFlatness = 0.48;
       float duneH = ashDuneElevation(duneXZ, uTime);
       transformed += normal * duneH;
-      `,
-    );
+      `
+      : `
+      #include <begin_vertex>
+      vec4 duneWorld4 = modelMatrix * vec4(position, 1.0);
+      vec2 duneXZ = duneWorld4.xz;
+      float duneH = ashDuneElevation(duneXZ, uTime);
+      transformed += normal * duneH;
+      `;
 
+  shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', beginPatch);
+
+  if (mode === 'standard') {
     shader.vertexShader = shader.vertexShader.replace(
       'vViewPosition = - mvPosition.xyz;',
       `
@@ -197,6 +173,79 @@ export function applyAshDuneTerrainShader(material: THREE.MeshStandardMaterial):
       }
       #endif
       `,
+    );
+  }
+}
+
+/**
+ * `MeshDepthMaterial` / `MeshDistanceMaterial` with the same vertex displacement as the
+ * dunes mesh so directional sun and point-flame shadows occlude along crests, not the flat plane.
+ */
+export function createAshDuneShadowMaterials(uniforms: AshDuneTerrainUniforms): AshDuneShadowMaterials {
+  const depth = new THREE.MeshDepthMaterial({
+    depthPacking: THREE.RGBADepthPacking,
+  });
+  depth.onBeforeCompile = (shader) => {
+    attachDuneVertexDisplacement(shader, uniforms, 'shadow');
+  };
+
+  const distance = new THREE.MeshDistanceMaterial();
+  distance.onBeforeCompile = (shader) => {
+    attachDuneVertexDisplacement(shader, uniforms, 'shadow');
+  };
+
+  return { depth, distance };
+}
+
+/**
+ * Injects vertex displacement for endless ash/snow dunes.
+ * Height grows and warps with distance from world origin (aligned with server zone rings).
+ * Slow time term reads as drifting aeolian relief, not ocean swells.
+ *
+ * Normals are recomputed after displacement (Three's default `vNormal` is pre-displacement).
+ * Fragment: procedural snow/ash grain (2-octave value noise + slope mask), roughness breakup,
+ * view rim — no texture fetches.
+ */
+export function applyAshDuneTerrainShader(material: THREE.MeshStandardMaterial): AshDuneTerrainUniforms {
+  const existing = material.userData[DUNE_USERDATA_KEY];
+  if (isAshDuneUserData(existing)) {
+    return existing.uniforms;
+  }
+
+  const uniforms: AshDuneTerrainUniforms = {
+    uTime: { value: 0 },
+    uWindDir: { value: new THREE.Vector2(0.91, 0.42).normalize() },
+    uDuneHeightScale: { value: ASH_DUNE_DEFAULT_HEIGHT_SCALE },
+  };
+
+  material.onBeforeCompile = (shader) => {
+    attachDuneVertexDisplacement(shader, uniforms, 'standard');
+
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <common>',
+      `
+      varying vec2 vAshDuneWorldXZ;
+      varying float vAshFlatness;
+
+      /** Cheap 2D value noise (2 octaves max in callers) — keep fragment cost low. */
+      float ashHash(vec2 p) {
+        return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+      }
+      float ashNoise(vec2 p) {
+        vec2 i = floor(p);
+        vec2 f = fract(p);
+        float a = ashHash(i);
+        float b = ashHash(i + vec2(1.0, 0.0));
+        float c = ashHash(i + vec2(0.0, 1.0));
+        float d = ashHash(i + vec2(1.0, 1.0));
+        vec2 u = f * f * (3.0 - 2.0 * f);
+        return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+      }
+      float ashGrain(vec2 xz) {
+        return ashNoise(xz * 0.042) * 0.55 + ashNoise(xz * 0.13 + vec2(11.0, 3.0)) * 0.35;
+      }
+
+      #include <common>`,
     );
 
     shader.fragmentShader = shader.fragmentShader.replace(

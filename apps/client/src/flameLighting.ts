@@ -35,8 +35,11 @@ export interface FlameTierConfig {
   readonly sunIntensity: number;
 }
 
-/** Uniform omnidirectional skylight — tuned so foggy nights still read lit. */
-const AMBIENT_SKYLIGHT_BASE = 0.48;
+/**
+ * Uniform skylight — kept low so directional sun + hemisphere produce visible
+ * front vs back on props (high ambient flattens N·L on every face equally).
+ */
+const AMBIENT_SKYLIGHT_BASE = 0.14;
 
 const TIER_CONFIG: Readonly<Record<FxTier, FlameTierConfig>> = Object.freeze({
   low: {
@@ -47,10 +50,8 @@ const TIER_CONFIG: Readonly<Record<FxTier, FlameTierConfig>> = Object.freeze({
     poolShadow: false,
     poolShadowMapSize: 0,
     poolShadowCount: 0,
-    // Strong hemisphere + moderate sun: global fill must be obvious on
-    // rough ash (high roughness kills contrast otherwise).
-    hemisphereIntensity: 1.05,
-    sunIntensity: 0.7,
+    hemisphereIntensity: 0.58,
+    sunIntensity: 1.08,
   },
   med: {
     sunShadow: true,
@@ -60,8 +61,8 @@ const TIER_CONFIG: Readonly<Record<FxTier, FlameTierConfig>> = Object.freeze({
     poolShadow: false,
     poolShadowMapSize: 0,
     poolShadowCount: 0,
-    hemisphereIntensity: 0.98,
-    sunIntensity: 0.76,
+    hemisphereIntensity: 0.54,
+    sunIntensity: 1.18,
   },
   high: {
     sunShadow: true,
@@ -71,8 +72,8 @@ const TIER_CONFIG: Readonly<Record<FxTier, FlameTierConfig>> = Object.freeze({
     poolShadow: true,
     poolShadowMapSize: 256,
     poolShadowCount: 3,
-    hemisphereIntensity: 0.92,
-    sunIntensity: 0.82,
+    hemisphereIntensity: 0.5,
+    sunIntensity: 1.26,
   },
 });
 
@@ -281,9 +282,7 @@ export function createFlameLighting(
   const hemi = new THREE.HemisphereLight(0x92a8d0, 0x6a5850, cfg.hemisphereIntensity);
   scene.add(hemi);
 
-  // Omnidirectional skylight — this is what reads as "ambient / GI fill" in
-  // Three.js (uniform, not directional). Without it, only the torch and sun
-  // carve pockets of light out of black fog.
+  // Uniform skylight — small so sun + hemisphere set most of the shade on meshes.
   const ambient = new THREE.AmbientLight(0xc8daf8, AMBIENT_SKYLIGHT_BASE);
   scene.add(ambient);
 
@@ -338,7 +337,8 @@ export function createFlameLighting(
       sun.shadow.camera.near = 2;
       sun.shadow.camera.far = 3200;
       sun.shadow.bias = -0.0006;
-      sun.shadow.normalBias = 0.05;
+      // Large displaced sheet self-shadows: a bit more offset than small props.
+      sun.shadow.normalBias = 0.08;
       sun.shadow.radius = 4;
       sun.shadow.camera.updateProjectionMatrix();
       // Force the shadow map to re-allocate at the new size.

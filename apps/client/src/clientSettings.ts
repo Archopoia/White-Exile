@@ -111,9 +111,9 @@ export function setFillLightMul(mul: number): void {
   writeLs(KEY_FILL_MUL, String(v));
 }
 
-/** ACES tone-mapping exposure. Default 1.15. */
+/** ACES tone-mapping exposure. Default aligned with `DEFAULT_SCENE_VISUAL`. */
 export function getToneMappingExposure(): number {
-  return Math.max(0.35, Math.min(2.75, readFloat(KEY_TONE_EXPOSURE, 1.15)));
+  return Math.max(0.35, Math.min(2.75, readFloat(KEY_TONE_EXPOSURE, 1.32)));
 }
 
 export function setToneMappingExposure(exposure: number): void {
