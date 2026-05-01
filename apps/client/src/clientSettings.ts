@@ -24,6 +24,10 @@ const KEY_RACE = 'rtRoom.race';
 const KEY_NAME = 'rtRoom.displayName';
 const KEY_TOKEN = 'rtRoom.resumeToken';
 const KEY_FOG = 'rtRoom.fog';
+const KEY_FOG_MUL = 'rtRoom.fogMul';
+const KEY_FILL_MUL = 'rtRoom.fillMul';
+const KEY_TONE_EXPOSURE = 'rtRoom.toneExposure';
+const KEY_SKY_HAZE_MUL = 'rtRoom.skyHazeMul';
 
 function readLs(key: string): string | null {
   try {
@@ -39,6 +43,13 @@ function writeLs(key: string, value: string): void {
   } catch {
     /* storage may be denied */
   }
+}
+
+function readFloat(key: string, fallback: number): number {
+  const raw = readLs(key);
+  if (raw === null || raw === '') return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : fallback;
 }
 
 function isFxTier(value: unknown): value is FxTier {
@@ -78,6 +89,46 @@ export function getFogEnabled(): boolean {
 
 export function setFogEnabled(enabled: boolean): void {
   writeLs(KEY_FOG, enabled ? '1' : '0');
+}
+
+/** Multiplier on client exponential fog density (0 = none, 2.5 = very thick). Default 1. */
+export function getFogDensityMul(): number {
+  return Math.max(0, Math.min(2.5, readFloat(KEY_FOG_MUL, 1)));
+}
+
+export function setFogDensityMul(mul: number): void {
+  const v = Math.max(0, Math.min(2.5, mul));
+  writeLs(KEY_FOG_MUL, String(v));
+}
+
+/** Scales hemisphere + sun + ambient skylight. Default 1. */
+export function getFillLightMul(): number {
+  return Math.max(0.15, Math.min(2.75, readFloat(KEY_FILL_MUL, 1)));
+}
+
+export function setFillLightMul(mul: number): void {
+  const v = Math.max(0.15, Math.min(2.75, mul));
+  writeLs(KEY_FILL_MUL, String(v));
+}
+
+/** ACES tone-mapping exposure. Default 1.15. */
+export function getToneMappingExposure(): number {
+  return Math.max(0.35, Math.min(2.75, readFloat(KEY_TONE_EXPOSURE, 1.15)));
+}
+
+export function setToneMappingExposure(exposure: number): void {
+  const v = Math.max(0.35, Math.min(2.75, exposure));
+  writeLs(KEY_TONE_EXPOSURE, String(v));
+}
+
+/** Multiplies sky dome haze vs zone presets. Default 1. */
+export function getSkyHazeMul(): number {
+  return Math.max(0, Math.min(1.5, readFloat(KEY_SKY_HAZE_MUL, 1)));
+}
+
+export function setSkyHazeMul(mul: number): void {
+  const v = Math.max(0, Math.min(1.5, mul));
+  writeLs(KEY_SKY_HAZE_MUL, String(v));
 }
 
 export function getRace(): Race {

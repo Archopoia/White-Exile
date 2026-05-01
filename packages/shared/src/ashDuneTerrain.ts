@@ -27,7 +27,7 @@ export const ASH_DUNE_RUIN_CENTER_OFFSET = 3;
 export const ASH_DUNE_RELIC_CENTER_OFFSET = 0.55;
 
 /** Used when no {@link WorldConfig.duneHeightScale} is in scope (must match Zod default on `WorldConfig`). */
-export const ASH_DUNE_DEFAULT_HEIGHT_SCALE = 2.8;
+export const ASH_DUNE_DEFAULT_HEIGHT_SCALE = 1.45;
 
 /** Optional overrides for {@link ashDuneElevation} / {@link ashDuneSurfaceWorldY}. */
 export interface AshDuneSampleOptions {
@@ -112,37 +112,39 @@ export function ashDuneElevation(
   const acrossX = -wdir.z;
   const acrossZ = wdir.x;
 
-  const warpAmp = (2.0 + (55.0 - 2.0) * depth) * (1.0 - calmCore * 0.85);
-  const warpX = duneFbm(x * 0.0018 + 3.7, z * 0.0018 + 3.7) * warpAmp;
-  const warpZ = duneFbm(x * 0.0016 + 9.1, z * 0.0016 + 9.1) * warpAmp;
+  /** Large, smooth warp only — high warp was turning the field into spikes. */
+  const warpAmp = (0.6 + (10.0 - 0.6) * depth) * (1.0 - calmCore * 0.88);
+  const warpX = duneFbm(x * 0.00045 + 3.7, z * 0.00045 + 3.7) * warpAmp;
+  const warpZ = duneFbm(x * 0.00042 + 9.1, z * 0.00042 + 9.1) * warpAmp;
   const px = x + warpX;
   const pz = z + warpZ;
 
   const along = wdir.x * px + wdir.z * pz;
   const cross = acrossX * px + acrossZ * pz;
 
-  const waveLen = 140.0 + (38.0 - 140.0) * depth;
+  /** Long wavelengths = wide dune bases; far zones stay large, not sharper. */
+  const waveLen = 340.0 + (220.0 - 340.0) * depth;
   const u = fract(along / waveLen);
-  const cellPhase = timeSeconds * (0.045 + (0.11 - 0.045) * depth);
-  const mound = duneMound(u, 1.05 + (1.85 - 1.05) * depth);
+  const cellPhase = timeSeconds * (0.022 + (0.055 - 0.022) * depth);
+  const mound = duneMound(u, 0.88 + (1.28 - 0.88) * depth);
 
-  let secondary = Math.sin(along * ((Math.PI * 2) / waveLen) * 2.17 + cross * 0.0061 + cellPhase * 1.9);
+  let secondary = Math.sin(along * ((Math.PI * 2) / waveLen) * 2.17 + cross * 0.0022 + cellPhase * 1.9);
   secondary +=
-    Math.sin(cross * 0.019 + along * 0.003 + timeSeconds * 0.05) * (0.12 + (0.55 - 0.12) * depth);
+    Math.sin(cross * 0.0065 + along * 0.0012 + timeSeconds * 0.035) * (0.08 + (0.28 - 0.08) * depth);
 
-  let transverse = Math.sin(cross * (0.011 + depth * 0.018) + duneFbm(px * 0.003, pz * 0.003) * 6.2);
-  transverse *= 0.15 + (0.95 - 0.15) * depth;
+  let transverse = Math.sin(cross * (0.0038 + depth * 0.006) + duneFbm(px * 0.0009, pz * 0.0009) * 2.8);
+  transverse *= 0.1 + (0.38 - 0.1) * depth;
 
-  let amp = 0.35 + (11.0 - 0.35) * depth;
-  amp *= 1.0 + (0.35 - 1.0) * calmCore;
+  let amp = 2.8 + (48.0 - 2.8) * depth;
+  amp *= 1.0 + (0.62 - 1.0) * calmCore;
 
   let h = mound * amp;
-  h += secondary * (0.08 + (1.25 - 0.08) * depth) * amp * 0.07;
-  h += transverse * (0.2 + (2.4 - 0.2) * depth);
-  h += (duneFbm(px * 0.012 + timeSeconds * 0.02, pz * 0.012) - 0.5) * (0.15 + (1.8 - 0.15) * depth);
+  h += secondary * (0.04 + (0.35 - 0.04) * depth) * amp * 0.028;
+  h += transverse * (0.08 + (0.55 - 0.08) * depth);
+  h += (duneFbm(px * 0.0035 + timeSeconds * 0.012, pz * 0.0035) - 0.5) * (0.06 + (0.45 - 0.06) * depth);
 
-  const chop = duneFbm(px * 0.028 + timeSeconds * 0.03, pz * 0.028 - timeSeconds * 0.021);
-  h += chop * (2.2 * depth * depth);
+  const chop = duneFbm(px * 0.008 + timeSeconds * 0.014, pz * 0.008 - timeSeconds * 0.011);
+  h += chop * (0.35 * depth * depth);
 
   return h * heightScale;
 }

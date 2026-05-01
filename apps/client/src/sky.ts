@@ -32,6 +32,8 @@ export interface DeadSky {
   readonly mesh: THREE.Mesh;
   readonly uniforms: DeadSkyUniforms;
   setZoneTone(zone: Zone): void;
+  /** Multiplies zone haze (0 = clear disk, ~1.5 = heavier veil). Clamped to keep `uHaze` in [0,1]. */
+  setSkyHazeMultiplier(mul: number): void;
   /** Sun direction is FROM the sun TOWARD the world (a light direction). */
   setSunDirection(dir: THREE.Vector3): void;
   dispose(): void;
@@ -159,7 +161,12 @@ const FRAG = /* glsl */ `
   }
 `;
 
-export function createDeadSky(scene: THREE.Scene): DeadSky {
+export function createDeadSky(
+  scene: THREE.Scene,
+  opts?: { readonly initialHazeMul?: number },
+): DeadSky {
+  let lastZone: Zone = 'safe';
+  let skyHazeMul = THREE.MathUtils.clamp(opts?.initialHazeMul ?? 1, 0, 1.5);
   const tone = ZONE_TONES.safe;
   const uniforms: DeadSkyUniforms = {
     uTime: { value: 0 },
@@ -168,7 +175,7 @@ export function createDeadSky(scene: THREE.Scene): DeadSky {
     uZenith: { value: new THREE.Color(tone.zenith) },
     uHorizon: { value: new THREE.Color(tone.horizon) },
     uGround: { value: new THREE.Color(tone.ground) },
-    uHaze: { value: tone.haze },
+    uHaze: { value: Math.min(1, tone.haze * skyHazeMul) },
   };
 
   const mat = new THREE.ShaderMaterial({
@@ -197,12 +204,19 @@ export function createDeadSky(scene: THREE.Scene): DeadSky {
   scene.add(mesh);
 
   function setZoneTone(zone: Zone): void {
+    lastZone = zone;
     const t = ZONE_TONES[zone];
     uniforms.uZenith.value.setHex(t.zenith);
     uniforms.uHorizon.value.setHex(t.horizon);
     uniforms.uGround.value.setHex(t.ground);
     uniforms.uSunColor.value.setHex(t.sun);
-    uniforms.uHaze.value = t.haze;
+    uniforms.uHaze.value = Math.min(1, t.haze * skyHazeMul);
+  }
+
+  function setSkyHazeMultiplier(mul: number): void {
+    skyHazeMul = THREE.MathUtils.clamp(mul, 0, 1.5);
+    const t = ZONE_TONES[lastZone];
+    uniforms.uHaze.value = Math.min(1, t.haze * skyHazeMul);
   }
 
   function setSunDirection(dir: THREE.Vector3): void {
@@ -215,5 +229,5 @@ export function createDeadSky(scene: THREE.Scene): DeadSky {
     mat.dispose();
   }
 
-  return { mesh, uniforms, setZoneTone, setSunDirection, dispose };
+  return { mesh, uniforms, setZoneTone, setSkyHazeMultiplier, setSunDirection, dispose };
 }

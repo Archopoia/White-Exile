@@ -8,17 +8,25 @@
  */
 import {
   getDisplayName,
+  getFillLightMul,
+  getFogDensityMul,
   getFogEnabled,
   getLabelMode,
   getFxTier,
   getRace,
   getResumeToken,
+  getSkyHazeMul,
+  getToneMappingExposure,
   setDisplayName,
+  setFillLightMul,
+  setFogDensityMul,
   setFogEnabled,
   setFxTier,
   setLabelMode,
   setRace,
   setResumeToken,
+  setSkyHazeMul,
+  setToneMappingExposure,
 } from './clientSettings.js';
 import { DEFAULT_WORLD_CONFIG } from '@realtime-room/shared';
 import { debugLogger } from './debug.js';
@@ -27,6 +35,7 @@ import { updateHud, type HudState } from './hud.js';
 import { NetClient } from './net.js';
 import { createRoomOptionsOverlay, type RoomOptionsOverlay } from './options.js';
 import { RoomScene } from './scene.js';
+import type { SceneVisualSettings } from './scene.js';
 import { type WorldLabelMode } from './tooltips.js';
 
 function resolveServerUrl(): string {
@@ -54,6 +63,16 @@ function boot(): RunningClient {
   const fxTier = getFxTier();
   const labelMode = getLabelMode();
   const fogEnabled = getFogEnabled();
+  const fogDensityMul = getFogDensityMul();
+  const fillLightMul = getFillLightMul();
+  const toneExposure = getToneMappingExposure();
+  const skyHazeMul = getSkyHazeMul();
+  const bootVisual: SceneVisualSettings = {
+    fogDensityMul,
+    fillLightMul,
+    toneMappingExposure: toneExposure,
+    skyHazeMul,
+  };
 
   const hud: HudState = {
     status: 'connecting',
@@ -83,6 +102,7 @@ function boot(): RunningClient {
     },
     fxTier,
     fogEnabled,
+    bootVisual,
   );
   scene.setLocalRace(race);
   scene.setLabelMode(labelMode);
@@ -100,6 +120,22 @@ function boot(): RunningClient {
       setFogEnabled(enabled);
       scene.setFogEnabled(enabled);
     },
+    onFogDensityMulChange: (mul: number) => {
+      setFogDensityMul(mul);
+      scene.setFogDensityMul(mul);
+    },
+    onFillLightMulChange: (mul: number) => {
+      setFillLightMul(mul);
+      scene.setFillLightMul(mul);
+    },
+    onToneExposureChange: (exposure: number) => {
+      setToneMappingExposure(exposure);
+      scene.setToneMappingExposure(exposure);
+    },
+    onSkyHazeMulChange: (mul: number) => {
+      setSkyHazeMul(mul);
+      scene.setSkyHazeMul(mul);
+    },
     onDisplayNameChange: (name: string) => {
       setDisplayName(name);
     },
@@ -114,6 +150,10 @@ function boot(): RunningClient {
       fxTier,
       labelMode,
       fogEnabled,
+      fogDensityMul,
+      fillLightMul,
+      toneExposure,
+      skyHazeMul,
       displayName,
       race,
       duneHeightScale: DEFAULT_WORLD_CONFIG.duneHeightScale,

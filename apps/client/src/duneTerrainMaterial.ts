@@ -25,6 +25,8 @@ function isAshDuneUserData(v: unknown): v is { uniforms: AshDuneTerrainUniforms 
  * Slow time term reads as drifting aeolian relief, not ocean swells.
  *
  * Normals are recomputed after displacement (Three's default `vNormal` is pre-displacement).
+ * Fragment: procedural snow/ash grain (2-octave value noise + slope mask), roughness breakup,
+ * view rim — no texture fetches.
  */
 export function applyAshDuneTerrainShader(material: THREE.MeshStandardMaterial): AshDuneTerrainUniforms {
   const existing = material.userData[DUNE_USERDATA_KEY];
@@ -44,6 +46,41 @@ export function applyAshDuneTerrainShader(material: THREE.MeshStandardMaterial):
       uWindDir: uniforms.uWindDir,
       uDuneHeightScale: uniforms.uDuneHeightScale,
     });
+
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <common>',
+      `
+      varying vec2 vAshDuneWorldXZ;
+      varying float vAshFlatness;
+      #include <common>`,
+    );
+
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <common>',
+      `
+      varying vec2 vAshDuneWorldXZ;
+      varying float vAshFlatness;
+
+      /** Cheap 2D value noise (2 octaves max in callers) — keep fragment cost low. */
+      float ashHash(vec2 p) {
+        return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+      }
+      float ashNoise(vec2 p) {
+        vec2 i = floor(p);
+        vec2 f = fract(p);
+        float a = ashHash(i);
+        float b = ashHash(i + vec2(1.0, 0.0));
+        float c = ashHash(i + vec2(0.0, 1.0));
+        float d = ashHash(i + vec2(1.0, 1.0));
+        vec2 u = f * f * (3.0 - 2.0 * f);
+        return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+      }
+      float ashGrain(vec2 xz) {
+        return ashNoise(xz * 0.042) * 0.55 + ashNoise(xz * 0.13 + vec2(11.0, 3.0)) * 0.35;
+      }
+
+      #include <common>`,
+    );
 
     shader.vertexShader =
       `
@@ -96,34 +133,34 @@ export function applyAshDuneTerrainShader(material: THREE.MeshStandardMaterial):
         vec2 wdir = normalize(uWindDir);
         vec2 across = vec2(-wdir.y, wdir.x);
 
-        float warpAmp = mix(2.0, 55.0, depth) * (1.0 - calmCore * 0.85);
-        vec2 warp = vec2(duneFbm(xz * 0.0018 + 3.7), duneFbm(xz * 0.0016 + 9.1)) * warpAmp;
+        float warpAmp = mix(0.6, 10.0, depth) * (1.0 - calmCore * 0.88);
+        vec2 warp = vec2(duneFbm(xz * 0.00045 + 3.7), duneFbm(xz * 0.00042 + 9.1)) * warpAmp;
         vec2 p = xz + warp;
 
         float along = dot(wdir, p);
         float cross = dot(across, p);
 
-        float waveLen = mix(140.0, 38.0, depth);
+        float waveLen = mix(340.0, 220.0, depth);
         float u = fract(along / waveLen);
-        float cellPhase = t * mix(0.045, 0.11, depth);
-        float mound = duneMound(u, mix(1.05, 1.85, depth));
+        float cellPhase = t * mix(0.022, 0.055, depth);
+        float mound = duneMound(u, mix(0.88, 1.28, depth));
 
-        float secondary = sin(along * (6.2831853 / waveLen) * 2.17 + cross * 0.0061 + cellPhase * 1.9);
-        secondary += sin(cross * 0.019 + along * 0.003 + t * 0.05) * mix(0.12, 0.55, depth);
+        float secondary = sin(along * (6.2831853 / waveLen) * 2.17 + cross * 0.0022 + cellPhase * 1.9);
+        secondary += sin(cross * 0.0065 + along * 0.0012 + t * 0.035) * mix(0.08, 0.28, depth);
 
-        float transverse = sin(cross * (0.011 + depth * 0.018) + duneFbm(p * 0.003) * 6.2);
-        transverse *= mix(0.15, 0.95, depth);
+        float transverse = sin(cross * (0.0038 + depth * 0.006) + duneFbm(p * 0.0009) * 2.8);
+        transverse *= mix(0.1, 0.38, depth);
 
-        float amp = mix(0.35, 11.0, depth);
-        amp *= mix(1.0, 0.35, calmCore);
+        float amp = mix(2.8, 48.0, depth);
+        amp *= mix(1.0, 0.62, calmCore);
 
         float h = mound * amp;
-        h += secondary * mix(0.08, 1.25, depth) * amp * 0.07;
-        h += transverse * mix(0.2, 2.4, depth);
-        h += (duneFbm(p * 0.012 + t * 0.02) - 0.5) * mix(0.15, 1.8, depth);
+        h += secondary * mix(0.04, 0.35, depth) * amp * 0.028;
+        h += transverse * mix(0.08, 0.55, depth);
+        h += (duneFbm(vec2(p.x * 0.0035 + t * 0.012, p.y * 0.0035)) - 0.5) * mix(0.06, 0.45, depth);
 
-        float chop = duneFbm(p * 0.028 + vec2(t * 0.03, -t * 0.021));
-        h += chop * mix(0.0, 2.2, depth * depth);
+        float chop = duneFbm(p * 0.008 + vec2(t * 0.014, -t * 0.011));
+        h += chop * (0.35 * depth * depth);
 
         return h * uDuneHeightScale;
       }
@@ -135,6 +172,8 @@ export function applyAshDuneTerrainShader(material: THREE.MeshStandardMaterial):
       #include <begin_vertex>
       vec4 duneWorld4 = modelMatrix * vec4(position, 1.0);
       vec2 duneXZ = duneWorld4.xz;
+      vAshDuneWorldXZ = duneXZ;
+      vAshFlatness = 0.48;
       float duneH = ashDuneElevation(duneXZ, uTime);
       transformed += normal * duneH;
       `,
@@ -147,14 +186,53 @@ export function applyAshDuneTerrainShader(material: THREE.MeshStandardMaterial):
       #ifndef FLAT_SHADED
       {
         vec2 xzN = (modelMatrix * vec4(position, 1.0)).xz;
-        const float eN = 2.5;
+        const float eN = 5.0;
         float dhdx = (ashDuneElevation(xzN + vec2(eN, 0.0), uTime) - ashDuneElevation(xzN - vec2(eN, 0.0), uTime)) / (2.0 * eN);
         float dhdz = (ashDuneElevation(xzN + vec2(0.0, eN), uTime) - ashDuneElevation(xzN - vec2(0.0, eN), uTime)) / (2.0 * eN);
+        float slope = abs(dhdx) + abs(dhdz);
+        vAshFlatness = 1.0 / (1.0 + slope * 0.82);
         vec3 nWorld = normalize(vec3(-dhdx, 1.0, -dhdz));
         vec3 objectNormalDune = normalize(transpose(mat3(modelMatrix)) * nWorld);
         vNormal = normalize(normalMatrix * objectNormalDune);
       }
       #endif
+      `,
+    );
+
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <roughnessmap_fragment>',
+      `
+      #include <roughnessmap_fragment>
+      {
+        float g = ashGrain(vAshDuneWorldXZ) + ashNoise(vAshDuneWorldXZ * 0.0066) * 0.15;
+        roughnessFactor = clamp(roughnessFactor * (0.9 + 0.2 * g) + g * 0.035, 0.04, 1.0);
+      }
+      `,
+    );
+
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <normal_fragment_maps>',
+      `
+      #include <normal_fragment_maps>
+      {
+        vec2 xz = vAshDuneWorldXZ;
+        float grain = ashGrain(xz) + ashNoise(xz * 0.0092) * 0.2;
+        float streak = smoothstep(0.22, 0.88, ashNoise(xz * 0.0028 + vec2(1.7, 8.3)));
+        vec3 base = diffuseColor.rgb;
+        vec3 ashCool = base * vec3(0.8, 0.82, 0.92);
+        vec3 frost = vec3(0.86, 0.88, 0.95);
+        float snowCover = clamp(
+          mix(0.12, 0.72, vAshFlatness) * (0.48 + 0.52 * grain) * (0.62 + 0.38 * streak),
+          0.0,
+          1.0
+        );
+        diffuseColor.rgb = mix(base, mix(ashCool, frost, snowCover), 0.9);
+        vec3 vn = normalize(normal);
+        vec3 vdir = normalize(vViewPosition);
+        float ndv = saturate(abs(dot(vn, vdir)));
+        float rim = pow(1.0 - ndv, 2.35) * (0.055 + 0.095 * grain);
+        diffuseColor.rgb += rim * vec3(0.3, 0.34, 0.42);
+      }
       `,
     );
   };

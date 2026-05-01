@@ -248,6 +248,8 @@ export interface FlameLighting {
   setLocalRadius(radius: number): void;
   setOtherFlames(list: ReadonlyArray<OtherFlame>): void;
   setZoneIntensity(scale: number): void;
+  /** Multiplies hemisphere, sun, and skylight ambient (1 = authored tier defaults). */
+  setFillLightMul(mul: number): void;
   setSunDirection(dir: THREE.Vector3): void;
   setTier(tier: FxTier): void;
   update(dt: number, time: number): void;
@@ -319,6 +321,7 @@ export function createFlameLighting(
   let attachTarget: THREE.Object3D | null = null;
   let localRadius = 14;
   let zoneScale = 1;
+  let fillLightMul = 1;
   let heroBaseIntensity = 3.6;
   /** Parallel light rays travel along this (sun → scene), fixed in world space. */
   const sunDir = new THREE.Vector3(0.4, -0.55, 0.7).normalize();
@@ -446,16 +449,22 @@ export function createFlameLighting(
   }
 
   function syncFillLights(): void {
-    hemi.intensity = cfg.hemisphereIntensity * zoneScale;
-    sun.intensity = cfg.sunIntensity * zoneScale;
+    const fill = THREE.MathUtils.clamp(fillLightMul, 0.15, 2.75);
+    hemi.intensity = cfg.hemisphereIntensity * zoneScale * fill;
+    sun.intensity = cfg.sunIntensity * zoneScale * fill;
     // Keep skylight fill from collapsing in deep zones (dead would be pitch black).
     const fillT = THREE.MathUtils.clamp((zoneScale - 0.4) / 1.0, 0, 1);
     const fillMul = 0.58 + 0.42 * fillT;
-    ambient.intensity = AMBIENT_SKYLIGHT_BASE * fillMul;
+    ambient.intensity = AMBIENT_SKYLIGHT_BASE * fillMul * fill;
   }
 
   function setZoneIntensity(scale: number): void {
     zoneScale = THREE.MathUtils.clamp(scale, 0.4, 1.4);
+    syncFillLights();
+  }
+
+  function setFillLightMul(mul: number): void {
+    fillLightMul = mul;
     syncFillLights();
   }
 
@@ -529,6 +538,7 @@ export function createFlameLighting(
     setLocalRadius,
     setOtherFlames,
     setZoneIntensity,
+    setFillLightMul,
     setSunDirection,
     setTier,
     update,

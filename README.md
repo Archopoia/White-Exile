@@ -52,7 +52,7 @@ pnpm smoke:net
 - **T** cycles floating **CSS2D** world labels (**off** → **keywords** → **full**; default **full**). Copy in `apps/client/src/worldLabels.ts`; proximity can surface **R** / **F** on nearby followers and ruins.
 - HUD (corners): connection, room note, tick, race, zone, light, caravan, fuel, followers.
 
-There are intentionally **no URL query parameters** for tunables. Per-client choices (graphics, labels, display name) use the ESC menu and `localStorage` (`rtRoom.displayName`, `rtRoom.resumeToken`, `rtRoom.race`, `rtRoom.fx`, `rtRoomLabelsMode`). **Dune height** and the **room note** are room state (`roomSettingsPatch`); dune scale is authoritative for sim + visuals once applied.
+There are intentionally **no URL query parameters** for tunables. Per-client choices use the ESC menu and `localStorage`: identity (`rtRoom.displayName`, `rtRoom.resumeToken`, `rtRoom.race`), graphics tier/labels (`rtRoom.fx`, `rtRoomLabelsMode`), distance fog on/off (`rtRoom.fog`), fog strength (`rtRoom.fogMul`), fill lights (`rtRoom.fillMul`), tone exposure (`rtRoom.toneExposure`), sky haze (`rtRoom.skyHazeMul`). **Dune height** and the **room note** are room state (`roomSettingsPatch`); dune scale is authoritative for sim + visuals once applied.
 
 ## Bots
 

@@ -64,6 +64,25 @@ export interface SceneCallbacks {
   onActivateRuinIntent: (ruinId: string) => void;
 }
 
+/** Client-only rendering tuning (persisted in `clientSettings.ts`). */
+export interface SceneVisualSettings {
+  /** Scales exponential distance fog density when fog is enabled. */
+  readonly fogDensityMul: number;
+  /** Scales hemisphere, sun, and ambient fill in `flameLighting.ts`. */
+  readonly fillLightMul: number;
+  /** `WebGLRenderer.toneMappingExposure`. */
+  readonly toneMappingExposure: number;
+  /** Multiplies sky dome `uHaze` from zone presets. */
+  readonly skyHazeMul: number;
+}
+
+export const DEFAULT_SCENE_VISUAL: SceneVisualSettings = Object.freeze({
+  fogDensityMul: 1,
+  fillLightMul: 1,
+  toneMappingExposure: 1.15,
+  skyHazeMul: 1,
+});
+
 const MOVE_SPEED = 22;
 const TMP = new THREE.Vector3();
 const CAM_OFFSET_INIT = new THREE.Vector3(0, 8, 18);
@@ -106,6 +125,7 @@ export class RoomScene {
   private rafHandle = 0;
   private currentZone: Zone = 'safe';
   private fogEnabled = true;
+  private fogDensityMul = DEFAULT_SCENE_VISUAL.fogDensityMul;
   private labelMode: WorldLabelMode = getLabelMode();
   /** Latest snapshot for label text when `labelMode` changes. */
   private lastSnap: RoomSnapshot | null = null;
@@ -128,10 +148,13 @@ export class RoomScene {
     callbacks: SceneCallbacks,
     initialTier: FxTier,
     fogEnabled = true,
+    visual?: Partial<SceneVisualSettings>,
   ) {
     this.canvas = canvas;
     this.callbacks = callbacks;
     this.fogEnabled = fogEnabled;
+    const v: SceneVisualSettings = { ...DEFAULT_SCENE_VISUAL, ...visual };
+    this.fogDensityMul = v.fogDensityMul;
 
     this.renderer = new THREE.WebGLRenderer({
       canvas,
@@ -144,7 +167,7 @@ export class RoomScene {
     this.renderer.setClearColor(0x231b26, 1);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.15;
+    this.renderer.toneMappingExposure = v.toneMappingExposure;
 
     this.scene = new THREE.Scene();
     this.applyExpFogForCurrentZone();
@@ -155,8 +178,9 @@ export class RoomScene {
 
     this.clock = new THREE.Clock();
 
-    this.sky = createDeadSky(this.scene);
+    this.sky = createDeadSky(this.scene, { initialHazeMul: v.skyHazeMul });
     this.lighting = createFlameLighting(this.scene, this.renderer, initialTier);
+    this.lighting.setFillLightMul(v.fillLightMul);
     // Stored convention: sky's `uSunDir` points TOWARD the sun, lighting's
     // `setSunDirection` takes the FROM-the-sun vector. They are inverses.
     // The sun sits low (~12° above horizon) and slightly to the player's
@@ -168,11 +192,9 @@ export class RoomScene {
 
     const groundGeom = new THREE.PlaneGeometry(3600, 3600, 320, 320);
     this.groundMat = new THREE.MeshStandardMaterial({
-      // Mid-grey ash base. Bright enough that the directional sun's grazing
-      // light actually reads as "sun-side" vs "shadow-side" on dune slopes,
-      // dim enough to fit the foggy night mood.
-      color: 0x6b6976,
-      roughness: 0.92,
+      // Cool grey ash base; dune shader layers frost grain + rim on top.
+      color: 0x636a78,
+      roughness: 0.9,
       metalness: 0.02,
       emissive: 0x0c0a12,
     });
@@ -248,9 +270,30 @@ export class RoomScene {
     this.applyExpFogForCurrentZone();
   }
 
+  setFogDensityMul(mul: number): void {
+    this.fogDensityMul = THREE.MathUtils.clamp(mul, 0, 2.5);
+    this.applyExpFogForCurrentZone();
+  }
+
+  setFillLightMul(mul: number): void {
+    this.lighting.setFillLightMul(mul);
+  }
+
+  setToneMappingExposure(exposure: number): void {
+    this.renderer.toneMappingExposure = THREE.MathUtils.clamp(exposure, 0.35, 2.75);
+  }
+
+  setSkyHazeMul(mul: number): void {
+    this.sky.setSkyHazeMultiplier(mul);
+  }
+
+  private expFogDensityForZone(zone: Zone): number {
+    return fogDensityForZone(zone) * 0.52 * this.fogDensityMul;
+  }
+
   private applyExpFogForCurrentZone(): void {
     if (this.fogEnabled) {
-      this.scene.fog = new THREE.FogExp2(0x111522, clientExpFogDensity(this.currentZone));
+      this.scene.fog = new THREE.FogExp2(0x111522, this.expFogDensityForZone(this.currentZone));
     } else {
       this.scene.fog = null;
     }
@@ -753,14 +796,6 @@ export class RoomScene {
     this.sky.dispose();
     this.renderer.dispose();
   }
-}
-
-/**
- * Slightly softer than server fog density so exp² fog does not eat all
- * skylight on mid-distance dunes (server sim keeps canonical densities).
- */
-function clientExpFogDensity(zone: Zone): number {
-  return fogDensityForZone(zone) * 0.52;
 }
 
 function zoneIntensityScale(zone: Zone): number {

@@ -18,6 +18,10 @@ export interface RoomOptionsCallbacks {
   onFxTierChange: (tier: FxTier) => void;
   onLabelModeChange: (mode: WorldLabelMode) => void;
   onFogChange: (enabled: boolean) => void;
+  onFogDensityMulChange: (mul: number) => void;
+  onFillLightMulChange: (mul: number) => void;
+  onToneExposureChange: (exposure: number) => void;
+  onSkyHazeMulChange: (mul: number) => void;
   onDisplayNameChange: (name: string) => void;
   /** Live client preview while dragging the dune scale slider. */
   onDuneHeightScalePreview: (scale: number) => void;
@@ -27,6 +31,10 @@ export interface RoomOptionsCallbacks {
     readonly fxTier: FxTier;
     readonly labelMode: WorldLabelMode;
     readonly fogEnabled: boolean;
+    readonly fogDensityMul: number;
+    readonly fillLightMul: number;
+    readonly toneExposure: number;
+    readonly skyHazeMul: number;
     readonly displayName: string;
     readonly race: Race;
     readonly duneHeightScale: number;
@@ -176,6 +184,54 @@ function makeDuneScaleKnob(
   };
 }
 
+function makeFloatSlider(
+  min: number,
+  max: number,
+  step: number,
+  value: number,
+  decimals: number,
+  onChange: (v: number) => void,
+): { row: HTMLElement; input: HTMLInputElement } {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;align-items:center;gap:8px;flex:1;min-width:0';
+
+  const range = document.createElement('input');
+  range.type = 'range';
+  range.min = String(min);
+  range.max = String(max);
+  range.step = String(step);
+  const clamped = Math.max(min, Math.min(max, value));
+  range.value = String(clamped);
+  range.style.cssText = [
+    'flex:1',
+    'min-width:64px',
+    'height:4px',
+    'accent-color:#5b7cff',
+    'cursor:pointer',
+  ].join(';');
+
+  const badge = document.createElement('span');
+  badge.style.cssText = 'flex:0 0 40px;text-align:right;font-size:12px;opacity:0.92';
+
+  const fmt = (x: number): string => x.toFixed(decimals);
+  const read = (): number => {
+    const n = Number(range.value);
+    return Math.max(min, Math.min(max, Number.isFinite(n) ? n : min));
+  };
+
+  const apply = (): void => {
+    const v = read();
+    badge.textContent = fmt(v);
+    range.setAttribute('aria-valuetext', fmt(v));
+    onChange(v);
+  };
+
+  badge.textContent = fmt(read());
+  range.addEventListener('input', apply);
+  wrap.append(range, badge);
+  return { row: wrap, input: range };
+}
+
 export function createRoomOptionsOverlay(cb: RoomOptionsCallbacks): RoomOptionsOverlay {
   const root = document.createElement('div');
   root.id = 'room-options';
@@ -195,7 +251,7 @@ export function createRoomOptionsOverlay(cb: RoomOptionsCallbacks): RoomOptionsO
   const panel = document.createElement('div');
   panel.style.cssText = [
     'width:min(92vw,340px)',
-    'max-height:min(72vh,360px)',
+    'max-height:min(82vh,520px)',
     'overflow:hidden',
     'display:flex',
     'flex-direction:column',
@@ -279,20 +335,38 @@ export function createRoomOptionsOverlay(cb: RoomOptionsCallbacks): RoomOptionsO
   const fogCheck = document.createElement('input');
   fogCheck.type = 'checkbox';
   fogCheck.checked = cb.initial.fogEnabled;
-  fogCheck.setAttribute('aria-label', 'Distance fog');
-  fogCheck.style.cssText = 'width:16px;height:16px;accent-color:#5b7cff;cursor:pointer';
+  fogCheck.setAttribute('aria-label', 'Distance fog on');
+  fogCheck.title = 'Exponential zone fog';
+  fogCheck.style.cssText = 'width:16px;height:16px;accent-color:#5b7cff;cursor:pointer;flex-shrink:0';
+  fogWrap.appendChild(fogCheck);
+
+  const fogDensitySlider = makeFloatSlider(0, 2.5, 0.05, cb.initial.fogDensityMul, 2, (v) => {
+    cb.onFogDensityMulChange(v);
+  });
+  fogDensitySlider.input.disabled = !cb.initial.fogEnabled;
   fogCheck.addEventListener('change', () => {
     cb.onFogChange(fogCheck.checked);
+    fogDensitySlider.input.disabled = !fogCheck.checked;
   });
-  const fogHint = document.createElement('span');
-  fogHint.textContent = 'Thickens with zone; off = clearer vista';
-  fogHint.style.cssText = 'font-size:11px;opacity:0.78;line-height:1.25';
-  fogWrap.append(fogCheck, fogHint);
+
+  const fillSlider = makeFloatSlider(0.15, 2.75, 0.05, cb.initial.fillLightMul, 2, (v) => {
+    cb.onFillLightMulChange(v);
+  });
+  const exposureSlider = makeFloatSlider(0.35, 2.75, 0.05, cb.initial.toneExposure, 2, (v) => {
+    cb.onToneExposureChange(v);
+  });
+  const skyHazeSlider = makeFloatSlider(0, 1.5, 0.05, cb.initial.skyHazeMul, 2, (v) => {
+    cb.onSkyHazeMulChange(v);
+  });
 
   panelGraphics.append(
     compactRow('Quality', fxKnob),
     compactRow('Labels', labelKnob),
     compactRow('Fog', fogWrap),
+    compactRow('Fog ×', fogDensitySlider.row),
+    compactRow('Fill', fillSlider.row),
+    compactRow('Exposure', exposureSlider.row),
+    compactRow('Sky', skyHazeSlider.row),
     compactRow('Dunes', duneKnob.row),
   );
 
