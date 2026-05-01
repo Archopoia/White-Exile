@@ -17,6 +17,7 @@ const FX_KNOB_LABEL: Readonly<Record<FxTier, string>> = Object.freeze({
 export interface RoomOptionsCallbacks {
   onFxTierChange: (tier: FxTier) => void;
   onLabelModeChange: (mode: WorldLabelMode) => void;
+  onFogChange: (enabled: boolean) => void;
   onDisplayNameChange: (name: string) => void;
   /** Live client preview while dragging the dune scale slider. */
   onDuneHeightScalePreview: (scale: number) => void;
@@ -25,6 +26,7 @@ export interface RoomOptionsCallbacks {
   initial: {
     readonly fxTier: FxTier;
     readonly labelMode: WorldLabelMode;
+    readonly fogEnabled: boolean;
     readonly displayName: string;
     readonly race: Race;
     readonly duneHeightScale: number;
@@ -272,9 +274,25 @@ export function createRoomOptionsOverlay(cb: RoomOptionsCallbacks): RoomOptionsO
 
   const duneKnob = makeDuneScaleKnob(cb.initial.duneHeightScale, cb.onDuneHeightScalePreview, cb.onDuneHeightScaleCommit);
 
+  const fogWrap = document.createElement('div');
+  fogWrap.style.cssText = 'display:flex;align-items:center;gap:8px;flex:1;min-width:0';
+  const fogCheck = document.createElement('input');
+  fogCheck.type = 'checkbox';
+  fogCheck.checked = cb.initial.fogEnabled;
+  fogCheck.setAttribute('aria-label', 'Distance fog');
+  fogCheck.style.cssText = 'width:16px;height:16px;accent-color:#5b7cff;cursor:pointer';
+  fogCheck.addEventListener('change', () => {
+    cb.onFogChange(fogCheck.checked);
+  });
+  const fogHint = document.createElement('span');
+  fogHint.textContent = 'Thickens with zone; off = clearer vista';
+  fogHint.style.cssText = 'font-size:11px;opacity:0.78;line-height:1.25';
+  fogWrap.append(fogCheck, fogHint);
+
   panelGraphics.append(
     compactRow('Quality', fxKnob),
     compactRow('Labels', labelKnob),
+    compactRow('Fog', fogWrap),
     compactRow('Dunes', duneKnob.row),
   );
 

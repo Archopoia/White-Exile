@@ -105,6 +105,7 @@ export class RoomScene {
   private readonly moveInterval = 1 / 20;
   private rafHandle = 0;
   private currentZone: Zone = 'safe';
+  private fogEnabled = true;
   private labelMode: WorldLabelMode = getLabelMode();
   /** Latest snapshot for label text when `labelMode` changes. */
   private lastSnap: RoomSnapshot | null = null;
@@ -122,9 +123,15 @@ export class RoomScene {
   /** Latest ruins seen so the F key can target the closest one. */
   private knownRuins: RuinSnapshot[] = [];
 
-  constructor(canvas: HTMLCanvasElement, callbacks: SceneCallbacks, initialTier: FxTier) {
+  constructor(
+    canvas: HTMLCanvasElement,
+    callbacks: SceneCallbacks,
+    initialTier: FxTier,
+    fogEnabled = true,
+  ) {
     this.canvas = canvas;
     this.callbacks = callbacks;
+    this.fogEnabled = fogEnabled;
 
     this.renderer = new THREE.WebGLRenderer({
       canvas,
@@ -135,9 +142,12 @@ export class RoomScene {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(window.innerWidth, window.innerHeight, false);
     this.renderer.setClearColor(0x231b26, 1);
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.15;
 
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.FogExp2(0x111522, fogDensityForZone('safe'));
+    this.applyExpFogForCurrentZone();
 
     this.camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, 0.1, 4000);
     this.camera.position.set(0, 14, 28);
@@ -233,6 +243,19 @@ export class RoomScene {
     this.lighting.setTier(tier);
   }
 
+  setFogEnabled(enabled: boolean): void {
+    this.fogEnabled = enabled;
+    this.applyExpFogForCurrentZone();
+  }
+
+  private applyExpFogForCurrentZone(): void {
+    if (this.fogEnabled) {
+      this.scene.fog = new THREE.FogExp2(0x111522, clientExpFogDensity(this.currentZone));
+    } else {
+      this.scene.fog = null;
+    }
+  }
+
   setLabelMode(mode: WorldLabelMode): void {
     this.labelMode = mode;
     persistLabelMode(mode);
@@ -318,7 +341,7 @@ export class RoomScene {
         this.lighting.setLocalRadius(p.lightRadius);
         if (p.zone !== this.currentZone) {
           this.currentZone = p.zone;
-          this.scene.fog = new THREE.FogExp2(0x111522, fogDensityForZone(p.zone));
+          this.applyExpFogForCurrentZone();
           this.renderer.setClearColor(zoneClearColor(p.zone), 1);
           this.groundMat.emissive.setHex(zoneGroundColor(p.zone));
           this.sky.setZoneTone(p.zone);
@@ -730,6 +753,14 @@ export class RoomScene {
     this.sky.dispose();
     this.renderer.dispose();
   }
+}
+
+/**
+ * Slightly softer than server fog density so exp² fog does not eat all
+ * skylight on mid-distance dunes (server sim keeps canonical densities).
+ */
+function clientExpFogDensity(zone: Zone): number {
+  return fogDensityForZone(zone) * 0.52;
 }
 
 function zoneIntensityScale(zone: Zone): number {

@@ -8,11 +8,13 @@
  */
 import {
   getDisplayName,
+  getFogEnabled,
   getLabelMode,
   getFxTier,
   getRace,
   getResumeToken,
   setDisplayName,
+  setFogEnabled,
   setFxTier,
   setLabelMode,
   setRace,
@@ -51,6 +53,7 @@ function boot(): RunningClient {
   setRace(race);
   const fxTier = getFxTier();
   const labelMode = getLabelMode();
+  const fogEnabled = getFogEnabled();
 
   const hud: HudState = {
     status: 'connecting',
@@ -79,6 +82,7 @@ function boot(): RunningClient {
       onActivateRuinIntent: (ruinId) => net?.sendActivateRuin(ruinId),
     },
     fxTier,
+    fogEnabled,
   );
   scene.setLocalRace(race);
   scene.setLabelMode(labelMode);
@@ -91,6 +95,10 @@ function boot(): RunningClient {
     onLabelModeChange: (mode: WorldLabelMode) => {
       setLabelMode(mode);
       scene.setLabelMode(mode);
+    },
+    onFogChange: (enabled: boolean) => {
+      setFogEnabled(enabled);
+      scene.setFogEnabled(enabled);
     },
     onDisplayNameChange: (name: string) => {
       setDisplayName(name);
@@ -105,6 +113,7 @@ function boot(): RunningClient {
     initial: {
       fxTier,
       labelMode,
+      fogEnabled,
       displayName,
       race,
       duneHeightScale: DEFAULT_WORLD_CONFIG.duneHeightScale,

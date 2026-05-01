@@ -23,6 +23,7 @@ const KEY_LABELS_LEGACY = 'rtRoomLabels';
 const KEY_RACE = 'rtRoom.race';
 const KEY_NAME = 'rtRoom.displayName';
 const KEY_TOKEN = 'rtRoom.resumeToken';
+const KEY_FOG = 'rtRoom.fog';
 
 function readLs(key: string): string | null {
   try {
@@ -68,6 +69,15 @@ export function getLabelMode(): WorldLabelMode {
 
 export function setLabelMode(mode: WorldLabelMode): void {
   writeLs(KEY_LABELS, mode);
+}
+
+/** Exponential distance fog on the dunes (client-only visual). Default on. */
+export function getFogEnabled(): boolean {
+  return readLs(KEY_FOG) !== '0';
+}
+
+export function setFogEnabled(enabled: boolean): void {
+  writeLs(KEY_FOG, enabled ? '1' : '0');
 }
 
 export function getRace(): Race {

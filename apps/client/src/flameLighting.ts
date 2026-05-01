@@ -2,8 +2,9 @@
  * Flame lighting + flame mesh system.
  *
  * Real lights with shadows:
- *   - HemisphereLight + low-intensity DirectionalLight (the dead sun) provide
- *     the foggy "moonlight" baseline. The sun casts shadows on med/high so
+ *   - AmbientLight (cool skylight fill) + HemisphereLight (sky vs ground
+ *     bounce) + DirectionalLight (dead sun) give visible global illumination
+ *     so the dunes are never "torch only". The sun casts shadows on med/high.
  *     ruins, players, and followers throw long ambient shadows on the dunes.
  *   - Each player owns a "flame" — a custom additive shader on crossed quads
  *     plus a PointLight at the player position. The PointLight casts shadows
@@ -34,6 +35,9 @@ export interface FlameTierConfig {
   readonly sunIntensity: number;
 }
 
+/** Uniform omnidirectional skylight — tuned so foggy nights still read lit. */
+const AMBIENT_SKYLIGHT_BASE = 0.48;
+
 const TIER_CONFIG: Readonly<Record<FxTier, FlameTierConfig>> = Object.freeze({
   low: {
     sunShadow: false,
@@ -43,11 +47,10 @@ const TIER_CONFIG: Readonly<Record<FxTier, FlameTierConfig>> = Object.freeze({
     poolShadow: false,
     poolShadowMapSize: 0,
     poolShadowCount: 0,
-    // Hemisphere is the cheap fill; the sun is the directional that creates
-    // slope shading on the dunes. We keep the sun clearly stronger than the
-    // hemisphere so dune crests and lee sides actually read as different.
-    hemisphereIntensity: 0.32,
-    sunIntensity: 0.85,
+    // Strong hemisphere + moderate sun: global fill must be obvious on
+    // rough ash (high roughness kills contrast otherwise).
+    hemisphereIntensity: 1.05,
+    sunIntensity: 0.62,
   },
   med: {
     sunShadow: true,
@@ -57,8 +60,8 @@ const TIER_CONFIG: Readonly<Record<FxTier, FlameTierConfig>> = Object.freeze({
     poolShadow: false,
     poolShadowMapSize: 0,
     poolShadowCount: 0,
-    hemisphereIntensity: 0.28,
-    sunIntensity: 0.95,
+    hemisphereIntensity: 0.98,
+    sunIntensity: 0.68,
   },
   high: {
     sunShadow: true,
@@ -68,13 +71,16 @@ const TIER_CONFIG: Readonly<Record<FxTier, FlameTierConfig>> = Object.freeze({
     poolShadow: true,
     poolShadowMapSize: 256,
     poolShadowCount: 3,
-    hemisphereIntensity: 0.25,
-    sunIntensity: 1.05,
+    hemisphereIntensity: 0.92,
+    sunIntensity: 0.74,
   },
 });
 
 const POOL_SIZE = 8;
-const SUN_SHADOW_RADIUS = 80;
+/** Ortho half-extent (m) for sun shadows — fixed in world space around origin. */
+const SUN_SHADOW_RADIUS = 520;
+/** Sun sits far along the inverse light ray so direction is stable everywhere. */
+const SUN_WORLD_DISTANCE = 1600;
 const FLAME_HEIGHT = 1.6;
 
 const RACE_FLAME_COLOR: Readonly<Record<Race, number>> = Object.freeze({
@@ -269,17 +275,24 @@ export function createFlameLighting(
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.shadowMap.autoUpdate = true;
 
-  // Hemisphere fill: cool sky (slate blue), warmer ash ground.
-  const hemi = new THREE.HemisphereLight(0x4a5878, 0x322628, cfg.hemisphereIntensity);
+  // Hemisphere: brighter sky vs warm ground so dunes pick up N·(sky-hemi).
+  const hemi = new THREE.HemisphereLight(0x92a8d0, 0x6a5850, cfg.hemisphereIntensity);
   scene.add(hemi);
 
+  // Omnidirectional skylight — this is what reads as "ambient / GI fill" in
+  // Three.js (uniform, not directional). Without it, only the torch and sun
+  // carve pockets of light out of black fog.
+  const ambient = new THREE.AmbientLight(0xc8daf8, AMBIENT_SKYLIGHT_BASE);
+  scene.add(ambient);
+
   // Dead sun: warm desaturated red-orange — a dying star bleeding through
-  // the fog. Wide ortho shadow camera tracks the player so we get long
-  // shadows in the area visible through the fog without paying for a global
-  // shadow.
+  // the fog. Position and target are FIXED in world space (never follow the
+  // player). If they moved with the camera/player, the shadow frustum would
+  // slide across the dunes and the same landmark would brighten/darken for
+  // no physical reason as you walk.
   const sun = new THREE.DirectionalLight(0xc78a72, cfg.sunIntensity);
-  sun.position.set(60, 120, -90);
-  sun.target.position.set(0, 0, 0);
+  const sunTarget = new THREE.Vector3(0, 0, 0);
+  sun.target.position.copy(sunTarget);
   scene.add(sun);
   scene.add(sun.target);
 
@@ -303,13 +316,10 @@ export function createFlameLighting(
   }
 
   let attachTarget: THREE.Object3D | null = null;
-  let currentRace: Race = 'emberfolk';
   let localRadius = 14;
   let zoneScale = 1;
   let heroBaseIntensity = 3.6;
-  // Sun travels from this direction toward the player. (-y because the sun
-  // is up and shines down.) Stored separately so the shadow-camera tracking
-  // in update() doesn't depend on the sun's mutating world position.
+  /** Parallel light rays travel along this (sun → scene), fixed in world space. */
   const sunDir = new THREE.Vector3(0.4, -0.55, 0.7).normalize();
 
   function applyShadowSettings(): void {
@@ -321,8 +331,8 @@ export function createFlameLighting(
       sun.shadow.camera.right = SUN_SHADOW_RADIUS;
       sun.shadow.camera.top = SUN_SHADOW_RADIUS;
       sun.shadow.camera.bottom = -SUN_SHADOW_RADIUS;
-      sun.shadow.camera.near = 1;
-      sun.shadow.camera.far = 400;
+      sun.shadow.camera.near = 2;
+      sun.shadow.camera.far = 3200;
       sun.shadow.bias = -0.0006;
       sun.shadow.normalBias = 0.05;
       sun.shadow.radius = 4;
@@ -367,6 +377,8 @@ export function createFlameLighting(
   }
 
   applyShadowSettings();
+  applyFixedSunWorldPose();
+  syncFillLights();
 
   function setLocalAttachment(target: THREE.Object3D, race: Race): void {
     if (attachTarget && attachTarget !== target) {
@@ -381,7 +393,6 @@ export function createFlameLighting(
   }
 
   function setRace(race: Race): void {
-    currentRace = race;
     const c = RACE_FLAME_COLOR[race];
     heroFlame.setColor(c);
     heroLight.color.setHex(c);
@@ -433,26 +444,46 @@ export function createFlameLighting(
     }
   }
 
-  function setZoneIntensity(scale: number): void {
-    zoneScale = THREE.MathUtils.clamp(scale, 0.4, 1.4);
+  function syncFillLights(): void {
     hemi.intensity = cfg.hemisphereIntensity * zoneScale;
     sun.intensity = cfg.sunIntensity * zoneScale;
+    // Keep skylight fill from collapsing in deep zones (dead would be pitch black).
+    const fillT = THREE.MathUtils.clamp((zoneScale - 0.4) / 1.0, 0, 1);
+    const fillMul = 0.58 + 0.42 * fillT;
+    ambient.intensity = AMBIENT_SKYLIGHT_BASE * fillMul;
+  }
+
+  function setZoneIntensity(scale: number): void {
+    zoneScale = THREE.MathUtils.clamp(scale, 0.4, 1.4);
+    syncFillLights();
+  }
+
+  function applyFixedSunWorldPose(): void {
+    sunDir.normalize();
+    // Light rays travel parallel to sunDir (from sun toward the scene).
+    // Sun behind the target along -sunDir so (target - sun) ∥ sunDir.
+    sun.position.set(
+      sunTarget.x - sunDir.x * SUN_WORLD_DISTANCE,
+      sunTarget.y - sunDir.y * SUN_WORLD_DISTANCE,
+      sunTarget.z - sunDir.z * SUN_WORLD_DISTANCE,
+    );
+    sun.target.position.copy(sunTarget);
+    sun.target.updateMatrixWorld();
+    sun.updateMatrixWorld();
   }
 
   function setSunDirection(dir: THREE.Vector3): void {
     sunDir.copy(dir).normalize();
+    applyFixedSunWorldPose();
   }
 
   function setTier(tier: FxTier): void {
     if (tier === currentTier) return;
     currentTier = tier;
     cfg = TIER_CONFIG[tier];
-    hemi.intensity = cfg.hemisphereIntensity * zoneScale;
-    sun.intensity = cfg.sunIntensity * zoneScale;
+    syncFillLights();
     applyShadowSettings();
   }
-
-  const tmpV = new THREE.Vector3();
 
   function update(dt: number, time: number): void {
     void dt;
@@ -460,20 +491,6 @@ export function createFlameLighting(
     const heroFlick = flickerNoise(time, 0);
     heroFlame.uniforms.uIntensity.value = heroFlick;
     heroLight.intensity = heroBaseIntensity * heroFlick;
-
-    if (attachTarget) {
-      attachTarget.getWorldPosition(tmpV);
-      // Center the sun (and its ortho shadow camera) on the player. The sun
-      // sits 200 units back along its stored direction so a 80-unit ortho box
-      // covers the visible play area regardless of where the player walks.
-      sun.position.set(
-        tmpV.x - sunDir.x * 200,
-        tmpV.y - sunDir.y * 200,
-        tmpV.z - sunDir.z * 200,
-      );
-      sun.target.position.set(tmpV.x, tmpV.y, tmpV.z);
-      sun.target.updateMatrixWorld();
-    }
 
     for (let i = 0; i < flamePool.length; i++) {
       const slot = flamePool[i];
@@ -483,11 +500,11 @@ export function createFlameLighting(
       slot.mesh.uniforms.uTime.value = time;
       slot.mesh.uniforms.uIntensity.value = flick;
     }
-    void currentRace;
   }
 
   function dispose(): void {
     scene.remove(hemi);
+    scene.remove(ambient);
     scene.remove(sun);
     scene.remove(sun.target);
     if (attachTarget) {
