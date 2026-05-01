@@ -1,0 +1,61 @@
+---
+description: Keep engine code, docs, rules, agents, and skills aligned with architecture changes
+alwaysApply: true
+lastReviewed: 2026-03-20
+---
+# Self-Maintenance and Drift Control
+
+Prevent drift across engine implementation, runtime contracts, docs, rules, agents, and skills.
+
+Post-migration policy: treat active runtime contracts and quality gates as steady-state architecture, not temporary migration scaffolding.
+End-state hygiene: remove stale migration-era names/labels/docs from canonical surfaces once migration is complete.
+
+## 1) No-Drift Requirement
+
+When behavior, contracts, APIs, naming, or architecture changes:
+
+- Update canonical docs first (`llms.txt`, `docs/**`, `design/**`, canonical rules).
+- Update engine/runtime code paths that implement the changed contract in the same session (`src/**`, `wasm/**` as applicable).
+- Update affected `.cursor/rules/**`, `.cursor/agents/**`, and `.cursor/skills/**` in the same session.
+- Remove stale instructions instead of keeping old and new guidance in parallel.
+
+## 2) Drift Audit Triggers
+
+Run a focused drift audit whenever changes touch:
+
+- `src/core/PluginRegistry.ts` or plugin interface/hook contracts
+- runtime/save-load/event contracts in `src/**` and related runtime paths (`wasm/**` when in scope)
+- plugin lifecycle, prewarm, terrain-dispatch, autosave-intent, or HMR worker lifecycle policies
+- interaction-hitch methodology, diagnostics preset workflow, or first-look performance guidance
+- non-obvious targeted fixes or local guardrails whose rationale must stay visible at the exact code site
+- palette/tooling architecture (`PaletteRegistry`, `ToolPalette`, placement workflows)
+- component registration patterns or save/load contract schemas
+- canonical plugin/event documentation sections in `llms.txt`
+
+## 3) Freshness Metadata
+
+- Any updated rule/agent/skill must refresh frontmatter `lastReviewed` (`YYYY-MM-DD`).
+- New rule/agent/skill files must include `lastReviewed` at creation.
+
+## 4) Agent Routing for Maintenance
+
+- Use `migration-and-terminology` for field/type/API/terminology replacements.
+- Use `architecture-and-docs` after behavior/contract changes to verify canonical sync.
+- Use `verifier` for non-trivial maintenance passes before handoff when scope is broad.
+
+## 5) Done Criteria
+
+- No stale implementation paths remain in touched engine/runtime areas (`src/**`, `wasm/**`).
+- If behavior changed, implementation and docs are both updated in the same session (code + canonical docs + derived guidance).
+- Non-obvious targeted fixes keep a local rationale comment near the code that enforces them, so future readers know what bug/regression the guard is preventing.
+- No contradictory guidance remains across:
+  - `src/**` (behavior/contracts)
+  - `wasm/**` (when in scope)
+  - `.cursor/rules/**`
+  - `.cursor/agents/**`
+  - `.cursor/skills/**`
+  - `llms.txt`
+  - `docs/**`
+  - `design/**`
+- Hitch/performance postmortem lessons that change first-look guidance are reflected in canonical docs and debugging guidance, not left only in ad hoc chat history.
+- Touched governance files include updated `lastReviewed`.

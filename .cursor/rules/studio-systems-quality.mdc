@@ -1,0 +1,16 @@
+---
+description: Data-driven gameplay and system boundaries for src/systems
+globs: src/systems/**
+alwaysApply: false
+lastReviewed: 2026-03-22
+---
+
+# Systems gameplay quality (studio)
+
+Complements `.cursor/rules/engine-architecture.mdc` and `.cursor/rules/immersive-editor.mdc`.
+
+- Prefer data-driven tuning (config, registries, JSON) over magic numbers in hot paths.
+- Use delta time (`deltaTime`) for time-based simulation in the frame loop.
+- Avoid coupling UI DOM to simulation logic — use events / bus / editor contracts.
+- Document which design doc or `design/gdd/` file a feature implements when non-obvious.
+- State machines: document states and transitions when behavior is branching.

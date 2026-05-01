@@ -1,0 +1,65 @@
+---
+description: Strict TypeScript typing discipline
+alwaysApply: true
+lastReviewed: 2026-03-16
+---
+# TypeScript Typing Discipline
+
+Follow strict typing patterns for maximum AI compatibility.
+
+## Core Rules
+
+1. **No `any` types** - Use `unknown` with type guards if dynamic typing is needed
+2. **Explicit return types** - All exported functions must have explicit return types
+3. **Centralized types** - Shared types live in dedicated `.types.ts` or `.Types.ts` files
+4. **Strong type assumptions** - Trust TypeScript types, minimize runtime property checks
+5. **Type guards** - Use `is` functions for runtime type validation when needed
+
+## Examples
+
+### Good: Explicit types, no `any`
+
+```typescript
+function getEntity(id: string): EntityInfo | null {
+  const entity = inspectRegistry.getById(id);
+  return entity ? {
+    id: entity.id,
+    type: entity.type,
+    pluginId: entity.pluginId,
+    position: { x: entity.position.x, y: entity.position.y, z: entity.position.z },
+    properties: {},
+    components: [],
+  } : null;
+}
+```
+
+### Bad: Using `any`
+
+```typescript
+function getEntity(id: any): any {
+  // Don't do this - loses type safety
+}
+```
+
+### Good: Type guard for dynamic values
+
+```typescript
+function isEntityType(value: unknown): value is EntityType {
+  return typeof value === 'string' &&
+    ['torch', 'fog', 'npc', 'prop', 'vfx', 'water-spring', 'vegetation'].includes(value);
+}
+
+function placeEntity(type: unknown, position: Position3D): Promise<string | null> {
+  if (!isEntityType(type)) {
+    console.warn(`[gameAPI] Invalid entity type: ${type}`);
+    return Promise.resolve(null);
+  }
+  return placeEntityInternal(type, position);
+}
+```
+
+## Enforcement
+
+- TypeScript `strict: true` is enabled in `tsconfig.json`
+- Run `npm run check` before committing to catch type errors
+- No `@ts-ignore` or `@ts-expect-error` without justification

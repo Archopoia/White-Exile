@@ -1,0 +1,17 @@
+---
+description: Studio GDD structure and authoring gates for design/gdd
+globs: design/gdd/**
+alwaysApply: false
+lastReviewed: 2026-03-22
+---
+
+# Design document rules (studio)
+
+- Every design document MUST contain these sections: Overview, Player Fantasy, Detailed Rules, Formulas, Edge Cases, Dependencies, Tuning Knobs, Acceptance Criteria (adjust titles if the doc type differs, but keep the same intent).
+- Formulas must include variable definitions, expected value ranges, and example calculations.
+- Edge cases must explicitly state what happens, not only "handle gracefully".
+- Dependencies must be bidirectional where systems interact — if system A depends on B, B's doc must mention A.
+- Tuning knobs must specify safe ranges and what gameplay aspect they affect.
+- Acceptance criteria must be testable — pass/fail observable by QA.
+- Balance values must link to their source formula or rationale.
+- Write incrementally: skeleton first, then fill sections with user approval between major sections.

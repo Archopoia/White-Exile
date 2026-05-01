@@ -1,0 +1,16 @@
+---
+description: Test naming and structure for automated tests
+globs: tests/**
+alwaysApply: false
+lastReviewed: 2026-03-22
+---
+
+# Test standards (studio)
+
+- Prefer names like `test_[system]_[scenario]_[expectedResult]` (adapt to project test runner conventions).
+- Arrange / act / assert structure; one logical assertion focus per test when practical.
+- Unit tests avoid real filesystem/network unless explicitly integration tests.
+- Integration tests clean up listeners, timers, and temp state.
+- Performance tests record thresholds; fail when regressing beyond documented bounds.
+- Regression test required for fixed production bugs when testable without heroic setup.
+- Mock external I/O for fast deterministic runs.

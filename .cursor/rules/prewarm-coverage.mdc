@@ -1,0 +1,35 @@
+---
+description: Unified plugin prewarm coverage (localStorage + coverage keys; confirm vs full)
+globs: "{src/core/PluginPrewarmCoverage.ts,src/core/PluginPrewarmCoverageKeys.ts,src/systems/**}"
+alwaysApply: false
+lastReviewed: 2026-03-22
+---
+
+# Plugin Prewarm Coverage
+
+## Two orthogonal concepts
+
+1. **Session tier** — `PrewarmSessionCache` / `prewarmTier` (`cold` | `warm`): same JS bundle + renderer/menu fingerprint for this tab session; trims **staging** (warmup frames, extra `rAF` yields).
+2. **Plugin coverage** — `PluginPrewarmCoverage.ts`: per-tool stable `coverageKey` in `localStorage` (`cavedigger.pluginPrewarmCoverage.v1`). **`ToolPrewarmContext.allowGpuConfirmPath`**: WorldInit blocking prewarm sets **`true`** (same as idle). **Read hit** ⇒ **`confirm`** (skip redundant GPU). **Miss** ⇒ **`full`** prewarm, then `commitPluginCoverageSuccess`. Use `window.__FORCE_FULL_PLUGIN_PREWARM = true` (or env) to always run **full**.
+
+**Workload filters** — `ToolPrewarmContext.skipPrewarmPluginIds` / `onlyPrewarmPluginIds` narrow `PluginRegistry.createPrewarmWorkload` (blocking bar skips `torch-system`; **`post-load:deferred-torch-prewarm`** uses **`onlyPrewarmPluginIds: ['torch-system']`** + **`allowHeavyPrewarmDuringBoot: true`** so ticks run during `streaming`).
+
+**Torch** — `buildTorchPrewarmCoverageKey({ renderer })` embeds **`stableRendererPrewarmFingerprint(renderer)`** only (no volatile `info.render` fields). It is computable before the visible-material wait. **Read hit** + **`allowGpuConfirmPath`** ⇒ **`TorchSystem` can true no-op** (no mesh/particles/ladder). Cold / `__FORCE_FULL_PLUGIN_PREWARM` still runs the full path (deferred after `hideLoading()` when blocking skipped torch). On read misses in DEV, compare prefixes via `getStoredPluginCoverageKeyForDebug('torch-system')` vs `editorState.pluginPrewarmCoverageKey['torch-system']`.
+
+Do **not** add new tool-specific `localStorage` keys for prewarm. Extend `PluginPrewarmCoverageKeys.ts` with a versioned `build…CoverageKey` that includes **`stableRendererPrewarmFingerprint`** (rounded floats / stable color-space strings — not raw `buildRendererPrewarmFingerprint`) plus tool inputs. **Never** key water (or other materials) on `material.uuid` — use `buildWaterMaterialCoverageSignature` (shader identity).
+
+**Commit after prewarm:** For pipeline single-probe plugins, call `commitPluginCoverageSuccess` whenever `*PipelineWarmed` is true after the full path — the game loop may have warmed the pipeline *before* `runPrewarmPhase`, so `commit` must not be gated on “this call flipped warm from false→true”.
+
+**Confirm path must be synchronous:** For veg/formation/water, compute coverage + `resolvePluginPrewarmMode`, then **`return` immediately** on `confirm` — do **not** wrap the confirm branch in `await runWarmupTask`. Otherwise the cooperative `runPrewarmPhase` rAF loop attributes idle gaps to that plugin in `LoadPhaseTimer` (“plugin done” segment inflates).
+
+## EditorState
+
+Use `editorState.pluginPrewarmCoverageKey`, `pluginPrewarmReadHit`, `pluginPrewarmCommitted` keyed by `PLUGIN_PREWARM_IDS.*` — not torch-only fields.
+
+## Debugging
+
+Force full GPU prewarm: set `window.__FORCE_FULL_PLUGIN_PREWARM = true` before load, or `VITE_FORCE_FULL_PLUGIN_PREWARM=true`. See `docs/debug/Hitch_Debug_Playbook.md` if **confirm** skips cause first-use hitches.
+
+**Huge gap on `worldInit: prewarm plugin start: <plugin-id>` but tiny `done` for the previous plugin:** often **idle cooperative tick** — the heavy-prewarm gate was false while `bootPhase` was `playableCore`. Blocking WorldInit passes `allowHeavyPrewarmDuringBoot: true` on `ToolPrewarmContext` (and sets `editorState.blockingLoadingScreenToolPrewarm`) so `PluginRegistry` does not spin until `steadyState`. **Not** formation-specific GPU work if `done: formation-system` is still ~1–2ms.
+
+**Same gap but `[PluginRegistry] Finished prewarm for "Formation System" in ~2ms`:** the delay is **between** cooperative ticks — `requestAnimationFrame` was late because the **main thread** was busy (see `[Watchdog] Long frame`, `[RuntimeHealth] Degraded worker mode`, sync mesh fallback). **`PluginRegistry.runPrewarmPhase`** now inserts **`worldInit: prewarm main-thread stall (…ms waiting for frame…)`** on long frame waits (>100ms) so LoadPhaseTimer does **not** blame the next plugin’s `start:` line. The loading bar can still **look frozen** during those stalls (progress only advances on plugin callbacks); fixing stalls means mesh/worker health (e.g. module workers + dev extensions competing for the main thread).

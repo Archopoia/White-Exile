@@ -1,0 +1,35 @@
+---
+description: Enforce full migrations and canonical terminology
+alwaysApply: true
+lastReviewed: 2026-03-16
+---
+# Full Migration and Naming Rule
+
+When updating behavior, do complete migrations. Do not keep compatibility shims.
+
+Post-migration expectation: treat the selected architecture and contracts as steady-state and remove transition-era wording in touched canonical docs/rules.
+At the end of a migration, remove migration-era filenames/labels when they are no longer semantically required.
+Do not keep silent runtime fallbacks in canonical boot paths; fallback behavior, when needed, must be explicit and harness-scoped.
+
+## 1) No Legacy Compatibility Paths
+
+- Do not keep deprecated aliases, fallback fields, dual code paths, or "temporary" compatibility adapters.
+- When a field/type/API is replaced, remove old reads/writes in the same change.
+- Update save/load contracts, UI labels, docs, and callers together so the old term/path is fully gone.
+
+## 2) Canonical Terminology First
+
+- Before introducing a new term, search existing code/docs/rules for the canonical term already in use.
+- Reuse existing nomenclature if it already fits.
+- If renaming is required, pick one canonical term and apply it consistently across:
+  - runtime code
+  - inspectors/UI labels
+  - events/contracts
+  - docs/rules/reference files
+
+## 3) Done Criteria
+
+- No stale references to replaced terms in code paths touched by the change.
+- No contradictory terminology between `src/**`, `.cursor/rules/**`, `llms.txt`, and `docs/**` / `design/**`.
+- No "legacy"/"deprecated compatibility" comments left behind unless explicitly requested.
+- Treat `.cursor/plans/**` as historical planning artifacts, not canonical contracts.

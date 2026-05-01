@@ -1,0 +1,19 @@
+---
+description: Relaxed standards for throwaway prototypes
+globs: prototypes/**
+alwaysApply: false
+lastReviewed: 2026-03-22
+---
+
+# Prototype code (studio)
+
+Prototypes validate ideas; production polish lives in `src/**`.
+
+## Allowed
+
+- Hardcoded values, minimal comments, simple architecture, globals, copy-paste, debug prints, placeholders.
+
+## Required
+
+- Each prototype in `prototypes/[name]/` with a `README.md` documenting hypothesis, how to run, and outcome.
+- Do not import prototype code from `src/**` — keep boundaries clear.
