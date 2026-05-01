@@ -15,13 +15,11 @@ import { DEFAULT_RACE, RACES, isRace, type Race } from '@realtime-room/shared';
 import type { FxTier } from './flameLighting.js';
 import {
   CODE_DEFAULT_DISPLAY_NAME,
-  CODE_DEFAULT_FILL_LIGHT_MUL,
-  CODE_DEFAULT_FOG_DENSITY_MUL,
   CODE_DEFAULT_FX_TIER,
   CODE_DEFAULT_LABEL_MODE,
-  CODE_DEFAULT_SKY_HAZE_MUL,
-  CODE_DEFAULT_TONE_EXPOSURE,
-  CODE_DEFAULT_TORCH_REACH_MUL,
+  SCENE_FLOAT_FIELDS,
+  sceneFloatField,
+  type SceneFloatKey,
 } from './roomOptionsDefaults.js';
 import type { WorldLabelMode } from './tooltips.js';
 
@@ -60,24 +58,39 @@ function readFloat(key: string, fallback: number): number {
 }
 
 /**
- * Build a clamped float scalar backed by `localStorage`. Returns the matching
- * `get` / `set` pair so the public API stays stable while the body collapses
- * to a single line per scalar.
+ * Build a clamped float scalar backed by `localStorage` from a manifest entry.
+ * Returns the matching `get` / `set` pair so the public API stays stable while
+ * the body collapses to a single line per scalar (driven by
+ * {@link SCENE_FLOAT_FIELDS}).
  */
-function defineFloatScalar(
-  key: string,
-  def: number,
-  min: number,
-  max: number,
-): { get: () => number; set: (v: number) => void } {
-  const clamp = (v: number): number => Math.max(min, Math.min(max, v));
+function defineFloatScalarFromManifest(key: SceneFloatKey): {
+  get: () => number;
+  set: (v: number) => void;
+} {
+  const f = sceneFloatField(key);
+  const clamp = (v: number): number => Math.max(f.clamp.min, Math.min(f.clamp.max, v));
   return {
-    get: () => clamp(readFloat(key, def)),
+    get: () => clamp(readFloat(f.lsKey, f.default)),
     set: (v) => {
-      writeLs(key, String(clamp(v)));
+      writeLs(f.lsKey, String(clamp(v)));
     },
   };
 }
+
+/** Lookup table built from the shared manifest. */
+const SCENE_FLOAT_SCALARS: Readonly<
+  Record<SceneFloatKey, { get: () => number; set: (v: number) => void }>
+> = Object.freeze(
+  SCENE_FLOAT_FIELDS.reduce<
+    Record<SceneFloatKey, { get: () => number; set: (v: number) => void }>
+  >(
+    (acc, f) => {
+      acc[f.key] = defineFloatScalarFromManifest(f.key);
+      return acc;
+    },
+    {} as Record<SceneFloatKey, { get: () => number; set: (v: number) => void }>,
+  ),
+);
 
 function isFxTier(value: unknown): value is FxTier {
   return value === 'low' || value === 'med' || value === 'high';
@@ -118,34 +131,28 @@ export function setFogEnabled(enabled: boolean): void {
   writeLs(KEY_FOG, enabled ? '1' : '0');
 }
 
-const fogDensity = defineFloatScalar('rtRoom.fogMul', CODE_DEFAULT_FOG_DENSITY_MUL, 0, 2.5);
-const fillLight = defineFloatScalar('rtRoom.fillMul', CODE_DEFAULT_FILL_LIGHT_MUL, 0.15, 2.75);
-const toneExposure = defineFloatScalar('rtRoom.toneExposure', CODE_DEFAULT_TONE_EXPOSURE, 0.35, 2.75);
-const skyHaze = defineFloatScalar('rtRoom.skyHazeMul', CODE_DEFAULT_SKY_HAZE_MUL, 0, 1.5);
-const torchReach = defineFloatScalar('rtRoom.torchReachMul', CODE_DEFAULT_TORCH_REACH_MUL, 0.1, 80);
-
 /** Multiplier on client exponential fog density (0 = none, 2.5 = very thick). Default 1. */
-export const getFogDensityMul = fogDensity.get;
-export const setFogDensityMul = fogDensity.set;
+export const getFogDensityMul = SCENE_FLOAT_SCALARS.fogDensityMul.get;
+export const setFogDensityMul = SCENE_FLOAT_SCALARS.fogDensityMul.set;
 
 /** Scales hemisphere + sun + ambient skylight. Default 1. */
-export const getFillLightMul = fillLight.get;
-export const setFillLightMul = fillLight.set;
+export const getFillLightMul = SCENE_FLOAT_SCALARS.fillLightMul.get;
+export const setFillLightMul = SCENE_FLOAT_SCALARS.fillLightMul.set;
 
 /** ACES tone-mapping exposure. Default aligned with `DEFAULT_SCENE_VISUAL`. */
-export const getToneMappingExposure = toneExposure.get;
-export const setToneMappingExposure = toneExposure.set;
+export const getToneMappingExposure = SCENE_FLOAT_SCALARS.toneExposure.get;
+export const setToneMappingExposure = SCENE_FLOAT_SCALARS.toneExposure.set;
 
 /** Multiplies sky dome haze vs zone presets. Default 1. */
-export const getSkyHazeMul = skyHaze.get;
-export const setSkyHazeMul = skyHaze.set;
+export const getSkyHazeMul = SCENE_FLOAT_SCALARS.skyHazeMul.get;
+export const setSkyHazeMul = SCENE_FLOAT_SCALARS.skyHazeMul.set;
 
 /**
  * Multiplies PointLight `distance` for every caravan torch (you + pooled players).
  * 1 = authored server radius mapping; raise for longer view without changing sim.
  */
-export const getTorchReachMul = torchReach.get;
-export const setTorchReachMul = torchReach.set;
+export const getTorchReachMul = SCENE_FLOAT_SCALARS.torchReachMul.get;
+export const setTorchReachMul = SCENE_FLOAT_SCALARS.torchReachMul.set;
 
 export function getRace(): Race {
   const raw = readLs(KEY_RACE);

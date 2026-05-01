@@ -10,13 +10,110 @@ import { mergeNprFromPartialBlob, NPR_DEFAULTS, type NprSettings } from './nprSe
 import { NPR_FIELDS, NPR_FIELD_KEYS } from './nprSchema.js';
 import type { WorldLabelMode } from './tooltips.js';
 
+/** Snapshot keys backed by a clamped float scalar (LS + slider + revert). */
+export type SceneFloatKey =
+  | 'fogDensityMul'
+  | 'fillLightMul'
+  | 'toneExposure'
+  | 'skyHazeMul'
+  | 'torchReachMul';
+
+/**
+ * One source of truth for every plain numeric scene tunable: storage key,
+ * default, persistence clamp, ESC-menu slider config, and display label.
+ *
+ * Adding a new scalar = one entry here + one field on {@link RoomOptionsSnapshot}
+ * + one callback on `RoomOptionsCallbacks` + one wiring line in `main.ts`.
+ *
+ * `clientSettings.ts` derives its `localStorage` get/set pairs from this list,
+ * `options.ts` builds slider rows from it, and {@link DEFAULT_SCENE_VISUAL}
+ * pulls its values from `default` here.
+ */
+export interface SceneFloatFieldDef {
+  readonly key: SceneFloatKey;
+  /** localStorage key, e.g. `'rtRoom.fogMul'`. */
+  readonly lsKey: string;
+  /** Code default applied when no LS value exists. */
+  readonly default: number;
+  /** Persistence clamp (matches `defineFloatScalar`). */
+  readonly clamp: { readonly min: number; readonly max: number };
+  /** ESC-menu slider config (may be tighter than `clamp` for usability). */
+  readonly slider: {
+    readonly min: number;
+    readonly max: number;
+    readonly step: number;
+    readonly decimals: number;
+  };
+  /** Short ESC-menu row label. */
+  readonly label: string;
+}
+
+export const SCENE_FLOAT_FIELDS: ReadonlyArray<SceneFloatFieldDef> = Object.freeze([
+  {
+    key: 'fogDensityMul',
+    lsKey: 'rtRoom.fogMul',
+    default: 1,
+    clamp: { min: 0, max: 2.5 },
+    slider: { min: 0, max: 2.5, step: 0.05, decimals: 2 },
+    label: 'Fog ×',
+  },
+  {
+    key: 'fillLightMul',
+    lsKey: 'rtRoom.fillMul',
+    default: 1,
+    clamp: { min: 0.15, max: 2.75 },
+    slider: { min: 0.15, max: 2.75, step: 0.05, decimals: 2 },
+    label: 'Fill',
+  },
+  {
+    key: 'toneExposure',
+    lsKey: 'rtRoom.toneExposure',
+    default: 1.32,
+    clamp: { min: 0.35, max: 2.75 },
+    slider: { min: 0.35, max: 2.75, step: 0.05, decimals: 2 },
+    label: 'Exposure',
+  },
+  {
+    key: 'skyHazeMul',
+    lsKey: 'rtRoom.skyHazeMul',
+    default: 1,
+    clamp: { min: 0, max: 1.5 },
+    slider: { min: 0, max: 1.5, step: 0.05, decimals: 2 },
+    label: 'Sky',
+  },
+  {
+    key: 'torchReachMul',
+    lsKey: 'rtRoom.torchReachMul',
+    default: 1,
+    // Persistence allows down to 0.1 even though the slider only exposes 0.25
+    // upward — leftover historic values still load instead of being clipped on read.
+    clamp: { min: 0.1, max: 80 },
+    slider: { min: 0.25, max: 80, step: 0.05, decimals: 2 },
+    label: 'Torches ×',
+  },
+]);
+
+const SCENE_FLOAT_BY_KEY: Readonly<Record<SceneFloatKey, SceneFloatFieldDef>> = Object.freeze(
+  SCENE_FLOAT_FIELDS.reduce<Record<SceneFloatKey, SceneFloatFieldDef>>(
+    (acc, f) => {
+      acc[f.key] = f;
+      return acc;
+    },
+    {} as Record<SceneFloatKey, SceneFloatFieldDef>,
+  ),
+);
+
+export function sceneFloatField(key: SceneFloatKey): SceneFloatFieldDef {
+  return SCENE_FLOAT_BY_KEY[key];
+}
+
 /** Matches prior `scene.ts` `DEFAULT_SCENE_VISUAL` (single source). */
 export const DEFAULT_SCENE_VISUAL: SceneVisualSettings = {
-  fogDensityMul: 1,
-  fillLightMul: 1,
-  toneMappingExposure: 1.32,
-  skyHazeMul: 1,
-  torchReachMul: 1,
+  fogDensityMul: SCENE_FLOAT_BY_KEY.fogDensityMul.default,
+  fillLightMul: SCENE_FLOAT_BY_KEY.fillLightMul.default,
+  toneMappingExposure: SCENE_FLOAT_BY_KEY.toneExposure.default,
+  skyHazeMul: SCENE_FLOAT_BY_KEY.skyHazeMul.default,
+  torchReachMul: SCENE_FLOAT_BY_KEY.torchReachMul.default,
 };
 
 export const CODE_DEFAULT_FX_TIER: FxTier = 'med';
@@ -28,12 +125,6 @@ export const CODE_DEFAULT_DISPLAY_NAME = 'guest';
 
 /** Matches `getFogEnabled` default (absence of `rtRoom.fog` !== '0'). */
 export const CODE_DEFAULT_FOG_ENABLED = true;
-
-export const CODE_DEFAULT_FOG_DENSITY_MUL = DEFAULT_SCENE_VISUAL.fogDensityMul;
-export const CODE_DEFAULT_FILL_LIGHT_MUL = DEFAULT_SCENE_VISUAL.fillLightMul;
-export const CODE_DEFAULT_TONE_EXPOSURE = DEFAULT_SCENE_VISUAL.toneMappingExposure;
-export const CODE_DEFAULT_SKY_HAZE_MUL = DEFAULT_SCENE_VISUAL.skyHazeMul;
-export const CODE_DEFAULT_TORCH_REACH_MUL = DEFAULT_SCENE_VISUAL.torchReachMul;
 
 export const CODE_DEFAULT_DUNE_HEIGHT_SCALE = DEFAULT_WORLD_CONFIG.duneHeightScale;
 
@@ -143,19 +234,19 @@ export function nprSettingsEqual(a: NprSettings, b: NprSettings, eps = 1e-4): bo
 }
 
 export function roomOptionsSnapshotEqual(a: RoomOptionsSnapshot, b: RoomOptionsSnapshot, eps = 1e-4): boolean {
-  return (
-    a.displayName === b.displayName &&
-    a.fxTier === b.fxTier &&
-    a.labelMode === b.labelMode &&
-    a.fogEnabled === b.fogEnabled &&
-    numClose(a.fogDensityMul, b.fogDensityMul, eps) &&
-    numClose(a.fillLightMul, b.fillLightMul, eps) &&
-    numClose(a.toneExposure, b.toneExposure, eps) &&
-    numClose(a.skyHazeMul, b.skyHazeMul, eps) &&
-    numClose(a.torchReachMul, b.torchReachMul, eps) &&
-    numClose(a.duneHeightScale, b.duneHeightScale, eps) &&
-    nprSettingsEqual(a.npr, b.npr, eps)
-  );
+  if (
+    a.displayName !== b.displayName ||
+    a.fxTier !== b.fxTier ||
+    a.labelMode !== b.labelMode ||
+    a.fogEnabled !== b.fogEnabled
+  ) {
+    return false;
+  }
+  for (const f of SCENE_FLOAT_FIELDS) {
+    if (!numClose(a[f.key], b[f.key], eps)) return false;
+  }
+  if (!numClose(a.duneHeightScale, b.duneHeightScale, eps)) return false;
+  return nprSettingsEqual(a.npr, b.npr, eps);
 }
 
 export function buildRoomOptionsSnapshotFromInitial(init: {
@@ -199,19 +290,21 @@ function isLabelModeValue(value: unknown): value is WorldLabelMode {
 
 /** Ship / repo defaults as a full snapshot (used when no user baseline exists). */
 export function buildCodeDefaultRoomOptionsSnapshot(): RoomOptionsSnapshot {
-  return {
+  const snap: RoomOptionsSnapshot = {
     displayName: CODE_DEFAULT_DISPLAY_NAME,
     fxTier: CODE_DEFAULT_FX_TIER,
     labelMode: CODE_DEFAULT_LABEL_MODE,
     fogEnabled: CODE_DEFAULT_FOG_ENABLED,
-    fogDensityMul: CODE_DEFAULT_FOG_DENSITY_MUL,
-    fillLightMul: CODE_DEFAULT_FILL_LIGHT_MUL,
-    toneExposure: CODE_DEFAULT_TONE_EXPOSURE,
-    skyHazeMul: CODE_DEFAULT_SKY_HAZE_MUL,
-    torchReachMul: CODE_DEFAULT_TORCH_REACH_MUL,
+    fogDensityMul: 0,
+    fillLightMul: 0,
+    toneExposure: 0,
+    skyHazeMul: 0,
+    torchReachMul: 0,
     duneHeightScale: CODE_DEFAULT_DUNE_HEIGHT_SCALE,
     npr: cloneNprSettings(NPR_DEFAULTS),
   };
+  for (const f of SCENE_FLOAT_FIELDS) snap[f.key] = f.default;
+  return snap;
 }
 
 function readFiniteScalar(value: unknown, fallback: number): number {
@@ -225,20 +318,19 @@ export function parseRoomOptionsSnapshotFromUnknown(value: unknown): RoomOptions
   if (!value || typeof value !== 'object') return null;
   const o = value as Record<string, unknown>;
   const code = buildCodeDefaultRoomOptionsSnapshot();
-  const npr = cloneNprSettings(mergeNprFromPartialBlob(o.npr));
-  return {
+  const out: RoomOptionsSnapshot = {
+    ...code,
     displayName: typeof o.displayName === 'string' ? o.displayName.slice(0, 64) : code.displayName,
     fxTier: isFxTierValue(o.fxTier) ? o.fxTier : code.fxTier,
     labelMode: isLabelModeValue(o.labelMode) ? o.labelMode : code.labelMode,
     fogEnabled: typeof o.fogEnabled === 'boolean' ? o.fogEnabled : code.fogEnabled,
-    fogDensityMul: readFiniteScalar(o.fogDensityMul, code.fogDensityMul),
-    fillLightMul: readFiniteScalar(o.fillLightMul, code.fillLightMul),
-    toneExposure: readFiniteScalar(o.toneExposure, code.toneExposure),
-    skyHazeMul: readFiniteScalar(o.skyHazeMul, code.skyHazeMul),
-    torchReachMul: readFiniteScalar(o.torchReachMul, code.torchReachMul),
     duneHeightScale: readFiniteScalar(o.duneHeightScale, code.duneHeightScale),
-    npr,
+    npr: cloneNprSettings(mergeNprFromPartialBlob(o.npr)),
   };
+  for (const f of SCENE_FLOAT_FIELDS) {
+    out[f.key] = readFiniteScalar(o[f.key], code[f.key]);
+  }
+  return out;
 }
 
 export function loadUserRevertBaseline(): RoomOptionsSnapshot | null {

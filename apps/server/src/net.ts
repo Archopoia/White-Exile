@@ -5,6 +5,7 @@
 import { randomUUID } from 'node:crypto';
 import { Server as IOServer, type Socket } from 'socket.io';
 import type { Server as HttpServer } from 'node:http';
+import type { z } from 'zod';
 import {
   ClientActivateRuinSchema,
   ClientHelloSchema,
@@ -132,56 +133,73 @@ function handleConnection(socket: Socket, room: Room, io: IOServer): void {
     socket.emit(EVT.server.snapshot, room.snapshot());
   });
 
-  socket.on(EVT.client.move, (raw: unknown) => {
-    if (!playerId) return;
-    if (!limits.move.take()) return;
-    const parsed = ClientMoveSchema.safeParse(raw);
-    if (!parsed.success) {
-      return reject('invalid_payload', 'bad move', 'move.invalid');
-    }
-    room.setPosition(playerId, parsed.data.position);
-  });
+  /**
+   * Generic intent binder: requires a known player, charges the limiter, runs
+   * the schema, and forwards the parsed payload to `handle`. Silent or
+   * `ServerError`-emitting depending on the failure (rate-limit floods stay
+   * silent on `client.move`; everything else gets a typed reject).
+   */
+  function bindIntent<S extends z.ZodTypeAny>(
+    evt: string,
+    schema: S,
+    limiter: TokenBucket,
+    spec: {
+      readonly tagOnReject: boolean;
+      readonly rateLimitMessage?: string;
+    },
+    handle: (data: z.infer<S>, pid: string) => void,
+  ): void {
+    socket.on(evt, (raw: unknown) => {
+      if (!playerId) return;
+      if (!limiter.take()) {
+        if (spec.tagOnReject) {
+          reject('rate_limit', spec.rateLimitMessage ?? `${evt} rate exceeded`, `${evt}.rate_limit`);
+        }
+        return;
+      }
+      const parsed = schema.safeParse(raw);
+      if (!parsed.success) {
+        return reject('invalid_payload', `bad ${evt}`, `${evt}.invalid`);
+      }
+      handle(parsed.data, playerId);
+    });
+  }
 
-  socket.on(EVT.client.roomSettingsPatch, (raw: unknown) => {
-    if (!playerId) return;
-    if (!limits.roomSettings.take()) {
-      return reject('rate_limit', 'room settings rate exceeded', 'roomSettingsPatch.rate_limit');
-    }
-    const parsed = ClientRoomSettingsPatchSchema.safeParse(raw);
-    if (!parsed.success) {
-      return reject('invalid_payload', 'bad roomSettingsPatch', 'roomSettingsPatch.invalid');
-    }
-    room.patchRoomSettings(parsed.data);
-    log.info(
-      { evt: 'config.updated', playerId, keys: Object.keys(parsed.data) },
-      'room settings updated',
-    );
-    io.to(ROOM_ID).emit(EVT.server.snapshot, room.snapshot());
-  });
+  bindIntent(
+    EVT.client.move,
+    ClientMoveSchema,
+    limits.move,
+    { tagOnReject: false },
+    (data, pid) => room.setPosition(pid, data.position),
+  );
 
-  socket.on(EVT.client.rescue, (raw: unknown) => {
-    if (!playerId) return;
-    if (!limits.rescue.take()) {
-      return reject('rate_limit', 'rescue rate exceeded', 'rescue.rate_limit');
-    }
-    const parsed = ClientRescueIntentSchema.safeParse(raw);
-    if (!parsed.success) {
-      return reject('invalid_payload', 'bad rescue', 'rescue.invalid');
-    }
-    room.enqueueRescue(playerId, parsed.data.followerId);
-  });
+  bindIntent(
+    EVT.client.roomSettingsPatch,
+    ClientRoomSettingsPatchSchema,
+    limits.roomSettings,
+    { tagOnReject: true, rateLimitMessage: 'room settings rate exceeded' },
+    (data, pid) => {
+      room.patchRoomSettings(data);
+      log.info({ evt: 'config.updated', playerId: pid, keys: Object.keys(data) }, 'room settings updated');
+      io.to(ROOM_ID).emit(EVT.server.snapshot, room.snapshot());
+    },
+  );
 
-  socket.on(EVT.client.activateRuin, (raw: unknown) => {
-    if (!playerId) return;
-    if (!limits.rescue.take()) {
-      return reject('rate_limit', 'activation rate exceeded', 'activateRuin.rate_limit');
-    }
-    const parsed = ClientActivateRuinSchema.safeParse(raw);
-    if (!parsed.success) {
-      return reject('invalid_payload', 'bad activate', 'activateRuin.invalid');
-    }
-    room.enqueueRuinActivation(playerId, parsed.data.ruinId);
-  });
+  bindIntent(
+    EVT.client.rescue,
+    ClientRescueIntentSchema,
+    limits.rescue,
+    { tagOnReject: true, rateLimitMessage: 'rescue rate exceeded' },
+    (data, pid) => room.enqueueRescue(pid, data.followerId),
+  );
+
+  bindIntent(
+    EVT.client.activateRuin,
+    ClientActivateRuinSchema,
+    limits.rescue,
+    { tagOnReject: true, rateLimitMessage: 'activation rate exceeded' },
+    (data, pid) => room.enqueueRuinActivation(pid, data.ruinId),
+  );
 
   socket.on('disconnect', (reason) => {
     if (playerId) {

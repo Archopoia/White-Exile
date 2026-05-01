@@ -28,7 +28,9 @@ import {
   optionFloatDiffers,
   optionRgbDiffers,
   saveUserRevertBaseline,
+  sceneFloatField,
   type RoomOptionsSnapshot,
+  type SceneFloatKey,
   roomOptionsSnapshotEqual,
 } from './roomOptionsDefaults.js';
 import { type WorldLabelMode } from './tooltips.js';
@@ -872,12 +874,7 @@ export function createRoomOptionsOverlay(cb: RoomOptionsCallbacks): RoomOptionsO
   panelGraphics.style.display = 'none';
 
   /** Numeric scalar fields on the snapshot driven by a {@link makeFloatSlider}. */
-  type GfxFloatKey =
-    | 'fogDensityMul'
-    | 'fillLightMul'
-    | 'toneExposure'
-    | 'skyHazeMul'
-    | 'torchReachMul';
+  type GfxFloatKey = SceneFloatKey;
 
   /** Discrete knob fields (string enum) — unified to share the same revert path. */
   type GfxKnobKey = 'fxTier' | 'labelMode';
@@ -892,21 +889,20 @@ export function createRoomOptionsOverlay(cb: RoomOptionsCallbacks): RoomOptionsO
   const gfxKnobSyncs: Array<(snap: RoomOptionsSnapshot) => void> = [];
 
   /**
-   * One graphics float row: builds the slider, registers a revert button + dirty
-   * indicator, and records its `setValueSilent` for {@link applySnapshot}.
+   * One graphics float row, fully driven by the {@link sceneFloatField} manifest
+   * (label + slider min/max/step/decimals come from there). Creates the slider,
+   * registers a revert button + dirty indicator, and records its
+   * `setValueSilent` for {@link applySnapshot}. Caller still owns `apply`
+   * because callbacks live in `RoomOptionsCallbacks`.
    */
-  const gfxFloat = (
-    key: GfxFloatKey,
-    label: string,
-    apply: (v: number) => void,
-    range: { min: number; max: number; step: number; decimals?: number },
-  ): GfxFloatHandle => {
+  const gfxFloat = (key: GfxFloatKey, apply: (v: number) => void): GfxFloatHandle => {
+    const f = sceneFloatField(key);
     const slider = makeFloatSlider(
-      range.min,
-      range.max,
-      range.step,
+      f.slider.min,
+      f.slider.max,
+      f.slider.step,
       live[key],
-      range.decimals ?? 2,
+      f.slider.decimals,
       (v) => {
         live[key] = v;
         apply(v);
@@ -915,7 +911,7 @@ export function createRoomOptionsOverlay(cb: RoomOptionsCallbacks): RoomOptionsO
       recordHistory,
     );
     gfxFloatSyncs.push((snap) => slider.setValueSilent(snap[key]));
-    const row = rowReg(label, slider.row, {
+    const row = rowReg(f.label, slider.row, {
       dirty: () => optionFloatDiffers(live[key], rb()[key]),
       revert: () => {
         const v = rb()[key];
@@ -985,11 +981,7 @@ export function createRoomOptionsOverlay(cb: RoomOptionsCallbacks): RoomOptionsO
   fogCheck.style.cssText = 'width:16px;height:16px;accent-color:#5b7cff;cursor:pointer;flex-shrink:0';
   fogWrap.appendChild(fogCheck);
 
-  const fogDensityRow = gfxFloat('fogDensityMul', 'Fog ×', cb.onFogDensityMulChange, {
-    min: 0,
-    max: 2.5,
-    step: 0.05,
-  });
+  const fogDensityRow = gfxFloat('fogDensityMul', cb.onFogDensityMulChange);
   fogDensityRow.input.disabled = !live.fogEnabled;
   fogCheck.addEventListener('change', () => {
     live.fogEnabled = fogCheck.checked;
@@ -999,26 +991,10 @@ export function createRoomOptionsOverlay(cb: RoomOptionsCallbacks): RoomOptionsO
     refreshRevertIndicators();
   });
 
-  const fillRow = gfxFloat('fillLightMul', 'Fill', cb.onFillLightMulChange, {
-    min: 0.15,
-    max: 2.75,
-    step: 0.05,
-  });
-  const exposureRow = gfxFloat('toneExposure', 'Exposure', cb.onToneExposureChange, {
-    min: 0.35,
-    max: 2.75,
-    step: 0.05,
-  });
-  const skyHazeRow = gfxFloat('skyHazeMul', 'Sky', cb.onSkyHazeMulChange, {
-    min: 0,
-    max: 1.5,
-    step: 0.05,
-  });
-  const torchReachRow = gfxFloat('torchReachMul', 'Torches ×', cb.onTorchReachMulChange, {
-    min: 0.25,
-    max: 80,
-    step: 0.05,
-  });
+  const fillRow = gfxFloat('fillLightMul', cb.onFillLightMulChange);
+  const exposureRow = gfxFloat('toneExposure', cb.onToneExposureChange);
+  const skyHazeRow = gfxFloat('skyHazeMul', cb.onSkyHazeMulChange);
+  const torchReachRow = gfxFloat('torchReachMul', cb.onTorchReachMulChange);
 
   panelGraphics.append(
     fxKnob.row,
