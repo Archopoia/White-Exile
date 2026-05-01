@@ -100,7 +100,7 @@ Enable debug logging:
 - `?debug=1` on the client URL, or
 - `localStorage.rtRoomDebug=1`
 
-World labels (CSS2D billboards on players, followers, ruins, relics, ground): **T** toggles; default on. `?labels=0` or `localStorage.rtRoomLabels=0` starts with them off.
+World labels (CSS2D): **T** cycles **off → keywords → full** (default full). URL `?labels=off|keywords|full` or `?labels=0|1|2`; `localStorage.rtRoomLabelsMode`. Strings in `apps/client/src/worldLabels.ts`.
 
 ## Bots
 

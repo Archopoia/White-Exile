@@ -43,7 +43,7 @@ The server owns:
 - **Caravans** (recomputed each tick from light-field overlap)
 - **Settings** (shared room note) + monotonic **tick** counter
 
-Clients send **intents** only: `move`, `roomSettingsPatch`, `rescue`, `activateRuin`. Every payload is validated with Zod.
+Clients send **intents** only: `move`, `roomSettingsPatch`, `rescue`, `activateRuin`. Every payload is validated with Zod. `move` positions are accepted as `Vec3` but the room applies `clampPlayerPosition` (snap inside the play sphere, then Y onto the shared ash-dune surface plus avatar offset) for humans, restored players, external bots, and internal ghosts.
 
 ## Wire protocol
 
@@ -74,7 +74,7 @@ Pure-data results (`derived`, `caravans`, counters) feed `Room.snapshot()`.
 
 ## Client
 
-- [`scene.ts`](../apps/client/src/scene.ts) renders ground + grid, race-tinted local core with a halo whose scale tracks the server's `lightRadius`, race-tinted markers + haloes for other players, follower spheres, ruin pillars (warm glow when activated), and rotating relic octahedrons.
+- [`scene.ts`](../apps/client/src/scene.ts) renders ground + grid, race-tinted local core with a halo whose scale tracks the server's `lightRadius`, race-tinted markers + haloes for other players, follower spheres, ruin pillars (warm glow when activated), and rotating relic octahedrons. CSS2D labels (**T** = off → keywords → full) use [`worldLabels.ts`](../apps/client/src/worldLabels.ts) and [`tooltips.ts`](../apps/client/src/tooltips.ts) for mode persistence.
 - Fog density is set per zone using `fogDensityForZone`.
 - Local prediction for movement; server clamps and rebroadcasts.
 - `R` rescues; `F` activates the closest ruin; `ESC` opens the session panel.

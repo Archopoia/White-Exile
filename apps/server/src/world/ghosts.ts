@@ -8,11 +8,7 @@
  * reach a configurable headcount (so they never block real cluster
  * gameplay).
  */
-import {
-  RACES,
-  type Race,
-  type Vec3,
-} from '@realtime-room/shared';
+import { RACES, type Race, type Vec3 } from '@realtime-room/shared';
 import type { Logger } from 'pino';
 import { mulberry32, type Rng } from './rng.js';
 import type { SimQueues, SimWorld } from './sim.js';
@@ -104,13 +100,12 @@ export class GhostManager {
       }
 
       const dx = g.target.x - player.position.x;
-      const dy = g.target.y - player.position.y;
       const dz = g.target.z - player.position.z;
-      const len = Math.hypot(dx, dy, dz) || 1;
+      const len = Math.hypot(dx, dz) || 1;
       const speed = 8;
       const next: Vec3 = {
         x: player.position.x + (dx / len) * speed * dt,
-        y: player.position.y + (dy / len) * speed * dt,
+        y: 0,
         z: player.position.z + (dz / len) * speed * dt,
       };
       player.position = next;

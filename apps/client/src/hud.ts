@@ -1,7 +1,7 @@
 /**
  * DOM HUD: connection state, room note, headcount, race + light/fuel/zone.
  */
-import type { Race, Zone } from '@realtime-room/shared';
+import { ZONE_DISPLAY_LABEL, type Race, type Zone } from '@realtime-room/shared';
 
 export interface HudState {
   status: 'connecting' | 'connected' | 'disconnected';
@@ -33,13 +33,6 @@ const cache = {
   caravan: document.getElementById('hud-caravan') as HTMLElement | null,
 };
 
-const ZONE_LABEL: Record<Zone, string> = {
-  safe: 'Safe Ashlands',
-  grey: 'Grey Dunes',
-  deep: 'Deep Ash',
-  dead: 'Dead Zone',
-};
-
 export function updateHud(state: HudState): void {
   if (cache.status) cache.status.textContent = state.status;
   if (cache.statusDot) {
@@ -60,6 +53,6 @@ export function updateHud(state: HudState): void {
   }
   if (cache.fuelText) cache.fuelText.textContent = `${Math.round(state.fuel * 100)}%`;
   if (cache.followers) cache.followers.textContent = String(state.followerCount);
-  if (cache.zone) cache.zone.textContent = ZONE_LABEL[state.zone];
+  if (cache.zone) cache.zone.textContent = ZONE_DISPLAY_LABEL[state.zone];
   if (cache.caravan) cache.caravan.textContent = String(state.caravanSize);
 }

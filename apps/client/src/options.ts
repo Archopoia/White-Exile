@@ -1,10 +1,23 @@
 /**
- * ESC panel: edit shared room note (server validates and broadcasts in snapshots).
+ * ESC panel: session help (controls) + shared room note.
  */
 export interface RoomOptionsOverlay {
   setOpen(open: boolean): void;
   syncRoomNoteFromServer(note: string): void;
   dispose(): void;
+}
+
+function helpBlock(title: string, body: string): HTMLDivElement {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'margin-bottom:10px';
+  const t = document.createElement('div');
+  t.textContent = title;
+  t.style.cssText = 'font-weight:600;margin-bottom:4px;font-size:12px';
+  const b = document.createElement('div');
+  b.textContent = body;
+  b.style.cssText = 'opacity:0.88;font-size:12px;line-height:1.45';
+  wrap.append(t, b);
+  return wrap;
 }
 
 export function createRoomOptionsOverlay(onApply: (roomNote: string) => void): RoomOptionsOverlay {
@@ -25,8 +38,10 @@ export function createRoomOptionsOverlay(onApply: (roomNote: string) => void): R
 
   const panel = document.createElement('div');
   panel.style.cssText = [
-    'min-width:280px',
-    'max-width:90vw',
+    'min-width:300px',
+    'max-width:92vw',
+    'max-height:88vh',
+    'overflow:auto',
     'padding:18px 20px',
     'border-radius:12px',
     'background:rgba(12,14,24,0.95)',
@@ -38,11 +53,41 @@ export function createRoomOptionsOverlay(onApply: (roomNote: string) => void): R
 
   const title = document.createElement('div');
   title.textContent = 'Session';
-  title.style.cssText = 'font-weight:600;margin-bottom:10px;font-size:15px';
+  title.style.cssText = 'font-weight:600;margin-bottom:12px;font-size:15px';
+
+  const helpTitle = document.createElement('div');
+  helpTitle.textContent = 'Controls & tips';
+  helpTitle.style.cssText = 'font-weight:600;margin-bottom:8px;font-size:13px;opacity:0.95';
+
+  const helpWrap = document.createElement('div');
+  helpWrap.style.cssText =
+    'margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid rgba(120,140,220,0.28)';
+  helpWrap.append(
+    helpBlock(
+      'Camera',
+      'Click the game view for pointer-lock mouse look; Esc unlocks the cursor. Hold right mouse and drag to orbit without lock. Mouse wheel changes orbit distance.',
+    ),
+    helpBlock(
+      'Move',
+      'W A S D on the ground plane, relative to where the camera faces (not world north).',
+    ),
+    helpBlock(
+      'Actions',
+      'R — rescue a stranded follower while they are inside your light bubble. F — activate the ruin you are closest to. T — cycle floating world labels: off, then keywords, then full.',
+    ),
+    helpBlock(
+      'URLs',
+      '?labels=off | keywords | full — or ?labels=0 | 1 | 2 (0 off, 1 full, 2 keywords). ?race=emberfolk | ashborn | lumen-kin',
+    ),
+  );
+
+  const noteTitle = document.createElement('div');
+  noteTitle.textContent = 'Room note';
+  noteTitle.style.cssText = 'font-weight:600;margin-bottom:6px;font-size:13px';
 
   const hint = document.createElement('div');
-  hint.textContent = 'Room note — everyone sees this after you apply.';
-  hint.style.cssText = 'opacity:0.75;margin-bottom:10px;font-size:12px';
+  hint.textContent = 'Everyone sees the room note after you apply.';
+  hint.style.cssText = 'opacity:0.75;margin-bottom:8px;font-size:12px';
 
   const ta = document.createElement('textarea');
   ta.rows = 3;
@@ -75,7 +120,7 @@ export function createRoomOptionsOverlay(onApply: (roomNote: string) => void): R
   });
 
   row.append(close, apply);
-  panel.append(title, hint, ta, row);
+  panel.append(title, helpTitle, helpWrap, noteTitle, hint, ta, row);
   root.append(panel);
   document.body.append(root);
 

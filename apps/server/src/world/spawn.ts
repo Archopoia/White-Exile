@@ -5,6 +5,10 @@
  * layer carries the seed forward); spawn caps live in `WorldConfig`.
  */
 import {
+  ASH_DUNE_FOLLOWER_CENTER_OFFSET,
+  ASH_DUNE_RELIC_CENTER_OFFSET,
+  ASH_DUNE_RUIN_CENTER_OFFSET,
+  ashDuneSurfaceWorldY,
   ZONE_BANDS,
   type FollowerKind,
   type FollowerSnapshot,
@@ -37,7 +41,11 @@ function pickKind(rng: Rng): FollowerKind {
   return 'wanderer';
 }
 
-function pickPositionInZone(rng: Rng, zone: Zone): { x: number; y: number; z: number } {
+function pickPositionInZone(
+  rng: Rng,
+  zone: Zone,
+  yOffset: number,
+): { x: number; y: number; z: number } {
   let inner = 0;
   let outer = ZONE_BANDS[ZONE_BANDS.length - 1]!.maxRadius;
   for (let i = 0; i < ZONE_BANDS.length; i++) {
@@ -52,11 +60,10 @@ function pickPositionInZone(rng: Rng, zone: Zone): { x: number; y: number; z: nu
   const t = Math.sqrt(rng());
   const radius = inner + (outer - inner) * t;
   const theta = rng() * Math.PI * 2;
-  return {
-    x: Math.cos(theta) * radius,
-    y: (rng() - 0.5) * 4,
-    z: Math.sin(theta) * radius,
-  };
+  const x = Math.cos(theta) * radius;
+  const z = Math.sin(theta) * radius;
+  const y = ashDuneSurfaceWorldY(x, z, 0) + yOffset;
+  return { x, y, z };
 }
 
 /** Initial world layout. Followers cluster in grey/deep zones; relics in deep/dead. */
@@ -79,7 +86,7 @@ export function generateInitialWorld(seed: number, config: WorldConfig): SpawnEn
     followers.push({
       id: `f-${seed.toString(16)}-${i}`,
       kind: pickKind(rng),
-      position: pickPositionInZone(rng, zone),
+      position: pickPositionInZone(rng, zone, ASH_DUNE_FOLLOWER_CENTER_OFFSET),
       ownerId: null,
       morale: 0.55 + rng() * 0.3,
     });
@@ -91,7 +98,7 @@ export function generateInitialWorld(seed: number, config: WorldConfig): SpawnEn
     const zone = ruinZones[i % ruinZones.length]!;
     ruins.push({
       id: `r-${seed.toString(16)}-${i}`,
-      position: pickPositionInZone(rng, zone),
+      position: pickPositionInZone(rng, zone, ASH_DUNE_RUIN_CENTER_OFFSET),
       followerCharge: 2 + Math.floor(rng() * 4),
       activated: false,
     });
@@ -103,7 +110,7 @@ export function generateInitialWorld(seed: number, config: WorldConfig): SpawnEn
     const zone = relicZones[i % relicZones.length]!;
     relics.push({
       id: `relic-${seed.toString(16)}-${i}`,
-      position: pickPositionInZone(rng, zone),
+      position: pickPositionInZone(rng, zone, ASH_DUNE_RELIC_CENTER_OFFSET),
       radiusBonus: 2 + rng() * 4,
       claimed: false,
       claimedBy: null,

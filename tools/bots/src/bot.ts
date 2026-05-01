@@ -9,6 +9,7 @@ import {
   PROTOCOL_VERSION,
   RoomSnapshotSchema,
   ServerWelcomeSchema,
+  clampPlayerPosition,
   type ClientActivateRuin,
   type ClientHello,
   type ClientMove,
@@ -110,7 +111,7 @@ export class Bot {
       elapsed: this.elapsed,
     };
     const out = this.opts.behavior.tick(dt, ctx);
-    const move: ClientMove = { position: out.position };
+    const move: ClientMove = { position: clampPlayerPosition(out.position, this.elapsed) };
     this.socket.emit(EVT.client.move, move);
     if (out.rescueFollowerId) {
       const rescue: ClientRescueIntent = { followerId: out.rescueFollowerId };

@@ -2,6 +2,11 @@
  * Shared pure math (no I/O). Safe on server, client, and tooling.
  */
 
+import {
+  ASH_DUNE_PLAYER_CENTER_OFFSET,
+  ashDuneSurfaceWorldY,
+} from './ashDuneTerrain.js';
+
 /** Clamp a value to a closed range. */
 export function clamp(value: number, min: number, max: number): number {
   if (value < min) return min;
@@ -37,4 +42,17 @@ export function clampToPlayVolume<T extends { x: number; y: number; z: number }>
   const len = Math.sqrt(lenSq);
   const k = PLAY_VOLUME_RADIUS / len;
   return { x: point.x * k, y: point.y * k, z: point.z * k };
+}
+
+/**
+ * Clamp inside the play sphere, then snap Y onto the ash-dune surface (see
+ * {@link ashDuneSurfaceWorldY}) plus {@link ASH_DUNE_PLAYER_CENTER_OFFSET}.
+ */
+export function clampPlayerPosition<T extends { x: number; y: number; z: number }>(
+  point: T,
+  simulationTimeSec: number,
+): { x: number; y: number; z: number } {
+  const p = clampToPlayVolume(point);
+  const y = ashDuneSurfaceWorldY(p.x, p.z, simulationTimeSec) + ASH_DUNE_PLAYER_CENTER_OFFSET;
+  return { x: p.x, y, z: p.z };
 }

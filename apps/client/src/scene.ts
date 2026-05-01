@@ -2,7 +2,7 @@
  * Three.js view of White Exile.
  *
  * What's on screen:
- *   - Endless dune-coloured ground plane with fog tinted to current zone
+ *   - Endless ash/snow dune terrain (shader displacement: height + chaos with radius from origin)
  *   - Local player (race-tinted core) + glowing light sphere whose radius
  *     mirrors authoritative server radius
  *   - Other players (orange race-tinted spheres) with their own light haloes
@@ -15,10 +15,12 @@
 import * as THREE from 'three';
 import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import {
+  ASH_DUNE_FOLLOWER_CENTER_OFFSET,
+  ASH_DUNE_OTHER_PLAYER_CENTER_OFFSET,
+  ASH_DUNE_PLAYER_CENTER_OFFSET,
   RACE_PROFILES,
-  type FollowerKind,
+  ashDuneSurfaceWorldY,
   type FollowerSnapshot,
-  type PlayerSnapshot,
   type Race,
   type RelicSnapshot,
   type RoomSnapshot,
@@ -27,7 +29,23 @@ import {
   type Zone,
   fogDensityForZone,
 } from '@realtime-room/shared';
-import { makeTooltip, persistLabelsEnabled, readLabelsEnabled, setTooltipText } from './tooltips.js';
+import { applyAshDuneTerrainShader, getAshDuneTerrainUniforms } from './duneTerrainMaterial.js';
+import {
+  makeTooltip,
+  nextLabelMode,
+  persistLabelMode,
+  readLabelMode,
+  setTooltipText,
+  type WorldLabelMode,
+} from './tooltips.js';
+import {
+  labelFollower,
+  labelGround,
+  labelOtherPlayer,
+  labelRelic,
+  labelRuin,
+  labelYou,
+} from './worldLabels.js';
 
 export interface SceneCallbacks {
   onMoveIntent: (position: Vec3) => void;
@@ -37,53 +55,15 @@ export interface SceneCallbacks {
 
 const MOVE_SPEED = 22;
 const TMP = new THREE.Vector3();
-const TMP2 = new THREE.Vector3();
+const CAM_OFFSET_INIT = new THREE.Vector3(0, 8, 18);
+const ORBIT_SENS = 0.003;
+const ORBIT_MIN_PITCH = 0.08;
+const ORBIT_MAX_PITCH = 1.35;
+const ORBIT_DIST_MIN = 10;
+const ORBIT_DIST_MAX = 52;
 
 const RUIN_HEIGHT = 6;
 const RUIN_RANGE = 6;
-
-const ZONE_LETTER: Record<Zone, string> = {
-  safe: 'S',
-  grey: 'G',
-  deep: 'D',
-  dead: 'X',
-};
-
-function abbrRace(r: Race): string {
-  if (r === 'emberfolk') return 'Em';
-  if (r === 'ashborn') return 'As';
-  return 'Lu';
-}
-
-function abbrFollowerKind(k: FollowerKind): string {
-  if (k === 'lantern-bearer') return 'L';
-  if (k === 'beast') return 'B';
-  return 'W';
-}
-
-function tipOtherPlayer(p: PlayerSnapshot): string {
-  const short = p.name.length > 10 ? `${p.name.slice(0, 9)}…` : p.name;
-  const sim = p.id.startsWith('ghost-') ? '·sim' : '';
-  const bot = p.isBot && !sim ? '·bot' : '';
-  return `${short}${sim}${bot} · ${abbrRace(p.race)} · ☀${Math.round(p.lightRadius)}`;
-}
-
-function tipYou(p: PlayerSnapshot): string {
-  return `You · ${abbrRace(p.race)} · ☀${Math.round(p.lightRadius)} · ${ZONE_LETTER[p.zone]}`;
-}
-
-function tipFollower(f: FollowerSnapshot): string {
-  const k = abbrFollowerKind(f.kind);
-  return f.ownerId === null ? `${k} stray` : `${k} kin`;
-}
-
-function tipRuin(r: RuinSnapshot): string {
-  return r.activated ? 'Ruin·on' : 'Ruin';
-}
-
-function tipRelic(r: RelicSnapshot): string {
-  return r.claimed ? 'Relic·✓' : 'Relic';
-}
 
 export class RoomScene {
   private readonly canvas: HTMLCanvasElement;
@@ -93,6 +73,7 @@ export class RoomScene {
   private readonly camera: THREE.PerspectiveCamera;
   private readonly clock: THREE.Clock;
   private readonly ground: THREE.Mesh;
+  private readonly groundMat: THREE.MeshStandardMaterial;
   private readonly groundTip: CSS2DObject;
   private readonly markers = new Map<
     string,
@@ -115,7 +96,18 @@ export class RoomScene {
   private readonly moveInterval = 1 / 20;
   private rafHandle = 0;
   private currentZone: Zone = 'safe';
-  private labelsVisible = readLabelsEnabled();
+  private labelMode: WorldLabelMode = readLabelMode();
+  /** Latest snapshot for label text when `labelMode` changes. */
+  private lastSnap: RoomSnapshot | null = null;
+  /** Orbit yaw (rad) around world +Y through the player. */
+  private camYaw = 0;
+  /** Pitch (rad) above the horizontal xz plane through the player. */
+  private camPitch = Math.atan2(CAM_OFFSET_INIT.y, Math.hypot(CAM_OFFSET_INIT.x, CAM_OFFSET_INIT.z));
+  private orbitDistance = CAM_OFFSET_INIT.length();
+  private readonly cameraOffset = new THREE.Vector3();
+  private rmbLook = false;
+  private lastPointerX = 0;
+  private lastPointerY = 0;
   /** Latest ruins seen so the F key can target the closest one. */
   private knownRuins: RuinSnapshot[] = [];
 
@@ -146,23 +138,18 @@ export class RoomScene {
     dir.position.set(20, 60, 30);
     this.scene.add(dir);
 
-    const groundGeom = new THREE.PlaneGeometry(2400, 2400, 1, 1);
-    const groundMat = new THREE.MeshStandardMaterial({
+    const groundGeom = new THREE.PlaneGeometry(3600, 3600, 320, 320);
+    this.groundMat = new THREE.MeshStandardMaterial({
       color: 0x1c2032,
-      roughness: 0.95,
-      metalness: 0.05,
+      roughness: 0.94,
+      metalness: 0.04,
       emissive: 0x0a0d18,
     });
-    this.ground = new THREE.Mesh(groundGeom, groundMat);
+    applyAshDuneTerrainShader(this.groundMat);
+    this.ground = new THREE.Mesh(groundGeom, this.groundMat);
     this.ground.rotation.x = -Math.PI / 2;
     this.ground.position.y = -2;
     this.scene.add(this.ground);
-
-    const grid = new THREE.GridHelper(2400, 60, 0x39475e, 0x1a2233);
-    (grid.material as THREE.Material).transparent = true;
-    (grid.material as THREE.Material).opacity = 0.2;
-    grid.position.y = -1.99;
-    this.scene.add(grid);
 
     const coreGeom = new THREE.SphereGeometry(0.75, 22, 18);
     const coreMat = new THREE.MeshStandardMaterial({
@@ -183,7 +170,7 @@ export class RoomScene {
     this.localHalo = new THREE.Mesh(haloGeom, haloMat);
     this.localGroup.add(this.localCore);
     this.localGroup.add(this.localHalo);
-    this.localLabel = makeTooltip('You');
+    this.localLabel = makeTooltip('');
     this.localLabel.position.set(0, 1.05, 0);
     this.localCore.add(this.localLabel);
     this.localGroup.position.copy(this.localPos);
@@ -200,13 +187,19 @@ export class RoomScene {
     this.labelRenderer.setSize(window.innerWidth, window.innerHeight);
     this.syncLabelLayerVisibility();
 
-    this.groundTip = makeTooltip('dune');
+    this.groundTip = makeTooltip(labelGround(this.labelMode));
     this.groundTip.position.set(0, 0.35, 0);
     this.ground.add(this.groundTip);
 
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
     window.addEventListener('resize', this.onResize);
+    this.canvas.addEventListener('click', this.onCanvasClick);
+    this.canvas.addEventListener('contextmenu', this.onContextMenu);
+    this.canvas.addEventListener('mousedown', this.onMouseDown);
+    window.addEventListener('mouseup', this.onMouseUp);
+    window.addEventListener('mousemove', this.onMouseMove);
+    this.canvas.addEventListener('wheel', this.onWheel, { passive: false });
   }
 
   setLocalPlayerId(id: string): void {
@@ -221,23 +214,52 @@ export class RoomScene {
     (this.localHalo.material as THREE.MeshBasicMaterial).color.copy(color);
   }
 
-  setLabelsVisible(on: boolean): void {
-    this.labelsVisible = on;
-    persistLabelsEnabled(on);
-    this.syncLabelLayerVisibility();
+  getLabelMode(): WorldLabelMode {
+    return this.labelMode;
   }
 
-  getLabelsVisible(): boolean {
-    return this.labelsVisible;
+  private setLabelMode(mode: WorldLabelMode): void {
+    this.labelMode = mode;
+    persistLabelMode(mode);
+    this.syncLabelLayerVisibility();
+    this.refreshLabelTexts();
   }
 
   private syncLabelLayerVisibility(): void {
-    this.labelRenderer.domElement.style.display = this.labelsVisible ? 'block' : 'none';
+    this.labelRenderer.domElement.style.display = this.labelMode === 'off' ? 'none' : 'block';
+  }
+
+  private refreshLabelTexts(): void {
+    const mode = this.labelMode;
+    setTooltipText(this.groundTip, labelGround(mode));
+    const snap = this.lastSnap;
+    if (!snap) return;
+    for (const p of snap.players) {
+      if (p.id === this.playerId) {
+        setTooltipText(this.localLabel, labelYou(p, mode));
+      } else {
+        const entry = this.markers.get(p.id);
+        if (entry) setTooltipText(entry.label, labelOtherPlayer(p, mode));
+      }
+    }
+    for (const f of snap.followers) {
+      const entry = this.followerMeshes.get(f.id);
+      if (entry) setTooltipText(entry.label, labelFollower(f, mode));
+    }
+    for (const r of snap.ruins) {
+      const entry = this.ruinMeshes.get(r.id);
+      if (entry) setTooltipText(entry.label, labelRuin(r, mode));
+    }
+    for (const r of snap.relics) {
+      const entry = this.relicMeshes.get(r.id);
+      if (entry) setTooltipText(entry.label, labelRelic(r, mode));
+    }
   }
 
   /** First snapshot after join: snap camera to server position. */
   syncLocalFromServer(pos: Vec3): void {
     this.localPos.set(pos.x, pos.y, pos.z);
+    this.snapLocalYToDune();
     this.localGroup.position.copy(this.localPos);
   }
 
@@ -251,12 +273,9 @@ export class RoomScene {
       if (p.id === this.playerId) {
         this.localLightRadius = p.lightRadius;
         this.currentZone = p.zone;
-        setTooltipText(this.localLabel, tipYou(p));
         this.scene.fog = new THREE.FogExp2(0x111522, fogDensityForZone(p.zone));
         this.renderer.setClearColor(zoneClearColor(p.zone), 1);
-        (this.ground.material as THREE.MeshStandardMaterial).emissive.setHex(
-          zoneGroundColor(p.zone),
-        );
+        this.groundMat.emissive.setHex(zoneGroundColor(p.zone));
         continue;
       }
       let entry = this.markers.get(p.id);
@@ -291,8 +310,11 @@ export class RoomScene {
         const haloMat = entry.halo.material as THREE.MeshBasicMaterial;
         haloMat.color.setHex(profile.lightColor);
       }
-      setTooltipText(entry.label, tipOtherPlayer(p));
-      entry.core.position.set(p.position.x, p.position.y, p.position.z);
+      entry.core.position.set(
+        p.position.x,
+        this.surfaceYAt(p.position.x, p.position.z) + ASH_DUNE_OTHER_PLAYER_CENTER_OFFSET,
+        p.position.z,
+      );
       entry.halo.position.copy(entry.core.position);
       const r = Math.max(1, p.lightRadius);
       entry.halo.scale.setScalar(r);
@@ -312,6 +334,8 @@ export class RoomScene {
     this.applyFollowers(snap.followers);
     this.applyRuins(snap.ruins);
     this.applyRelics(snap.relics);
+    this.lastSnap = snap;
+    this.refreshLabelTexts();
   }
 
   private applyFollowers(followers: ReadonlyArray<FollowerSnapshot>): void {
@@ -342,8 +366,11 @@ export class RoomScene {
         mat.emissive.setHex(color);
         mat.emissiveIntensity = stranded ? 0.7 : 1.0;
       }
-      setTooltipText(entry.label, tipFollower(f));
-      entry.mesh.position.set(f.position.x, f.position.y, f.position.z);
+      entry.mesh.position.set(
+        f.position.x,
+        this.surfaceYAt(f.position.x, f.position.z) + ASH_DUNE_FOLLOWER_CENTER_OFFSET,
+        f.position.z,
+      );
       entry.mesh.scale.setScalar(0.85 + f.morale * 0.6);
     }
     for (const [id, entry] of this.followerMeshes) {
@@ -381,8 +408,7 @@ export class RoomScene {
         mat.emissive.setHex(r.activated ? 0xffce6f : 0x202736);
         mat.emissiveIntensity = r.activated ? 1.4 : 0.4;
       }
-      setTooltipText(entry.label, tipRuin(r));
-      entry.mesh.position.set(r.position.x, r.position.y + RUIN_HEIGHT / 2 - 2, r.position.z);
+      entry.mesh.position.set(r.position.x, r.position.y, r.position.z);
     }
     for (const [id, entry] of this.ruinMeshes) {
       if (seen.has(id)) continue;
@@ -421,8 +447,7 @@ export class RoomScene {
         mat.emissiveIntensity = r.claimed ? 0.2 : 1.6;
         mat.opacity = r.claimed ? 0.3 : 1.0;
       }
-      setTooltipText(entry.label, tipRelic(r));
-      entry.mesh.position.set(r.position.x, r.position.y + 1, r.position.z);
+      entry.mesh.position.set(r.position.x, r.position.y, r.position.z);
       entry.mesh.rotation.y += 0.02;
     }
     for (const [id, entry] of this.relicMeshes) {
@@ -445,12 +470,59 @@ export class RoomScene {
       if (target) this.callbacks.onActivateRuinIntent(target.id);
     }
     if (e.code === 'KeyT') {
-      this.setLabelsVisible(!this.labelsVisible);
+      this.setLabelMode(nextLabelMode(this.labelMode));
     }
   };
 
   private onKeyUp = (e: KeyboardEvent) => {
     this.keys.delete(e.code);
+  };
+
+  private onCanvasClick = (): void => {
+    if (document.pointerLockElement === this.canvas) return;
+    void this.canvas.requestPointerLock();
+  };
+
+  private onContextMenu = (e: MouseEvent): void => {
+    e.preventDefault();
+  };
+
+  private onMouseDown = (e: MouseEvent): void => {
+    if (e.button !== 2) return;
+    this.rmbLook = true;
+    this.lastPointerX = e.clientX;
+    this.lastPointerY = e.clientY;
+  };
+
+  private onMouseUp = (): void => {
+    this.rmbLook = false;
+  };
+
+  private onMouseMove = (e: MouseEvent): void => {
+    const locked = document.pointerLockElement === this.canvas;
+    let dx = 0;
+    let dy = 0;
+    if (locked) {
+      dx = e.movementX;
+      dy = e.movementY;
+    } else if (this.rmbLook) {
+      dx = e.clientX - this.lastPointerX;
+      dy = e.clientY - this.lastPointerY;
+      this.lastPointerX = e.clientX;
+      this.lastPointerY = e.clientY;
+    } else {
+      return;
+    }
+    if (dx === 0 && dy === 0) return;
+    this.camYaw -= dx * ORBIT_SENS;
+    this.camPitch += dy * ORBIT_SENS;
+    this.camPitch = THREE.MathUtils.clamp(this.camPitch, ORBIT_MIN_PITCH, ORBIT_MAX_PITCH);
+  };
+
+  private onWheel = (e: WheelEvent): void => {
+    e.preventDefault();
+    const next = this.orbitDistance + Math.sign(e.deltaY) * 1.8;
+    this.orbitDistance = THREE.MathUtils.clamp(next, ORBIT_DIST_MIN, ORBIT_DIST_MAX);
   };
 
   private onResize = () => {
@@ -461,6 +533,19 @@ export class RoomScene {
     this.renderer.setSize(w, h, false);
     this.labelRenderer.setSize(w, h);
   };
+
+  private dunePhaseSeconds(): number {
+    return getAshDuneTerrainUniforms(this.groundMat)?.uTime.value ?? 0;
+  }
+
+  private surfaceYAt(x: number, z: number): number {
+    return ashDuneSurfaceWorldY(x, z, this.dunePhaseSeconds());
+  }
+
+  private snapLocalYToDune(): void {
+    this.localPos.y =
+      this.surfaceYAt(this.localPos.x, this.localPos.z) + ASH_DUNE_PLAYER_CENTER_OFFSET;
+  }
 
   private findNearestRuin(): RuinSnapshot | null {
     let best: RuinSnapshot | null = null;
@@ -482,18 +567,25 @@ export class RoomScene {
     this.rafHandle = requestAnimationFrame(this.loop);
     const dt = Math.min(this.clock.getDelta(), 0.05);
 
-    const ax = (this.keys.has('KeyD') ? 1 : 0) - (this.keys.has('KeyA') ? 1 : 0);
-    const az = (this.keys.has('KeyS') ? 1 : 0) - (this.keys.has('KeyW') ? 1 : 0);
-    const ay =
-      (this.keys.has('Space') ? 1 : 0) -
-      (this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') ? 1 : 0);
-    if (ax !== 0 || ay !== 0 || az !== 0) {
-      const len = Math.hypot(ax, ay, az) || 1;
-      this.localPos.x += (ax / len) * MOVE_SPEED * dt;
-      this.localPos.y += (ay / len) * MOVE_SPEED * dt;
-      this.localPos.z += (az / len) * MOVE_SPEED * dt;
-      this.localGroup.position.copy(this.localPos);
+    const duneU = getAshDuneTerrainUniforms(this.groundMat);
+    if (duneU) {
+      duneU.uTime.value += dt;
     }
+
+    const strafe = (this.keys.has('KeyD') ? 1 : 0) - (this.keys.has('KeyA') ? 1 : 0);
+    const forward = (this.keys.has('KeyW') ? 1 : 0) - (this.keys.has('KeyS') ? 1 : 0);
+    if (strafe !== 0 || forward !== 0) {
+      const cosY = Math.cos(this.camYaw);
+      const sinY = Math.sin(this.camYaw);
+      // Horizontal axes match orbit camera xz (W walks into the view, away from camera).
+      const wx = strafe * cosY - forward * sinY;
+      const wz = -strafe * sinY - forward * cosY;
+      const len = Math.hypot(wx, wz) || 1;
+      this.localPos.x += (wx / len) * MOVE_SPEED * dt;
+      this.localPos.z += (wz / len) * MOVE_SPEED * dt;
+    }
+    this.snapLocalYToDune();
+    this.localGroup.position.copy(this.localPos);
 
     this.localHalo.scale.setScalar(Math.max(1.0, this.localLightRadius));
 
@@ -507,9 +599,14 @@ export class RoomScene {
       });
     }
 
-    TMP.copy(this.localPos);
-    TMP2.set(0, 8, 18);
-    this.camera.position.lerp(TMP.add(TMP2), 0.08);
+    const cosP = Math.cos(this.camPitch);
+    this.cameraOffset.set(
+      Math.sin(this.camYaw) * cosP * this.orbitDistance,
+      Math.sin(this.camPitch) * this.orbitDistance,
+      Math.cos(this.camYaw) * cosP * this.orbitDistance,
+    );
+    TMP.copy(this.localPos).add(this.cameraOffset);
+    this.camera.position.lerp(TMP, 0.14);
     this.camera.lookAt(this.localPos);
 
     this.renderer.render(this.scene, this.camera);
@@ -528,6 +625,15 @@ export class RoomScene {
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
     window.removeEventListener('resize', this.onResize);
+    this.canvas.removeEventListener('click', this.onCanvasClick);
+    this.canvas.removeEventListener('contextmenu', this.onContextMenu);
+    this.canvas.removeEventListener('mousedown', this.onMouseDown);
+    window.removeEventListener('mouseup', this.onMouseUp);
+    window.removeEventListener('mousemove', this.onMouseMove);
+    this.canvas.removeEventListener('wheel', this.onWheel);
+    if (document.pointerLockElement === this.canvas) {
+      document.exitPointerLock();
+    }
     for (const entry of this.markers.values()) {
       entry.core.remove(entry.label);
       this.scene.remove(entry.core);
@@ -571,7 +677,7 @@ export class RoomScene {
     });
     this.localGroup.clear();
     this.ground.geometry.dispose();
-    (this.ground.material as THREE.Material).dispose();
+    this.groundMat.dispose();
     this.renderer.dispose();
   }
 }

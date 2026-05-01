@@ -48,10 +48,11 @@ pnpm smoke:net
 
 ## Client
 
-- Click the canvas, then **WASD** to move, **Space**/**Shift** for vertical motion.
+- Click the canvas for **pointer-lock mouse-look** (orbit camera); **Esc** unlocks. **Right-drag** orbits without lock; **wheel** zooms distance.
+- **WASD** to move on the ground plane (no vertical flight controls).
 - **R** rescues the nearest stranded follower inside your light radius.
 - **F** activates the ruin you're standing in (releases its follower charge).
-- **T** toggles hovering world labels (billboards); default on (`?labels=0` / `localStorage.rtRoomLabels=0` to start off).
+- **T** cycles **floating world labels** (CSS2D): **off** → **keywords** → **full**. Default **full**. URL `?labels=off|keywords|full` or `?labels=0|1|2`; storage `localStorage.rtRoomLabelsMode`. `apps/client/src/worldLabels.ts`.
 - **ESC** opens the session panel for the shared room note.
 - HUD shows: race, zone, light radius, fuel, follower count, caravan size, tick.
 

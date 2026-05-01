@@ -15,6 +15,11 @@
  * exercises the math without spinning up sockets.
  */
 import {
+  ASH_DUNE_FOLLOWER_CENTER_OFFSET,
+  ASH_DUNE_PLAYER_CENTER_OFFSET,
+  ASH_DUNE_RELIC_CENTER_OFFSET,
+  ASH_DUNE_RUIN_CENTER_OFFSET,
+  ashDuneSurfaceWorldY,
   classifyZone,
   computeSoloLightRadius,
   distanceSquared3,
@@ -100,11 +105,17 @@ export function tickWorld(
   queues: SimQueues,
   dt: number,
   logger: Logger,
+  simulationTimeSec: number,
 ): SimResult {
   const derived = new Map<string, SimDerivedPlayer>();
   const clusterMembers: ClusterMember[] = [];
 
   const playerArr = [...world.players.values()];
+  for (const p of playerArr) {
+    p.position.y =
+      ashDuneSurfaceWorldY(p.position.x, p.position.z, simulationTimeSec) +
+      ASH_DUNE_PLAYER_CENTER_OFFSET;
+  }
 
   // Pass 1: solo light radius (without caravan combine yet).
   const tempSolo = new Map<string, number>();
@@ -182,8 +193,11 @@ export function tickWorld(
       f.ownerId = null;
       continue;
     }
-    const target = jitterAround(owner.position, owner.id, f.id, world);
+    const target = jitterAround(owner.position, owner.id, f.id, world, simulationTimeSec);
     f.position = lerp3(f.position, target, Math.min(1, dt * FOLLOW_LERP));
+    f.position.y =
+      ashDuneSurfaceWorldY(f.position.x, f.position.z, simulationTimeSec) +
+      ASH_DUNE_FOLLOWER_CENTER_OFFSET;
     if (owner.fuel < 0.15) f.morale = Math.max(0, f.morale - dt * 0.3);
     else f.morale = Math.min(1, f.morale + dt * 0.05);
     if (f.morale < 0.05) {
@@ -259,13 +273,16 @@ export function tickWorld(
     ruinsActivated++;
     for (let i = 0; i < ruin.followerCharge; i++) {
       const id = `f-ruin-${ruin.id}-${i}`;
+      const sx = ruin.position.x + (Math.random() - 0.5) * 6;
+      const sz = ruin.position.z + (Math.random() - 0.5) * 6;
       world.followers.set(id, {
         id,
         kind: i % 4 === 0 ? 'lantern-bearer' : 'wanderer',
         position: {
-          x: ruin.position.x + (Math.random() - 0.5) * 6,
-          y: ruin.position.y,
-          z: ruin.position.z + (Math.random() - 0.5) * 6,
+          x: sx,
+          y:
+            ashDuneSurfaceWorldY(sx, sz, simulationTimeSec) + ASH_DUNE_FOLLOWER_CENTER_OFFSET,
+          z: sz,
         },
         ownerId: null,
         morale: 0.65,
@@ -333,20 +350,51 @@ export function tickWorld(
     }
   }
 
+  for (const p of playerArr) {
+    for (const f of p.followers) {
+      f.position.y =
+        ashDuneSurfaceWorldY(f.position.x, f.position.z, simulationTimeSec) +
+        ASH_DUNE_FOLLOWER_CENTER_OFFSET;
+    }
+  }
+  for (const f of world.followers.values()) {
+    f.position.y =
+      ashDuneSurfaceWorldY(f.position.x, f.position.z, simulationTimeSec) +
+      ASH_DUNE_FOLLOWER_CENTER_OFFSET;
+  }
+  for (const r of world.ruins.values()) {
+    r.position.y =
+      ashDuneSurfaceWorldY(r.position.x, r.position.z, simulationTimeSec) +
+      ASH_DUNE_RUIN_CENTER_OFFSET;
+  }
+  for (const r of world.relics.values()) {
+    r.position.y =
+      ashDuneSurfaceWorldY(r.position.x, r.position.z, simulationTimeSec) +
+      ASH_DUNE_RELIC_CENTER_OFFSET;
+  }
+
   return { derived, caravans, combatAbsorptions, rescuesGranted, ruinsActivated };
 }
 
-function jitterAround(center: Vec3, ownerId: string, followerId: string, world: SimWorld): Vec3 {
+function jitterAround(
+  center: Vec3,
+  ownerId: string,
+  followerId: string,
+  world: SimWorld,
+  simulationTimeSec: number,
+): Vec3 {
   void world;
   let h = 2166136261;
   for (const ch of ownerId) h = (h ^ ch.charCodeAt(0)) * 16777619;
   for (const ch of followerId) h = (h ^ ch.charCodeAt(0)) * 16777619;
   const ang = (h >>> 0) / 4294967296 * Math.PI * 2;
   const r = 1.6 + (((h >>> 8) & 0xff) / 255) * 1.4;
+  const tx = center.x + Math.cos(ang) * r;
+  const tz = center.z + Math.sin(ang) * r;
   return {
-    x: center.x + Math.cos(ang) * r,
-    y: center.y,
-    z: center.z + Math.sin(ang) * r,
+    x: tx,
+    y: ashDuneSurfaceWorldY(tx, tz, simulationTimeSec) + ASH_DUNE_FOLLOWER_CENTER_OFFSET,
+    z: tz,
   };
 }
 

@@ -45,7 +45,7 @@ describe('tickWorld - caravan formation', () => {
     const world = makeWorld();
     addPlayer(world, { id: 'a', position: { x: 0, y: 0, z: 0 } });
     addPlayer(world, { id: 'b', position: { x: 4, y: 0, z: 0 } });
-    const result = tickWorld(world, newSimQueues(), 0.1, silent);
+    const result = tickWorld(world, newSimQueues(), 0.1, silent, 0);
     expect(result.caravans.length).toBe(1);
     expect(result.caravans[0]?.memberIds.sort()).toEqual(['a', 'b']);
   });
@@ -54,7 +54,7 @@ describe('tickWorld - caravan formation', () => {
     const world = makeWorld();
     addPlayer(world, { id: 'a', position: { x: 0, y: 0, z: 0 } });
     addPlayer(world, { id: 'b', position: { x: 200, y: 0, z: 0 } });
-    const result = tickWorld(world, newSimQueues(), 0.1, silent);
+    const result = tickWorld(world, newSimQueues(), 0.1, silent, 0);
     expect(result.caravans.length).toBe(2);
   });
 });
@@ -68,7 +68,7 @@ describe('tickWorld - rescue intent', () => {
     f.ownerId = null;
     const queues = newSimQueues();
     queues.rescues.push({ playerId: 'me' });
-    const result = tickWorld(world, queues, 0.1, silent);
+    const result = tickWorld(world, queues, 0.1, silent, 0);
     expect(result.rescuesGranted).toBe(1);
     expect(world.followers.get(f.id)?.ownerId).toBe('me');
     const me = world.players.get('me')!;
@@ -83,7 +83,7 @@ describe('tickWorld - rescue intent', () => {
     f.ownerId = null;
     const queues = newSimQueues();
     queues.rescues.push({ playerId: 'me' });
-    const result = tickWorld(world, queues, 0.1, silent);
+    const result = tickWorld(world, queues, 0.1, silent, 0);
     expect(result.rescuesGranted).toBe(0);
   });
 });
@@ -118,7 +118,7 @@ describe('tickWorld - combat absorption', () => {
     let absorbed = 0;
     let safety = 0;
     while (absorbed === 0 && safety++ < 200) {
-      const r = tickWorld(world, newSimQueues(), 0.5, silent);
+      const r = tickWorld(world, newSimQueues(), 0.5, silent, 0);
       absorbed += r.combatAbsorptions;
     }
     expect(absorbed).toBeGreaterThan(0);
@@ -133,7 +133,7 @@ describe('tickWorld - relic claim', () => {
     addPlayer(world, { id: 'me', position: relic.position, fuel: 1 });
     const me = world.players.get('me')!;
     expect(me.relicBonus).toBe(0);
-    tickWorld(world, newSimQueues(), 0.1, silent);
+    tickWorld(world, newSimQueues(), 0.1, silent, 0);
     expect(me.relicBonus).toBeCloseTo(relic.radiusBonus, 5);
     expect(world.relics.get(relic.id)?.claimed).toBe(true);
   });

@@ -55,14 +55,6 @@
         right: 12px;
         text-align: right;
       }
-      .hud--bottom-center {
-        bottom: 16px;
-        left: 50%;
-        transform: translateX(-50%);
-        text-align: center;
-        font-size: 12px;
-        opacity: 0.85;
-      }
       .hud strong {
         color: #ffe6a4;
         font-weight: 600;
@@ -107,20 +99,27 @@
         font-size: 11px;
       }
       .scene-tooltip {
-        padding: 2px 7px;
-        border-radius: 4px;
-        background: rgba(6, 8, 18, 0.82);
-        border: 1px solid rgba(140, 160, 230, 0.4);
+        box-sizing: border-box;
+        max-width: min(28rem, 88vw);
+        padding: 6px 10px;
+        border-radius: 6px;
+        background: rgba(6, 8, 18, 0.88);
+        border: 1px solid rgba(140, 160, 230, 0.45);
         color: #e4e8ff;
-        font: 11px/1.25 system-ui, sans-serif;
-        white-space: nowrap;
+        font: 12px/1.45 system-ui, sans-serif;
+        white-space: pre-line;
+        text-align: left;
         pointer-events: none;
         text-shadow: 0 1px 2px #000;
       }
     </style>
   </head>
   <body>
-    <canvas id="scene" tabindex="0" aria-label="View — WASD move, Space/Shift vertical, R rescue, F ruin, T toggle labels, ESC session"></canvas>
+    <canvas
+      id="scene"
+      tabindex="0"
+      aria-label="White Exile game view"
+    ></canvas>
     <div class="hud hud--top-left" id="hud-stats">
       <div><span id="hud-status-dot" class="status-dot"></span><span id="hud-status">connecting...</span></div>
       <div>Note <strong id="hud-room-note">—</strong></div>
@@ -134,9 +133,6 @@
     </div>
     <div class="hud hud--top-right" id="hud-name">
       <div>You: <strong id="hud-display-name">guest</strong></div>
-    </div>
-    <div class="hud hud--bottom-center">
-      WASD · Space/Shift · R rescue · F ruin · T labels · ESC · ?race=… · ?labels=0
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

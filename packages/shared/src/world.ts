@@ -80,6 +80,14 @@ export const ZONES = ['safe', 'grey', 'deep', 'dead'] as const;
 export const ZoneSchema = z.enum(ZONES);
 export type Zone = z.infer<typeof ZoneSchema>;
 
+/** Full zone names for HUD and in-world labels (keep in sync with design language). */
+export const ZONE_DISPLAY_LABEL: Readonly<Record<Zone, string>> = {
+  safe: 'Safe Ashlands',
+  grey: 'Grey Dunes',
+  deep: 'Deep Ash',
+  dead: 'Dead Zone',
+} as const;
+
 /**
  * Distance bands from world origin. Tuned so the safe zone fits the spawn
  * volume comfortably and dead zones live well past the play radius edge.
@@ -98,6 +106,13 @@ export const ZONE_BANDS: ReadonlyArray<{ zone: Zone; maxRadius: number; fogDensi
 export const FOLLOWER_KINDS = ['wanderer', 'lantern-bearer', 'beast'] as const;
 export const FollowerKindSchema = z.enum(FOLLOWER_KINDS);
 export type FollowerKind = z.infer<typeof FollowerKindSchema>;
+
+/** Follower kind names for tooltips (avoid single-letter codes in player-facing copy). */
+export const FOLLOWER_KIND_DISPLAY: Readonly<Record<FollowerKind, string>> = {
+  wanderer: 'Wanderer',
+  'lantern-bearer': 'Lantern bearer',
+  beast: 'Beast',
+} as const;
 
 /** Wire shape for a single follower, free or attached. */
 export const FollowerSnapshotSchema = z.object({

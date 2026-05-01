@@ -1,25 +1,49 @@
 /**
- * World-space HTML billboards (CSS2D). Default on; `?labels=0`, `localStorage.rtRoomLabels`, or **T** toggles.
+ * World-space HTML billboards (CSS2D). **T** cycles label mode: off → keywords → full.
+ *
+ * URL: `?labels=off|keywords|full` or `?labels=0|1|2` (0 off, 1 full, 2 keywords).
+ * Storage: `localStorage.rtRoomLabelsMode`; legacy `rtRoomLabels` `0`/`1` is migrated.
  */
 import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 
-export function readLabelsEnabled(): boolean {
+/** `off` hides overlays; `keywords` is compact scan lines; `full` is explanatory paragraphs. */
+export type WorldLabelMode = 'off' | 'keywords' | 'full';
+
+const ORDER: readonly WorldLabelMode[] = ['off', 'keywords', 'full'];
+
+export function nextLabelMode(current: WorldLabelMode): WorldLabelMode {
+  const i = ORDER.indexOf(current);
+  return ORDER[(i + 1) % ORDER.length]!;
+}
+
+function parseLabelQuery(raw: string | null): WorldLabelMode | undefined {
+  if (raw === null) return undefined;
+  const v = raw.trim().toLowerCase();
+  if (v === '0' || v === 'false' || v === 'off' || v === 'none' || v === 'hide') return 'off';
+  if (v === '1' || v === 'true' || v === 'on' || v === 'full' || v === 'long') return 'full';
+  if (v === '2' || v === 'keywords' || v === 'short' || v === 'kw') return 'keywords';
+  return undefined;
+}
+
+/** Initial mode from `?labels=` then `rtRoomLabelsMode`, then legacy `rtRoomLabels`. Default `full`. */
+export function readLabelMode(): WorldLabelMode {
   try {
-    const q = new URLSearchParams(window.location.search).get('labels');
-    if (q === '0' || q === 'false') return false;
-    if (q === '1' || q === 'true') return true;
-    const s = window.localStorage.getItem('rtRoomLabels');
-    if (s === '0') return false;
-    if (s === '1') return true;
+    const fromUrl = parseLabelQuery(new URLSearchParams(window.location.search).get('labels'));
+    if (fromUrl !== undefined) return fromUrl;
+    const stored = parseLabelQuery(window.localStorage.getItem('rtRoomLabelsMode'));
+    if (stored !== undefined) return stored;
+    const leg = window.localStorage.getItem('rtRoomLabels');
+    if (leg === '0') return 'off';
+    if (leg === '1') return 'full';
   } catch {
     /* ignore */
   }
-  return true;
+  return 'full';
 }
 
-export function persistLabelsEnabled(on: boolean): void {
+export function persistLabelMode(mode: WorldLabelMode): void {
   try {
-    window.localStorage.setItem('rtRoomLabels', on ? '1' : '0');
+    window.localStorage.setItem('rtRoomLabelsMode', mode);
   } catch {
     /* ignore */
   }

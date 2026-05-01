@@ -14,7 +14,7 @@ import {
   RACE_PROFILES,
   RoomSettingsSchema,
   classifyZone,
-  clampToPlayVolume,
+  clampPlayerPosition,
   type CaravanSnapshot,
   type FollowerKind,
   type FollowerSnapshot,
@@ -92,6 +92,8 @@ export class Room {
   private readonly logger: Logger;
   private readonly ghostIds = new Set<string>();
   private readonly ghostHost: GhostHostRoom;
+  /** Monotonic sim clock for ash-dune height (seconds). */
+  private simulationTimeSec = 0;
 
   constructor(id: string, opts: { seed?: number; logger: Logger; ghosts?: GhostManager | null }) {
     this.id = id;
@@ -105,7 +107,7 @@ export class Room {
           name,
           isBot: true,
           race,
-          position: clampToPlayVolume(position),
+          position: clampPlayerPosition(position, this.simulationTimeSec),
           fuel: 0.85,
           followers: [],
           relicBonus: 0,
@@ -124,7 +126,7 @@ export class Room {
       },
       moveGhost: (ghostId, position) => {
         const pl = this.players.get(ghostId);
-        if (pl) pl.position = clampToPlayVolume(position);
+        if (pl) pl.position = clampPlayerPosition(position, this.simulationTimeSec);
       },
       hasGhost: (ghostId) => this.ghostIds.has(ghostId),
       realPlayerCount: () => {
@@ -196,7 +198,7 @@ export class Room {
   }): PlayerState {
     const state: PlayerState = {
       ...p,
-      position: clampToPlayVolume(p.position),
+      position: clampPlayerPosition(p.position, this.simulationTimeSec),
       fuel: 0.9,
       followers: [],
       relicBonus: 0,
@@ -254,7 +256,7 @@ export class Room {
   setPosition(playerId: string, position: Vec3): boolean {
     const pl = this.players.get(playerId);
     if (!pl || pl.disconnected) return false;
-    pl.position = clampToPlayVolume(position);
+    pl.position = clampPlayerPosition(position, this.simulationTimeSec);
     return true;
   }
 
@@ -275,14 +277,16 @@ export class Room {
     const dt = Math.min(0.5, Math.max(0.001, (now - this.lastTickMs) / 1000));
     this.lastTickMs = now;
     this.tickCount++;
+    const simT = this.simulationTimeSec;
 
     if (this.ghosts) this.ghosts.ensureSpawned(this.ghostHost);
     const sim = this.toSimWorld();
     if (this.ghosts) this.ghosts.step(this.ghostHost, sim, this.queues, dt);
-    const result = tickWorld(sim, this.queues, dt, this.logger);
+    const result = tickWorld(sim, this.queues, dt, this.logger, simT);
     this.applySimToRoom(sim);
     this.derivedByPlayer = result.derived;
     this.caravansCache = result.caravans;
+    this.simulationTimeSec += dt;
     return {
       caravans: result.caravans.length,
       combatAbsorptions: result.combatAbsorptions,
@@ -373,7 +377,7 @@ export class Room {
         name: typeof raw.name === 'string' ? raw.name : raw.id,
         isBot: !!raw.isBot,
         race: raw.race ?? 'emberfolk',
-        position: clampToPlayVolume(raw.position ?? { x: 0, y: 0, z: 0 }),
+        position: clampPlayerPosition(raw.position ?? { x: 0, y: 0, z: 0 }, 0),
         fuel: typeof raw.fuel === 'number' ? raw.fuel : 0.85,
         followers: Array.isArray(raw.followers) ? [...raw.followers] : [],
         relicBonus: typeof raw.relicBonus === 'number' ? raw.relicBonus : 0,

@@ -21,8 +21,7 @@ Document **project-specific** controls in README or `docs/` — do not treat the
 
 | Input | Typical action (examples only) |
 |---|---|
-| `W/A/S/D` | Character movement |
-| `Space` | Jump or ascend |
+| `W/A/S/D` | Character movement (ground plane) |
 | `Escape` | Menu / pause |
 | Mouse | Look / interact |
 
