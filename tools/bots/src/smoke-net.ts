@@ -25,6 +25,7 @@ socket.on('connect', () => {
     protocolVersion: PROTOCOL_VERSION,
     displayName: 'smoke',
     isBot: true,
+    race: 'emberfolk',
   });
 });
 
@@ -38,7 +39,14 @@ socket.on(EVT.server.snapshot, (raw: unknown) => {
   if (!s.success) fail('invalid snapshot');
   const snap = s.data;
   if (snap === undefined) fail('invalid snapshot');
-  console.log('[smoke-net] ok', { players: snap.players.length, tick: snap.tick });
+  console.log('[smoke-net] ok', {
+    players: snap.players.length,
+    tick: snap.tick,
+    followers: snap.followers.length,
+    ruins: snap.ruins.length,
+    relics: snap.relics.length,
+    caravans: snap.caravans.length,
+  });
   socket.disconnect();
   process.exit(0);
 });

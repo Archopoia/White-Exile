@@ -1,15 +1,20 @@
 /**
- * Socket.io: hello, move intents, room settings patches, tick snapshots.
+ * Socket.io: hello (race-aware), move/rescue/activate-ruin intents,
+ * room settings patches, tick snapshots.
  */
 import { randomUUID } from 'node:crypto';
 import { Server as IOServer, type Socket } from 'socket.io';
 import type { Server as HttpServer } from 'node:http';
 import {
+  ClientActivateRuinSchema,
   ClientHelloSchema,
   ClientMoveSchema,
+  ClientRescueIntentSchema,
   ClientRoomSettingsPatchSchema,
+  DEFAULT_RACE,
   EVT,
   PROTOCOL_VERSION,
+  isRace,
   type RoomSnapshot,
   type ServerError,
   type ServerWelcome,
@@ -23,19 +28,18 @@ export const ROOM_ID = 'default';
 
 export function attachSocketServer(
   httpServer: HttpServer,
-  initialRoom?: Room,
+  initialRoom: Room,
 ): { io: IOServer; room: Room } {
   const io = new IOServer(httpServer, {
     cors: { origin: config.corsOrigin },
     serveClient: false,
   });
-  const room = initialRoom ?? new Room(ROOM_ID);
 
-  scheduleTickLoop(io, room);
-  schedulePruneLoop(room);
+  scheduleTickLoop(io, initialRoom);
+  schedulePruneLoop(initialRoom);
 
-  io.on('connection', (socket) => handleConnection(socket, room, io));
-  return { io, room };
+  io.on('connection', (socket) => handleConnection(socket, initialRoom, io));
+  return { io, room: initialRoom };
 }
 
 function handleConnection(socket: Socket, room: Room, io: IOServer): void {
@@ -48,6 +52,10 @@ function handleConnection(socket: Socket, room: Room, io: IOServer): void {
     roomSettings: new TokenBucket({
       ratePerSec: config.roomSettingsPatch.ratePerSec,
       burst: config.roomSettingsPatch.burst,
+    }),
+    rescue: new TokenBucket({
+      ratePerSec: config.rescue.ratePerSec,
+      burst: config.rescue.burst,
     }),
     other: new TokenBucket({
       ratePerSec: config.rateLimitMessagesPerSec,
@@ -74,12 +82,14 @@ function handleConnection(socket: Socket, room: Room, io: IOServer): void {
     }
 
     let resumed = false;
+    const incomingRace = parsed.data.race && isRace(parsed.data.race) ? parsed.data.race : DEFAULT_RACE;
     if (parsed.data.resumeToken) {
       const existing = room.tryReattach(parsed.data.resumeToken);
       if (existing) {
         playerId = existing.id;
         existing.name = parsed.data.displayName;
         existing.isBot = parsed.data.isBot ?? existing.isBot;
+        if (parsed.data.race && isRace(parsed.data.race)) existing.race = parsed.data.race;
         resumed = true;
       }
     }
@@ -90,6 +100,7 @@ function handleConnection(socket: Socket, room: Room, io: IOServer): void {
         id: playerId,
         name: parsed.data.displayName,
         isBot: parsed.data.isBot ?? false,
+        race: incomingRace,
         position: { x: 0, y: 2, z: 8 },
       });
     }
@@ -100,6 +111,7 @@ function handleConnection(socket: Socket, room: Room, io: IOServer): void {
       playerId,
       name: player?.name,
       isBot: player?.isBot,
+      race: player?.race,
       resumed,
     } as const;
     const joinMsg = resumed ? 'player resumed' : 'player joined';
@@ -113,6 +125,8 @@ function handleConnection(socket: Socket, room: Room, io: IOServer): void {
       tickHz: config.tickHz,
       resumeToken: playerId,
       resumed,
+      race: player?.race ?? incomingRace,
+      worldConfig: room.getWorldConfig(),
     };
     socket.emit(EVT.server.welcome, welcome);
     socket.emit(EVT.server.snapshot, room.snapshot());
@@ -145,6 +159,30 @@ function handleConnection(socket: Socket, room: Room, io: IOServer): void {
     io.to(ROOM_ID).emit(EVT.server.snapshot, room.snapshot());
   });
 
+  socket.on(EVT.client.rescue, (raw: unknown) => {
+    if (!playerId) return;
+    if (!limits.rescue.take()) {
+      return reject('rate_limit', 'rescue rate exceeded', 'rescue.rate_limit');
+    }
+    const parsed = ClientRescueIntentSchema.safeParse(raw);
+    if (!parsed.success) {
+      return reject('invalid_payload', 'bad rescue', 'rescue.invalid');
+    }
+    room.enqueueRescue(playerId, parsed.data.followerId);
+  });
+
+  socket.on(EVT.client.activateRuin, (raw: unknown) => {
+    if (!playerId) return;
+    if (!limits.rescue.take()) {
+      return reject('rate_limit', 'activation rate exceeded', 'activateRuin.rate_limit');
+    }
+    const parsed = ClientActivateRuinSchema.safeParse(raw);
+    if (!parsed.success) {
+      return reject('invalid_payload', 'bad activate', 'activateRuin.invalid');
+    }
+    room.enqueueRuinActivation(playerId, parsed.data.ruinId);
+  });
+
   socket.on('disconnect', (reason) => {
     if (playerId) {
       const marked = room.markDisconnected(playerId);
@@ -163,17 +201,32 @@ function scheduleTickLoop(io: IOServer, room: Room): void {
   const intervalMs = Math.max(20, Math.floor(1000 / config.tickHz));
   let tickCount = 0;
   setInterval(() => {
-    room.tick();
+    const stats = room.tick();
     const snap: RoomSnapshot = room.snapshot();
     io.to(ROOM_ID).emit(EVT.server.snapshot, snap);
     tickCount++;
+    if (
+      stats.combatAbsorptions > 0 ||
+      stats.rescuesGranted > 0 ||
+      stats.ruinsActivated > 0
+    ) {
+      logger.debug(
+        {
+          evt: 'sim.tick_stats',
+          tick: snap.tick,
+          ...stats,
+        },
+        'sim tick stats',
+      );
+    }
     if (tickCount % (config.tickHz * 10) === 0) {
+      const diag = room.diagnostics();
       logger.info(
         {
           evt: 'room.tick',
           roomId: room.id,
-          players: room.size(),
           tick: snap.tick,
+          ...diag,
         },
         'periodic tick',
       );

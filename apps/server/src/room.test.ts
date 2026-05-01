@@ -1,18 +1,26 @@
 import { describe, expect, it } from 'vitest';
+import pino from 'pino';
 import { Room } from './room.js';
+
+const silent = pino({ level: 'silent' });
+
+function newRoom(seed = 1): Room {
+  return new Room('test', { seed, logger: silent, ghosts: null });
+}
 
 function makePlayer(id: string) {
   return {
     id,
     name: `p_${id}`,
     isBot: false,
+    race: 'emberfolk' as const,
     position: { x: 0, y: 0, z: 0 },
   };
 }
 
 describe('Room', () => {
   it('adds and lists players', () => {
-    const room = new Room('test');
+    const room = newRoom();
     room.addPlayer(makePlayer('a'));
     room.addPlayer(makePlayer('b'));
     expect(room.size()).toBe(2);
@@ -20,18 +28,21 @@ describe('Room', () => {
   });
 
   it('snapshot lists visible players and settings', () => {
-    const room = new Room('test');
+    const room = newRoom();
     room.addPlayer(makePlayer('a'));
     room.patchRoomSettings({ roomNote: 'Hi' });
+    room.tick();
     const snap = room.snapshot();
     expect(snap.players.length).toBe(1);
     expect(snap.players[0]?.id).toBe('a');
     expect(snap.settings.roomNote).toBe('Hi');
     expect(snap.tick).toBeGreaterThanOrEqual(0);
+    expect(snap.players[0]?.lightRadius).toBeGreaterThan(0);
+    expect(snap.followers.length).toBeGreaterThan(0);
   });
 
   it('hides soft-disconnected players from snapshots and counts', () => {
-    const room = new Room('test');
+    const room = newRoom();
     room.addPlayer(makePlayer('a'));
     room.addPlayer(makePlayer('b'));
     room.markDisconnected('a', 1_000);
@@ -41,7 +52,7 @@ describe('Room', () => {
   });
 
   it('reattaches an existing record via tryReattach', () => {
-    const room = new Room('test');
+    const room = newRoom();
     room.addPlayer(makePlayer('a'));
     room.setPosition('a', { x: 1, y: 2, z: 3 });
     room.markDisconnected('a', 2_000);
@@ -52,7 +63,7 @@ describe('Room', () => {
   });
 
   it('prunes only after the grace window elapses', () => {
-    const room = new Room('test');
+    const room = newRoom();
     room.addPlayer(makePlayer('human'));
     room.addPlayer({ ...makePlayer('bot'), isBot: true });
     room.markDisconnected('human', 0);
@@ -82,15 +93,28 @@ describe('Room', () => {
   });
 
   it('serializes and restores players', () => {
-    const room = new Room('test');
+    const room = newRoom();
     room.addPlayer(makePlayer('a'));
     room.patchRoomSettings({ roomNote: 'Saved' });
     const data = room.serialize();
-    const restored = Room.restore(data);
+    const restored = Room.restore(data, { logger: silent });
     expect(restored.totalRecords()).toBe(1);
     expect(restored.snapshot().players).toEqual([]);
     restored.tryReattach('a');
+    restored.tick();
     expect(restored.snapshot().players.length).toBe(1);
     expect(restored.getSettings().roomNote).toBe('Saved');
+  });
+
+  it('emits caravan when two close players have overlapping light fields', () => {
+    const room = newRoom();
+    room.addPlayer(makePlayer('a'));
+    room.addPlayer({ ...makePlayer('b'), position: { x: 6, y: 0, z: 0 } });
+    room.tick();
+    const snap = room.snapshot();
+    const cids = new Set(snap.players.map((p) => p.caravanId));
+    expect(cids.size).toBe(1);
+    expect(snap.caravans.length).toBe(1);
+    expect(snap.caravans[0]?.memberIds).toHaveLength(2);
   });
 });

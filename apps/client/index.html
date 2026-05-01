@@ -42,12 +42,13 @@
         box-shadow: var(--hud-shadow);
         backdrop-filter: blur(6px);
         font-size: 13px;
-        line-height: 1.4;
+        line-height: 1.5;
         pointer-events: none;
       }
       .hud--top-left {
         top: 12px;
         left: 12px;
+        min-width: 240px;
       }
       .hud--top-right {
         top: 12px;
@@ -81,20 +82,51 @@
       .status-dot.connecting {
         background: #ffe070;
       }
+      .fuel-meter {
+        position: relative;
+        width: 100%;
+        height: 6px;
+        background: rgba(255, 255, 255, 0.08);
+        border-radius: 3px;
+        overflow: hidden;
+        margin-top: 4px;
+      }
+      .fuel-fill {
+        position: absolute;
+        inset: 0 auto 0 0;
+        height: 100%;
+        background: #6cf6a3;
+        transition: width 120ms linear, background 240ms;
+      }
+      .zone-tag {
+        display: inline-block;
+        padding: 1px 8px;
+        border-radius: 999px;
+        background: rgba(120, 140, 220, 0.18);
+        border: 1px solid rgba(120, 140, 220, 0.35);
+        font-size: 11px;
+      }
     </style>
   </head>
   <body>
-    <canvas id="scene" tabindex="0" aria-label="View — click to focus, then WASD to move, Space and Shift for up and down"></canvas>
+    <canvas id="scene" tabindex="0" aria-label="View — click to focus, then WASD to move, Space and Shift for up and down, R to rescue, F to activate ruin"></canvas>
     <div class="hud hud--top-left" id="hud-stats">
       <div><span id="hud-status-dot" class="status-dot"></span><span id="hud-status">connecting...</span></div>
-      <div>Room note <strong id="hud-room-note">—</strong></div>
+      <div>Note <strong id="hud-room-note">—</strong></div>
       <div>Players <strong id="hud-players">0</strong> · tick <strong id="hud-tick">0</strong></div>
+      <div>Race <strong id="hud-race">emberfolk</strong> · Zone <span class="zone-tag" id="hud-zone">Safe Ashlands</span></div>
+      <div>Light <strong id="hud-light">0.0</strong> · Caravan <strong id="hud-caravan">1</strong></div>
+      <div>Followers <strong id="hud-followers">0</strong></div>
+      <div>Fuel <strong id="hud-fuel-text">100%</strong>
+        <div class="fuel-meter"><div class="fuel-fill" id="hud-fuel-bar" style="width:100%"></div></div>
+      </div>
     </div>
     <div class="hud hud--top-right" id="hud-name">
       <div>You: <strong id="hud-display-name">guest</strong></div>
     </div>
     <div class="hud hud--bottom-center">
-      Click the view to focus. WASD moves; Space and Shift move up and down. ESC opens the session panel.
+      WASD move · Space/Shift up-down · R rescue · F activate ruin · ESC session
+      · ?race=emberfolk|ashborn|lumen-kin
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

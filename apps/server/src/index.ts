@@ -9,6 +9,7 @@ import { logger } from './logger.js';
 import { ROOM_ID, attachSocketServer } from './net.js';
 import { loadRoomIfPresent, saveRoom } from './persistence.js';
 import { Room } from './room.js';
+import { GhostManager } from './world/ghosts.js';
 
 async function main(): Promise<void> {
   const app = Fastify({ loggerInstance: logger });
@@ -27,8 +28,18 @@ async function main(): Promise<void> {
     `server listening on http://${config.host}:${config.port}`,
   );
 
-  const restored = await loadRoomIfPresent(ROOM_ID);
-  const initialRoom = restored ?? new Room(ROOM_ID);
+  const ghosts = config.ghosts.enabled
+    ? new GhostManager({
+        count: config.ghosts.count,
+        seed: config.ghosts.seed,
+        realPlayerCap: config.ghosts.realPlayerCap,
+        logger,
+      })
+    : null;
+
+  const restored = await loadRoomIfPresent(ROOM_ID, { logger, ghosts });
+  const initialRoom =
+    restored ?? new Room(ROOM_ID, { seed: config.worldSeed, logger, ghosts });
   const { room } = attachSocketServer(app.server, initialRoom);
 
   let saveTimer: NodeJS.Timeout | null = null;

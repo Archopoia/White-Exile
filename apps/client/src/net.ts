@@ -1,5 +1,6 @@
 /**
- * Socket transport: hello, validated snapshots, move + room settings intents.
+ * Socket transport: hello (race-aware), validated snapshots,
+ * move + room settings + rescue + activate-ruin intents.
  */
 import { io, type Socket } from 'socket.io-client';
 import {
@@ -8,9 +9,12 @@ import {
   RoomSnapshotSchema,
   ServerErrorSchema,
   ServerWelcomeSchema,
+  type ClientActivateRuin,
   type ClientHello,
   type ClientMove,
+  type ClientRescueIntent,
   type ClientRoomSettingsPatch,
+  type Race,
   type RoomSnapshot,
   type ServerError,
   type ServerWelcome,
@@ -22,6 +26,7 @@ import { inputLog } from './inputLog.js';
 export interface NetClientOptions {
   url: string;
   displayName: string;
+  race?: Race;
   isBot?: boolean;
   resumeToken?: string;
 }
@@ -38,6 +43,7 @@ export class NetClient {
   private readonly callbacks: NetClientCallbacks;
   private readonly displayName: string;
   private readonly isBot: boolean;
+  private readonly race: Race | undefined;
   private resumeToken: string | undefined;
   private handshakeComplete = false;
 
@@ -45,6 +51,7 @@ export class NetClient {
     this.callbacks = callbacks;
     this.displayName = options.displayName;
     this.isBot = options.isBot ?? false;
+    this.race = options.race;
     this.resumeToken = options.resumeToken;
     this.socket = io(options.url, { transports: ['websocket'], autoConnect: true });
     this.bind();
@@ -59,6 +66,7 @@ export class NetClient {
         protocolVersion: PROTOCOL_VERSION,
         displayName: this.displayName,
         isBot: this.isBot,
+        ...(this.race ? { race: this.race } : {}),
         ...(this.resumeToken ? { resumeToken: this.resumeToken } : {}),
       };
       this.socket.emit(EVT.client.hello, hello);
@@ -82,6 +90,7 @@ export class NetClient {
         traceId: parsed.data.traceId,
         playerId: parsed.data.playerId,
         resumed: parsed.data.resumed,
+        race: parsed.data.race,
       });
       this.callbacks.onWelcome?.(parsed.data);
     });
@@ -116,6 +125,18 @@ export class NetClient {
       return;
     }
     this.socket.emit(EVT.client.roomSettingsPatch, patch);
+  }
+
+  sendRescue(followerId?: string): void {
+    if (!this.socket.connected || !this.handshakeComplete) return;
+    const msg: ClientRescueIntent = followerId ? { followerId } : {};
+    this.socket.emit(EVT.client.rescue, msg);
+  }
+
+  sendActivateRuin(ruinId: string): void {
+    if (!this.socket.connected || !this.handshakeComplete) return;
+    const msg: ClientActivateRuin = { ruinId };
+    this.socket.emit(EVT.client.activateRuin, msg);
   }
 
   dispose(): void {

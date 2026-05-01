@@ -1,18 +1,24 @@
 /**
- * Pluggable bot brains: each tick returns the next intended position.
+ * Pluggable bot brains.
+ *
+ * Each tick returns the next intended position **and** any optional intents
+ * (rescue, activate ruin) to be sent up. The bot wrapper handles transport.
  */
-import type { RoomSnapshot, Vec3 } from '@realtime-room/shared';
+import type { FollowerSnapshot, RoomSnapshot, RuinSnapshot, Vec3 } from '@realtime-room/shared';
 import type { Rng } from './rng.js';
 
 export interface BehaviorContext {
   rng: Rng;
   botId: number;
+  selfPlayerId: string | null;
   snapshot: RoomSnapshot | null;
   elapsed: number;
 }
 
 export interface BehaviorTick {
   position: Vec3;
+  rescueFollowerId?: string | null;
+  activateRuinId?: string | null;
 }
 
 export interface Behavior {
@@ -20,7 +26,7 @@ export interface Behavior {
   tick(dt: number, ctx: BehaviorContext): BehaviorTick;
 }
 
-const PLAY_RADIUS = 120;
+const PLAY_RADIUS = 320;
 
 function spherePoint(rng: Rng, radius: number): Vec3 {
   const u = rng() * 2 - 1;
@@ -28,7 +34,7 @@ function spherePoint(rng: Rng, radius: number): Vec3 {
   const r = Math.sqrt(Math.max(0, 1 - u * u));
   return {
     x: radius * r * Math.cos(theta),
-    y: radius * u,
+    y: radius * u * 0.1,
     z: radius * r * Math.sin(theta),
   };
 }
@@ -41,6 +47,56 @@ function lerpVec3(a: Vec3, b: Vec3, t: number): Vec3 {
   };
 }
 
+function self(ctx: BehaviorContext): { position: Vec3 } | null {
+  if (!ctx.snapshot || !ctx.selfPlayerId) return null;
+  const me = ctx.snapshot.players.find((p) => p.id === ctx.selfPlayerId);
+  return me ? { position: me.position } : null;
+}
+
+function nearestStrandedFollower(
+  ctx: BehaviorContext,
+  origin: Vec3,
+  withinRadius?: number,
+): FollowerSnapshot | null {
+  if (!ctx.snapshot) return null;
+  let best: FollowerSnapshot | null = null;
+  let bestSq = withinRadius ? withinRadius * withinRadius : Infinity;
+  for (const f of ctx.snapshot.followers) {
+    if (f.ownerId !== null) continue;
+    const dx = f.position.x - origin.x;
+    const dy = f.position.y - origin.y;
+    const dz = f.position.z - origin.z;
+    const sq = dx * dx + dy * dy + dz * dz;
+    if (sq < bestSq) {
+      bestSq = sq;
+      best = f;
+    }
+  }
+  return best;
+}
+
+function nearestUnactivatedRuin(
+  ctx: BehaviorContext,
+  origin: Vec3,
+  withinRadius?: number,
+): RuinSnapshot | null {
+  if (!ctx.snapshot) return null;
+  let best: RuinSnapshot | null = null;
+  let bestSq = withinRadius ? withinRadius * withinRadius : Infinity;
+  for (const r of ctx.snapshot.ruins) {
+    if (r.activated) continue;
+    const dx = r.position.x - origin.x;
+    const dy = r.position.y - origin.y;
+    const dz = r.position.z - origin.z;
+    const sq = dx * dx + dy * dy + dz * dz;
+    if (sq < bestSq) {
+      bestSq = sq;
+      best = r;
+    }
+  }
+  return best;
+}
+
 class WandererBehavior implements Behavior {
   readonly name = 'wanderer';
   private current: Vec3 = { x: PLAY_RADIUS, y: 0, z: 0 };
@@ -50,7 +106,7 @@ class WandererBehavior implements Behavior {
   tick(dt: number, ctx: BehaviorContext): BehaviorTick {
     this.timeToRetarget -= dt;
     if (this.timeToRetarget <= 0) {
-      this.target = spherePoint(ctx.rng, PLAY_RADIUS);
+      this.target = spherePoint(ctx.rng, 60 + ctx.rng() * 220);
       this.timeToRetarget = 1.5 + ctx.rng() * 2.5;
     }
     this.current = lerpVec3(this.current, this.target, Math.min(1, dt * 2.4));
@@ -66,7 +122,7 @@ class OrbiterBehavior implements Behavior {
   private phase: number;
 
   constructor(rng: Rng) {
-    this.radius = PLAY_RADIUS * (0.6 + rng() * 0.4);
+    this.radius = 80 + rng() * 180;
     this.speed = 0.4 + rng() * 0.8;
     this.phase = rng() * Math.PI * 2;
     const tilt = rng() * Math.PI;
@@ -87,7 +143,6 @@ class OrbiterBehavior implements Behavior {
   }
 }
 
-/** Picks new targets on a short cadence (stress for move intents). */
 class DrifterBehavior implements Behavior {
   readonly name = 'drifter';
   private cooldown = 0;
@@ -97,7 +152,7 @@ class DrifterBehavior implements Behavior {
   tick(dt: number, ctx: BehaviorContext): BehaviorTick {
     this.cooldown -= dt;
     if (this.cooldown <= 0) {
-      this.desired = spherePoint(ctx.rng, PLAY_RADIUS);
+      this.desired = spherePoint(ctx.rng, 50 + ctx.rng() * 220);
       this.cooldown = 0.25 + ctx.rng() * 0.4;
     }
     this.current = lerpVec3(this.current, this.desired, Math.min(1, dt * 10));
@@ -110,7 +165,7 @@ class AfkBehavior implements Behavior {
   private readonly anchor: Vec3;
 
   constructor(rng: Rng) {
-    this.anchor = spherePoint(rng, PLAY_RADIUS);
+    this.anchor = spherePoint(rng, 30 + rng() * 60);
   }
 
   tick(): BehaviorTick {
@@ -129,6 +184,7 @@ class ChaserBehavior implements Behavior {
       let best: Vec3 | null = null;
       let bestDist = Number.POSITIVE_INFINITY;
       for (const p of snap.players) {
+        if (p.id === ctx.selfPlayerId) continue;
         const dx = p.position.x - this.current.x;
         const dy = p.position.y - this.current.y;
         const dz = p.position.z - this.current.z;
@@ -140,15 +196,124 @@ class ChaserBehavior implements Behavior {
       }
       target = best;
     }
-    if (!target) target = spherePoint(ctx.rng, PLAY_RADIUS);
+    if (!target) target = spherePoint(ctx.rng, 50 + ctx.rng() * 220);
     this.current = lerpVec3(this.current, target, Math.min(1, dt * 2.8));
     return { position: this.current };
   }
 }
 
-export type BehaviorName = 'wanderer' | 'orbiter' | 'drifter' | 'afk' | 'chaser';
+/** Walks toward stranded followers and emits a rescue intent when in range. */
+class RescuerBehavior implements Behavior {
+  readonly name = 'rescuer';
+  private current: Vec3 = { x: 40, y: 0, z: 0 };
+  private rescueCooldown = 0;
 
-export const ALL_BEHAVIORS: BehaviorName[] = ['wanderer', 'orbiter', 'drifter', 'afk', 'chaser'];
+  tick(dt: number, ctx: BehaviorContext): BehaviorTick {
+    this.rescueCooldown -= dt;
+    const me = self(ctx);
+    const origin = me?.position ?? this.current;
+    const target = nearestStrandedFollower(ctx, origin);
+    let goal: Vec3;
+    if (target) {
+      goal = target.position;
+    } else {
+      goal = spherePoint(ctx.rng, 40 + ctx.rng() * 120);
+    }
+    this.current = lerpVec3(this.current, goal, Math.min(1, dt * 2.0));
+    const out: BehaviorTick = { position: this.current };
+    if (target && me && this.rescueCooldown <= 0) {
+      const dx = me.position.x - target.position.x;
+      const dy = me.position.y - target.position.y;
+      const dz = me.position.z - target.position.z;
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      const myLight = ctx.snapshot?.players.find((p) => p.id === ctx.selfPlayerId)?.lightRadius ?? 0;
+      if (dist <= myLight) {
+        out.rescueFollowerId = target.id;
+        this.rescueCooldown = 1.0;
+      }
+    }
+    return out;
+  }
+}
+
+/** Walks toward the largest visible caravan to merge light fields. */
+class CaravanSeekerBehavior implements Behavior {
+  readonly name = 'caravan-seeker';
+  private current: Vec3 = { x: 0, y: 0, z: 0 };
+
+  tick(dt: number, ctx: BehaviorContext): BehaviorTick {
+    let goal: Vec3 = spherePoint(ctx.rng, 80);
+    const snap = ctx.snapshot;
+    if (snap && snap.caravans.length > 0) {
+      let largest = snap.caravans[0]!;
+      for (const c of snap.caravans) {
+        if (c.lightRadius > largest.lightRadius) largest = c;
+      }
+      const leader = snap.players.find((p) => p.id === largest.leaderId);
+      if (leader) goal = leader.position;
+    }
+    this.current = lerpVec3(this.current, goal, Math.min(1, dt * 1.6));
+    return { position: this.current };
+  }
+}
+
+/** Pushes deeper into the world; activates ruins it lands near. */
+class DeepDiverBehavior implements Behavior {
+  readonly name = 'deep-diver';
+  private current: Vec3 = { x: 0, y: 0, z: 0 };
+  private target: Vec3 = { x: 0, y: 0, z: 0 };
+  private retargetIn = 0;
+  private activateCooldown = 0;
+
+  tick(dt: number, ctx: BehaviorContext): BehaviorTick {
+    this.retargetIn -= dt;
+    this.activateCooldown -= dt;
+    const me = self(ctx);
+    const origin = me?.position ?? this.current;
+    if (this.retargetIn <= 0) {
+      const ruin = nearestUnactivatedRuin(ctx, origin, 600);
+      if (ruin) {
+        this.target = ruin.position;
+      } else {
+        const angle = ctx.rng() * Math.PI * 2;
+        const r = 220 + ctx.rng() * 240;
+        this.target = { x: Math.cos(angle) * r, y: 0, z: Math.sin(angle) * r };
+      }
+      this.retargetIn = 4 + ctx.rng() * 3;
+    }
+    this.current = lerpVec3(this.current, this.target, Math.min(1, dt * 1.4));
+    const out: BehaviorTick = { position: this.current };
+    if (me && this.activateCooldown <= 0) {
+      const ruin = nearestUnactivatedRuin(ctx, me.position, 6);
+      if (ruin) {
+        out.activateRuinId = ruin.id;
+        this.activateCooldown = 2;
+      }
+    }
+    return out;
+  }
+}
+
+export type BehaviorName =
+  | 'wanderer'
+  | 'orbiter'
+  | 'drifter'
+  | 'afk'
+  | 'chaser'
+  | 'rescuer'
+  | 'caravan-seeker'
+  | 'deep-diver';
+
+export const ALL_BEHAVIORS: BehaviorName[] = [
+  'wanderer',
+  'orbiter',
+  'drifter',
+  'afk',
+  'chaser',
+  'rescuer',
+  'caravan-seeker',
+  'deep-diver',
+];
 
 export function createBehavior(name: BehaviorName, rng: Rng): Behavior {
   switch (name) {
@@ -160,6 +325,12 @@ export function createBehavior(name: BehaviorName, rng: Rng): Behavior {
       return new AfkBehavior(rng);
     case 'chaser':
       return new ChaserBehavior();
+    case 'rescuer':
+      return new RescuerBehavior();
+    case 'caravan-seeker':
+      return new CaravanSeekerBehavior();
+    case 'deep-diver':
+      return new DeepDiverBehavior();
     case 'wanderer':
     default:
       return new WandererBehavior();

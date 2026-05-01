@@ -9,6 +9,7 @@ describe('bot behaviors', () => {
       const out = behavior.tick(0.1, {
         rng: mulberry32(7),
         botId: 0,
+        selfPlayerId: null,
         snapshot: null,
         elapsed: 0,
       });
@@ -19,20 +20,23 @@ describe('bot behaviors', () => {
   });
 
   it('drifter keeps updating position over time', () => {
-    const behavior = createBehavior('drifter', mulberry32(1));
-    const a = behavior.tick(0.1, {
-      rng: mulberry32(1),
+    const rng = mulberry32(1);
+    const behavior = createBehavior('drifter', rng);
+    const ctx = {
+      rng,
       botId: 0,
+      selfPlayerId: null,
       snapshot: null,
       elapsed: 0,
-    }).position;
-    const b = behavior.tick(0.5, {
-      rng: mulberry32(2),
-      botId: 0,
-      snapshot: null,
-      elapsed: 0.5,
-    }).position;
-    const moved = (a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2;
+    };
+    let last = behavior.tick(1.0, ctx).position;
+    let moved = 0;
+    // 10 ticks with cooldown drained each time guarantees at least one retarget.
+    for (let i = 0; i < 10; i++) {
+      const next = behavior.tick(1.0, ctx).position;
+      moved += (next.x - last.x) ** 2 + (next.y - last.y) ** 2 + (next.z - last.z) ** 2;
+      last = next;
+    }
     expect(moved).toBeGreaterThan(1e-6);
   });
 });

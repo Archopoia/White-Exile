@@ -1,9 +1,14 @@
 /**
  * Bots CLI: real Socket.io clients for load and protocol checks.
  *
- *   pnpm dev:bots -- --count 12 --mix wanderer,orbiter,drifter,afk --seed 42
+ *   pnpm dev:bots -- --count 12 --mix wanderer,rescuer,deep-diver --seed 42
+ *
+ * Default mix exercises the full White Exile loop (rescue → caravan → deep
+ * push → activate ruin) so a developer running just the server can observe
+ * end-to-end behaviour.
  */
 import pino from 'pino';
+import { RACES, type Race } from '@realtime-room/shared';
 import { ALL_BEHAVIORS, createBehavior, type BehaviorName } from './behaviors.js';
 import { Bot } from './bot.js';
 import { mulberry32 } from './rng.js';
@@ -15,6 +20,7 @@ interface ParsedArgs {
   url: string;
   tickHz: number;
   staggerMs: number;
+  race: Race | null;
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
@@ -35,7 +41,7 @@ function parseArgs(argv: string[]): ParsedArgs {
   }
 
   const count = Number(args.get('count') ?? '8');
-  const mixRaw = (args.get('mix') ?? ALL_BEHAVIORS.join(','))
+  const mixRaw = (args.get('mix') ?? 'wanderer,orbiter,rescuer,caravan-seeker,deep-diver,afk')
     .split(/[\s,]+/)
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
@@ -45,7 +51,10 @@ function parseArgs(argv: string[]): ParsedArgs {
   const url = args.get('url') ?? process.env.SERVER_URL ?? 'http://localhost:3001';
   const tickHz = Number(args.get('tickHz') ?? '28');
   const staggerMs = Number(args.get('staggerMs') ?? '120');
-  return { count, mix, seed, url, tickHz, staggerMs };
+  const raceRaw = args.get('race');
+  const race =
+    raceRaw && (RACES as readonly string[]).includes(raceRaw) ? (raceRaw as Race) : null;
+  return { count, mix, seed, url, tickHz, staggerMs, race };
 }
 
 async function main(): Promise<void> {
@@ -70,12 +79,14 @@ async function main(): Promise<void> {
     const behaviorName = args.mix[i % args.mix.length] ?? 'wanderer';
     const rng = mulberry32((args.seed + i * 1013904223) >>> 0);
     const behavior = createBehavior(behaviorName, rng);
+    const race = args.race ?? (RACES[Math.floor(rng() * RACES.length)] as Race);
     const name = `BOT_${behaviorName}_${i.toString().padStart(2, '0')}`;
     const resumeToken = `bot-${args.seed}-${i}`;
     const bot = new Bot({
       url: args.url,
       botId: i,
       name,
+      race,
       behavior,
       rng,
       tickHz: args.tickHz,

@@ -2,6 +2,7 @@
  * Client bootstrap: Three.js scene, Socket.io, HUD, optional room options (ESC).
  * HMR: dispose + reconnect; resume token keeps the same player record.
  */
+import { DEFAULT_RACE, RACES, isRace, type Race } from '@realtime-room/shared';
 import { debugLogger } from './debug.js';
 import { updateHud, type HudState } from './hud.js';
 import { NetClient } from './net.js';
@@ -10,6 +11,7 @@ import { RoomScene } from './scene.js';
 
 const STORAGE_NAME = 'rtRoom.displayName';
 const STORAGE_TOKEN = 'rtRoom.resumeToken';
+const STORAGE_RACE = 'rtRoom.race';
 
 function makeDisplayName(): string {
   try {
@@ -24,10 +26,10 @@ function makeDisplayName(): string {
   } catch {
     /* ignore */
   }
-  const adjectives = ['calm', 'swift', 'bright', 'quiet', 'bold', 'free', 'odd', 'new'];
-  const nouns = ['node', 'beam', 'wave', 'unit', 'guest', 'peer', 'host', 'link'];
-  const a = adjectives[Math.floor(Math.random() * adjectives.length)] ?? 'new';
-  const n = nouns[Math.floor(Math.random() * nouns.length)] ?? 'peer';
+  const adjectives = ['ash', 'cold', 'lit', 'lone', 'bold', 'still', 'bright', 'old'];
+  const nouns = ['ember', 'pyre', 'lamp', 'wick', 'spark', 'beacon', 'dust', 'kin'];
+  const a = adjectives[Math.floor(Math.random() * adjectives.length)] ?? 'ash';
+  const n = nouns[Math.floor(Math.random() * nouns.length)] ?? 'ember';
   return `${a}-${n}`;
 }
 
@@ -56,6 +58,31 @@ function persistDisplayName(name: string): void {
   }
 }
 
+function pickRace(): Race {
+  try {
+    const fromUrl = new URLSearchParams(window.location.search).get('race');
+    if (fromUrl && isRace(fromUrl)) return fromUrl;
+  } catch {
+    /* ignore */
+  }
+  try {
+    const stored = window.localStorage.getItem(STORAGE_RACE);
+    if (stored && isRace(stored)) return stored;
+  } catch {
+    /* ignore */
+  }
+  const idx = Math.floor(Math.random() * RACES.length);
+  return RACES[idx] ?? DEFAULT_RACE;
+}
+
+function persistRace(race: Race): void {
+  try {
+    window.localStorage.setItem(STORAGE_RACE, race);
+  } catch {
+    /* ignore */
+  }
+}
+
 function resolveServerUrl(): string {
   const fromEnv = import.meta.env.VITE_SERVER_URL as string | undefined;
   if (fromEnv && fromEnv.length > 0) return fromEnv;
@@ -76,6 +103,8 @@ function boot(): RunningClient {
 
   const displayName = makeDisplayName();
   persistDisplayName(displayName);
+  const race = pickRace();
+  persistRace(race);
 
   const hud: HudState = {
     status: 'connecting',
@@ -83,6 +112,12 @@ function boot(): RunningClient {
     displayName,
     roomNote: '',
     tick: 0,
+    race,
+    lightRadius: 0,
+    fuel: 1,
+    followerCount: 0,
+    zone: 'safe',
+    caravanSize: 1,
   };
   updateHud(hud);
 
@@ -92,7 +127,10 @@ function boot(): RunningClient {
   let net: NetClient | null = null;
   const scene = new RoomScene(canvas, {
     onMoveIntent: (position) => net?.sendMove(position),
+    onRescueIntent: () => net?.sendRescue(),
+    onActivateRuinIntent: (ruinId) => net?.sendActivateRuin(ruinId),
   });
+  scene.setLocalRace(race);
 
   const options = createRoomOptionsOverlay((roomNote) => {
     net?.sendRoomSettingsPatch({ roomNote });
@@ -104,6 +142,7 @@ function boot(): RunningClient {
     {
       url: resolveServerUrl(),
       displayName,
+      race,
       ...(readResumeToken() ? { resumeToken: readResumeToken() as string } : {}),
     },
     {
@@ -116,11 +155,15 @@ function boot(): RunningClient {
         localPlayerId = welcome.playerId;
         appliedServerPos = false;
         scene.setLocalPlayerId(welcome.playerId);
+        scene.setLocalRace(welcome.race);
+        hud.race = welcome.race;
+        persistRace(welcome.race);
         writeResumeToken(welcome.resumeToken);
         debugLogger.info('welcome.applied', {
           playerId: welcome.playerId,
           traceId: welcome.traceId,
           resumed: welcome.resumed,
+          race: welcome.race,
         });
       },
       onSnapshot: (snap) => {
@@ -132,9 +175,18 @@ function boot(): RunningClient {
         const me = localPlayerId
           ? snap.players.find((p) => p.id === localPlayerId)
           : snap.players.find((p) => p.name === displayName);
-        if (me && !appliedServerPos) {
-          scene.syncLocalFromServer(me.position);
-          appliedServerPos = true;
+        if (me) {
+          hud.lightRadius = me.lightRadius;
+          hud.fuel = me.fuel;
+          hud.followerCount = me.followerCount;
+          hud.zone = me.zone;
+          hud.race = me.race;
+          const myCaravan = snap.caravans.find((c) => c.id === me.caravanId);
+          hud.caravanSize = myCaravan?.memberIds.length ?? 1;
+          if (!appliedServerPos) {
+            scene.syncLocalFromServer(me.position);
+            appliedServerPos = true;
+          }
         }
         updateHud(hud);
       },
@@ -145,7 +197,11 @@ function boot(): RunningClient {
   );
 
   scene.start();
-  debugLogger.info('client.boot', { name: displayName, hasResumeToken: !!readResumeToken() });
+  debugLogger.info('client.boot', {
+    name: displayName,
+    race,
+    hasResumeToken: !!readResumeToken(),
+  });
 
   const liveNet = net;
   return {

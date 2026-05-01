@@ -89,10 +89,19 @@ describe('Server schemas', () => {
       tickHz: 15,
       resumeToken: 'p1',
       resumed: true,
+      race: 'emberfolk',
+      worldConfig: {
+        fogBaseDensity: 0.02,
+        spawnRadius: 600,
+        followerCap: 32,
+        ruinCap: 8,
+        relicCap: 4,
+      },
     });
     expect(parsed.tickHz).toBe(15);
     expect(parsed.resumeToken).toBe('p1');
     expect(parsed.resumed).toBe(true);
+    expect(parsed.race).toBe('emberfolk');
   });
 
   it('welcome.resumed defaults to false', () => {
@@ -103,6 +112,14 @@ describe('Server schemas', () => {
       protocolVersion: PROTOCOL_VERSION,
       tickHz: 15,
       resumeToken: 'p1',
+      race: 'ashborn',
+      worldConfig: {
+        fogBaseDensity: 0.02,
+        spawnRadius: 600,
+        followerCap: 32,
+        ruinCap: 8,
+        relicCap: 4,
+      },
     });
     expect(parsed.resumed).toBe(false);
   });
@@ -112,7 +129,18 @@ describe('Server schemas', () => {
       serverTime: 0,
       tick: 0,
       settings: { roomNote: '' },
+      worldConfig: {
+        fogBaseDensity: 0.02,
+        spawnRadius: 600,
+        followerCap: 32,
+        ruinCap: 8,
+        relicCap: 4,
+      },
       players: [],
+      followers: [],
+      ruins: [],
+      relics: [],
+      caravans: [],
     });
     expect(parsed.players).toEqual([]);
   });

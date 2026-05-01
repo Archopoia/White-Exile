@@ -1,17 +1,17 @@
 # White Exile
 
-TypeScript monorepo: **one authoritative room**, Socket.io to browsers and tooling, **Zod** wire schemas in `packages/shared`, optional **headless bots**, **dev JSON persistence** for the room, **resume tokens**, and a **minimal Three.js** client (move intents + ESC session panel for a shared room note).
+Multiplayer survival caravan game in a dead-sun ash/snow world where **light = life** and survival is fundamentally social. See [`PITCH.md`](./PITCH.md) for the design.
 
-The stack is a focused multiplayer foundation you can grow into full simulation and UI for **White Exile**.
+This repo is a TypeScript monorepo: one authoritative server room, Socket.io to browsers, internal sim **ghosts** (fake caravans for density), external **bots** (full-protocol players that rescue, merge into caravans, and push deep), Zod wire schemas, dev JSON persistence, resume tokens, and a Three.js client.
 
 ## Stack
 
-| Part        | Role |
-|------------|------|
-| `apps/server` | Fastify (`/health`), Socket.io, tick loop, rate limits |
-| `apps/client` | Vite, Three.js grid + avatars, DOM HUD |
-| `packages/shared` | `PROTOCOL_VERSION`, event names, Zod payloads |
-| `tools/bots` | `socket.io-client` load clients |
+| Part | Role |
+|------|------|
+| `apps/server` | Fastify (`/health`), Socket.io, tick loop, world simulation, ghost manager, log fan-out to `.cursor/logs/` |
+| `apps/client` | Vite + Three.js — race-tinted light spheres, zone-tinted fog, follower meshes, ruins, relics, HUD |
+| `packages/shared` | `PROTOCOL_VERSION`, event names, Zod payloads, race profiles, light & fuel math, zone bands |
+| `tools/bots` | `socket.io-client` agents — `rescuer`, `caravan-seeker`, `deep-diver`, plus the original load behaviors |
 
 ## Prerequisites
 
@@ -33,14 +33,10 @@ pnpm dev:server
 # Terminal 2 — client (default http://localhost:5173)
 pnpm dev:client
 
-# Optional — bot flock
-pnpm dev:bots -- --count 12 --mix wanderer,orbiter,drifter,afk
-```
+# Optional — full bot flock running the actual game loop
+pnpm dev:bots -- --count 8 --mix rescuer,caravan-seeker,deep-diver,wanderer
 
-Combined:
-
-```bash
-pnpm dev:all
+# Server + client + bots in one terminal
 pnpm dev:full
 ```
 
@@ -52,25 +48,40 @@ pnpm smoke:net
 
 ## Client
 
-- Click the canvas to focus, then **WASD**, **Space** / **Shift** for vertical motion. Move intents stream to the server; positions are clamped to a shared volume.
-- **ESC** toggles the session panel: **Room note** is stored in authoritative `RoomSettings` and appears in every client’s HUD after **Apply**.
+- Click the canvas, then **WASD** to move, **Space**/**Shift** for vertical motion.
+- **R** rescues the nearest stranded follower inside your light radius.
+- **F** activates the ruin you're standing in (releases its follower charge).
+- **ESC** opens the session panel for the shared room note.
+- HUD shows: race, zone, light radius, fuel, follower count, caravan size, tick.
 
-Display name and resume token are stored under `localStorage` keys `rtRoom.displayName` and `rtRoom.resumeToken`.
+Race selection: append `?race=emberfolk|ashborn|lumen-kin` to the URL, set `localStorage.rtRoom.race`, or let the client pick a random one. The server echoes back the assigned race in the welcome.
+
+`localStorage` keys: `rtRoom.displayName`, `rtRoom.resumeToken`, `rtRoom.race`.
 
 ## Bots
 
-CLI flags: `--count`, `--mix` (`wanderer`, `orbiter`, `drifter`, `afk`, `chaser`), `--seed`, `--url`, `--tickHz`, `--staggerMs`. Each bot uses a stable `resumeToken` so dev persistence can reattach the same record after a server restart.
+```
+pnpm dev:bots -- --count <N> --mix <list> --seed <N> --tickHz <N> --staggerMs <N> [--race emberfolk|ashborn|lumen-kin]
+```
+
+Behaviors: `wanderer`, `orbiter`, `drifter`, `afk`, `chaser`, `rescuer`, `caravan-seeker`, `deep-diver`. Each bot uses a stable `resumeToken` so dev persistence reattaches the same record after a server restart. `rescuer` and `deep-diver` exercise the rescue and ruin-activation intents.
+
+## Internal sim ghosts
+
+The server can spawn server-side fake caravans (no Socket.io) so a solo client still sees movement. They despawn automatically when real (non-bot) players reach `GHOST_REAL_CAP`. Toggle with `GHOSTS_ENABLED=0`.
 
 ## Quality
 
 ```bash
 pnpm typecheck
-pnpm test
+pnpm test       # 47 unit tests across shared, server, and bots
 pnpm lint
 ```
 
-## Debugging
+## Logs
 
-See [docs/debugging.md](docs/debugging.md) for log fields and environment variables.
+Server logs are pretty-printed on stdout **and** written as NDJSON to `.cursor/logs/server.ndjson`. Tail or grep that file from any tool (or agent) to see exactly what happened on the server. Set `LOG_TO_FILE=0` to skip the file sink, `LOG_FILE_PATH=...` to relocate it.
+
+See [docs/debugging.md](docs/debugging.md) for log fields, environment variables, and structured event names.
 
 If an old `apps/server/.dev-state/room.json` causes confusing headcount, delete that file while the server is stopped and start again.
