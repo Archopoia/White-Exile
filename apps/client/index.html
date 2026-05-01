@@ -106,10 +106,21 @@
         border: 1px solid rgba(120, 140, 220, 0.35);
         font-size: 11px;
       }
+      .scene-tooltip {
+        padding: 2px 7px;
+        border-radius: 4px;
+        background: rgba(6, 8, 18, 0.82);
+        border: 1px solid rgba(140, 160, 230, 0.4);
+        color: #e4e8ff;
+        font: 11px/1.25 system-ui, sans-serif;
+        white-space: nowrap;
+        pointer-events: none;
+        text-shadow: 0 1px 2px #000;
+      }
     </style>
   </head>
   <body>
-    <canvas id="scene" tabindex="0" aria-label="View — click to focus, then WASD to move, Space and Shift for up and down, R to rescue, F to activate ruin"></canvas>
+    <canvas id="scene" tabindex="0" aria-label="View — WASD move, Space/Shift vertical, R rescue, F ruin, T toggle labels, ESC session"></canvas>
     <div class="hud hud--top-left" id="hud-stats">
       <div><span id="hud-status-dot" class="status-dot"></span><span id="hud-status">connecting...</span></div>
       <div>Note <strong id="hud-room-note">—</strong></div>
@@ -125,8 +136,7 @@
       <div>You: <strong id="hud-display-name">guest</strong></div>
     </div>
     <div class="hud hud--bottom-center">
-      WASD move · Space/Shift up-down · R rescue · F activate ruin · ESC session
-      · ?race=emberfolk|ashborn|lumen-kin
+      WASD · Space/Shift · R rescue · F ruin · T labels · ESC · ?race=… · ?labels=0
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

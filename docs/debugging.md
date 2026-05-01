@@ -100,6 +100,8 @@ Enable debug logging:
 - `?debug=1` on the client URL, or
 - `localStorage.rtRoomDebug=1`
 
+World labels (CSS2D billboards on players, followers, ruins, relics, ground): **T** toggles; default on. `?labels=0` or `localStorage.rtRoomLabels=0` starts with them off.
+
 ## Bots
 
 Pino `svc: rt-room-bots`. Each line includes `botId` and `name` (e.g. `BOT_rescuer_03`). Bots also send `bot.welcome` once the server returns the playerId; rescuer/deep-diver behaviors then read snapshots to choose follower / ruin targets.

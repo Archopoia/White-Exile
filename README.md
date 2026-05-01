@@ -51,6 +51,7 @@ pnpm smoke:net
 - Click the canvas, then **WASD** to move, **Space**/**Shift** for vertical motion.
 - **R** rescues the nearest stranded follower inside your light radius.
 - **F** activates the ruin you're standing in (releases its follower charge).
+- **T** toggles hovering world labels (billboards); default on (`?labels=0` / `localStorage.rtRoomLabels=0` to start off).
 - **ESC** opens the session panel for the shared room note.
 - HUD shows: race, zone, light radius, fuel, follower count, caravan size, tick.
 
