@@ -1,8 +1,9 @@
 /**
- * Dead-sun sky dome.
+ * Night sky dome with a smothered moon-gold sun disk.
  *
  * A large back-faced sphere rendered before everything else (renderOrder = -1)
- * with a custom shader. The sun is a faint disk smeared by a horizon haze
+ * with a custom shader. The sun reads as pale lunar gold — a faint disk
+ * smeared by a horizon haze
  * band; height-based gradient gives the "thick foggy atmosphere with smothered
  * sun" look the pitch calls for. No real atmospheric scattering — it would
  * look wrong (too bright) and cost too much for what the scene needs.
@@ -44,33 +45,34 @@ interface ZoneTone {
   readonly haze: number;
 }
 
+/** Sky-disk + tint: pale warm gold (lunar), not ember-red. */
 const ZONE_TONES: Readonly<Record<Zone, ZoneTone>> = Object.freeze({
   safe: {
     zenith: 0x141a2c,
     horizon: 0x4a3744,
     ground: 0x231d28,
-    sun: 0xe08a78,
+    sun: 0xf2e6c8,
     haze: 0.5,
   },
   grey: {
     zenith: 0x0d1120,
     horizon: 0x3a2a34,
     ground: 0x1c1720,
-    sun: 0xc46c5a,
+    sun: 0xd8caa8,
     haze: 0.65,
   },
   deep: {
     zenith: 0x070a14,
     horizon: 0x281c26,
     ground: 0x12101a,
-    sun: 0x9a4b3c,
+    sun: 0xb0a080,
     haze: 0.8,
   },
   dead: {
     zenith: 0x03040c,
     horizon: 0x18101e,
     ground: 0x0a070d,
-    sun: 0x6b2a28,
+    sun: 0x7d7058,
     haze: 0.95,
   },
 });
@@ -143,7 +145,8 @@ const FRAG = /* glsl */ `
     float disk = smoothstep(0.997, 0.9995, sunDot);
     float halo = pow(sunDot, mix(80.0, 24.0, uHaze));
     float wideHalo = pow(sunDot, mix(8.0, 3.0, uHaze));
-    float hazeAtten = mix(1.0, 0.18, uHaze);
+    // Keep disk/halo readable in deep haze; palette is lunar gold, not ember-hot.
+    float hazeAtten = mix(1.0, 0.26, uHaze);
     col += uSunColor * disk * 0.9 * hazeAtten;
     col += uSunColor * halo * 0.55 * hazeAtten;
     col += uSunColor * wideHalo * 0.18 * hazeAtten;

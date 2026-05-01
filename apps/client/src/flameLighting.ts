@@ -3,7 +3,7 @@
  *
  * Real lights with shadows:
  *   - AmbientLight (cool skylight fill) + HemisphereLight (sky vs ground
- *     bounce) + DirectionalLight (dead sun) give visible global illumination
+ *     bounce) + DirectionalLight (moon-gold sun) give visible global illumination
  *     so the dunes are never "torch only". The sun casts shadows on med/high.
  *     ruins, players, and followers throw long ambient shadows on the dunes.
  *   - Each player owns a "flame" — a custom additive shader on crossed quads
@@ -50,7 +50,7 @@ const TIER_CONFIG: Readonly<Record<FxTier, FlameTierConfig>> = Object.freeze({
     // Strong hemisphere + moderate sun: global fill must be obvious on
     // rough ash (high roughness kills contrast otherwise).
     hemisphereIntensity: 1.05,
-    sunIntensity: 0.62,
+    sunIntensity: 0.7,
   },
   med: {
     sunShadow: true,
@@ -61,7 +61,7 @@ const TIER_CONFIG: Readonly<Record<FxTier, FlameTierConfig>> = Object.freeze({
     poolShadowMapSize: 0,
     poolShadowCount: 0,
     hemisphereIntensity: 0.98,
-    sunIntensity: 0.68,
+    sunIntensity: 0.76,
   },
   high: {
     sunShadow: true,
@@ -72,7 +72,7 @@ const TIER_CONFIG: Readonly<Record<FxTier, FlameTierConfig>> = Object.freeze({
     poolShadowMapSize: 256,
     poolShadowCount: 3,
     hemisphereIntensity: 0.92,
-    sunIntensity: 0.74,
+    sunIntensity: 0.82,
   },
 });
 
@@ -290,7 +290,8 @@ export function createFlameLighting(
   // player). If they moved with the camera/player, the shadow frustum would
   // slide across the dunes and the same landmark would brighten/darken for
   // no physical reason as you walk.
-  const sun = new THREE.DirectionalLight(0xc78a72, cfg.sunIntensity);
+  // Warm pale gold — moonlight through ash haze, not orange torch or red ember.
+  const sun = new THREE.DirectionalLight(0xe4d6b8, cfg.sunIntensity);
   const sunTarget = new THREE.Vector3(0, 0, 0);
   sun.target.position.copy(sunTarget);
   scene.add(sun);

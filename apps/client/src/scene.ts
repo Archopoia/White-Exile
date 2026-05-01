@@ -3,7 +3,7 @@
  *
  * What's on screen:
  *   - Endless ash/snow dune terrain (shader displacement: height + chaos with radius from origin)
- *   - Dead-sun sky dome (`sky.ts`) — gradient + horizon haze + smothered sun disk
+ *   - Moon-gold sun sky dome (`sky.ts`) — gradient + horizon haze + smothered sun disk
  *   - Local player core lit by a real shadow-casting torch flame (`flameLighting.ts`):
  *     hero `SpotLight` (one shadow map), fill `PointLight`, and a custom
  *     additive flame shader. Flicker drives both visual flame and cast light.
