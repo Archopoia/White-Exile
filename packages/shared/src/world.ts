@@ -22,6 +22,9 @@ export const RaceSchema = z.enum(RACES);
 export type Race = z.infer<typeof RaceSchema>;
 export const DEFAULT_RACE: Race = 'emberfolk';
 
+/** Moon-gold caravan torch — sun-family, slightly warmer than client directional `0xe4d6b8`. */
+export const TORCH_MOON_GOLD_HEX = 0xe8d2ae as const;
+
 export function isRace(value: unknown): value is Race {
   return typeof value === 'string' && (RACES as readonly string[]).includes(value);
 }
@@ -46,7 +49,7 @@ export const RACE_PROFILES: Readonly<Record<Race, RaceProfile>> = Object.freeze(
   emberfolk: {
     id: 'emberfolk',
     displayName: 'Emberfolk',
-    lightColor: 0xff8a3d,
+    lightColor: TORCH_MOON_GOLD_HEX,
     baseLightRadius: 14,
     fuelDecayMul: 0.85,
     deepZoneBonus: 1.0,
@@ -55,7 +58,8 @@ export const RACE_PROFILES: Readonly<Record<Race, RaceProfile>> = Object.freeze(
   ashborn: {
     id: 'ashborn',
     displayName: 'Ashborn',
-    lightColor: 0x6cf0c2,
+    // Teal shifted toward moon-gold so torch matches sun family while staying cool-leaning.
+    lightColor: 0x9be4b6,
     baseLightRadius: 11,
     fuelDecayMul: 1.0,
     deepZoneBonus: 1.25,
@@ -64,7 +68,8 @@ export const RACE_PROFILES: Readonly<Record<Race, RaceProfile>> = Object.freeze(
   'lumen-kin': {
     id: 'lumen-kin',
     displayName: 'Lumen Kin',
-    lightColor: 0xb3a1ff,
+    // Violet shifted toward moon-gold for the same sun-family read on sand.
+    lightColor: 0xc9b2dc,
     baseLightRadius: 18,
     fuelDecayMul: 1.2,
     deepZoneBonus: 0.85,

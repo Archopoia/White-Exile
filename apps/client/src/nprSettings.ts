@@ -75,6 +75,10 @@ export interface NprSettings {
   celShadowTintAmount: number;
   celMinLight: number;
   celMix: number;
+  /** 0 = off. Feathers real-time cast shadow edges in screen space (prepass luma Sobel). */
+  castShadowEdgeFade: number;
+  /** Shadow-edge ramp width; higher = gentler fade (pairs with {@link castShadowEdgeFade}). */
+  castShadowEdgeSoftness: number;
 
   hatchEnabled: boolean;
   hatchPattern: HatchPattern;

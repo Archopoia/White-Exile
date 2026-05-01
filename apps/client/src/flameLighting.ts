@@ -21,7 +21,7 @@
  */
 import * as THREE from 'three';
 
-import type { Race } from '@realtime-room/shared';
+import { RACE_PROFILES, type Race } from '@realtime-room/shared';
 
 export type FxTier = 'low' | 'med' | 'high';
 
@@ -96,11 +96,9 @@ const HERO_FLAME_GROUP_Y = 0.6;
  */
 const TORCH_POINT_Y_LOCAL = HERO_FLAME_GROUP_Y + FLAME_HEIGHT + 0.22;
 
-const RACE_FLAME_COLOR: Readonly<Record<Race, number>> = Object.freeze({
-  emberfolk: 0xff8a3d,
-  ashborn: 0x6cf0c2,
-  'lumen-kin': 0xb3a1ff,
-});
+function raceTorchHex(race: Race): number {
+  return RACE_PROFILES[race].lightColor;
+}
 
 export interface OtherFlame {
   readonly id: string;
@@ -333,8 +331,8 @@ export function createFlameLighting(
 
   // Hero flame: PointLight at player center. Radial shadows = the player
   // throws shadows on the terrain in their own torch light.
-  const heroFlame = createFlameMesh(RACE_FLAME_COLOR.emberfolk, FLAME_HEIGHT, 0);
-  const heroLight = new THREE.PointLight(RACE_FLAME_COLOR.emberfolk, 3.6, 32, 1);
+  const heroFlame = createFlameMesh(raceTorchHex('emberfolk'), FLAME_HEIGHT, 0);
+  const heroLight = new THREE.PointLight(raceTorchHex('emberfolk'), 3.6, 32, 1);
   heroLight.position.set(0, TORCH_POINT_Y_LOCAL, 0);
   // Decay 1 = linear falloff so `distance` is meaningful for "seeing fires" far away;
   // decay ≥1.5 behaves like inverse-square and dies visually long before the cutoff.
@@ -478,7 +476,7 @@ export function createFlameLighting(
   }
 
   function setRace(race: Race): void {
-    const c = RACE_FLAME_COLOR[race];
+    const c = raceTorchHex(race);
     heroFlame.setColor(c);
     heroLight.color.setHex(c);
   }

@@ -76,6 +76,9 @@ const FRAG = /* glsl */ `
   uniform float uCelMinLight;
   uniform float uCelMix;
 
+  uniform float uCastShadowEdgeFade;
+  uniform float uCastShadowEdgeSoftness;
+
   uniform int uHatchEnabled;
   // 0=tonal, 1=crosshatch, 2=raster
   uniform int uShadowPattern;
@@ -388,6 +391,29 @@ const FRAG = /* glsl */ `
       float shadowW = (1.0 - celShade) * uCelShadowTintAmount;
       lit = mix(lit, lit * uCelShadowTint, shadowW);
       col = mix(col, lit, clamp(uCelMix, 0.0, 1.0));
+    }
+
+    // ---- Cast-shadow edge fade (prepass luma Sobel, same family as cel "Edge" smoothing) ----
+    if (uCastShadowEdgeFade > 0.0001) {
+      float lC0 = luminance(sc.rgb);
+      float shGrad = diffuseLumaEdge(uv, pxSz);
+      float wS = clamp(uCastShadowEdgeSoftness, 0.02, 1.0);
+      float edgeK = smoothstep(0.015 * wS, 0.1 + 0.45 * wS, shGrad);
+      float inSh = 1.0 - smoothstep(0.06, 0.3, lC0);
+      vec3 sR = texture2D(tDiffuse, uv + vec2(pxSz.x, 0.0)).rgb;
+      vec3 sL = texture2D(tDiffuse, uv - vec2(pxSz.x, 0.0)).rgb;
+      vec3 sU = texture2D(tDiffuse, uv + vec2(0.0, pxSz.y)).rgb;
+      vec3 sD = texture2D(tDiffuse, uv - vec2(0.0, pxSz.y)).rgb;
+      float lR = luminance(sR), lL = luminance(sL), lU = luminance(sU), lD = luminance(sD);
+      vec3 bright = sR;
+      float lb = lR;
+      if (lL > lb) { bright = sL; lb = lL; }
+      if (lU > lb) { bright = sU; lb = lU; }
+      if (lD > lb) { bright = sD; lb = lD; }
+      float towardLit = smoothstep(0.015, 0.1, lb - lC0);
+      float gate = clamp(uCastShadowEdgeFade, 0.0, 1.0) * inSh * edgeK * towardLit;
+      vec3 deltaLift = bright - sc.rgb;
+      col = max(col + deltaLift * gate, vec3(0.0));
     }
 
     // ---- Sobel outline signal (fed to outline + mist + oil) ----
