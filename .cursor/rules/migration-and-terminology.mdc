@@ -1,35 +1,28 @@
 ---
-description: Enforce full migrations and canonical terminology
+description: Complete migrations and consistent naming
 alwaysApply: true
-lastReviewed: 2026-03-16
+lastReviewed: 2026-05-01
 ---
-# Full Migration and Naming Rule
+# Migration and terminology
 
-When updating behavior, do complete migrations. Do not keep compatibility shims.
+When updating behavior, do **complete** migrations. Avoid leaving silent compatibility layers unless the team explicitly chooses them and documents why.
 
-Post-migration expectation: treat the selected architecture and contracts as steady-state and remove transition-era wording in touched canonical docs/rules.
-At the end of a migration, remove migration-era filenames/labels when they are no longer semantically required.
-Do not keep silent runtime fallbacks in canonical boot paths; fallback behavior, when needed, must be explicit and harness-scoped.
+## 1) Single canonical path
 
-## 1) No Legacy Compatibility Paths
+- When a field, type, API, or route is replaced, remove old reads/writes in the same change set.
+- Update persistence, UI labels, analytics, and docs together so one name owns the concept.
 
-- Do not keep deprecated aliases, fallback fields, dual code paths, or "temporary" compatibility adapters.
-- When a field/type/API is replaced, remove old reads/writes in the same change.
-- Update save/load contracts, UI labels, docs, and callers together so the old term/path is fully gone.
+## 2) Terminology
 
-## 2) Canonical Terminology First
+- Search the repo for an existing term before introducing a new one.
+- After a rename, one term should appear across code, docs, and tools.
 
-- Before introducing a new term, search existing code/docs/rules for the canonical term already in use.
-- Reuse existing nomenclature if it already fits.
-- If renaming is required, pick one canonical term and apply it consistently across:
-  - runtime code
-  - inspectors/UI labels
-  - events/contracts
-  - docs/rules/reference files
+## 3) Planning artifacts
 
-## 3) Done Criteria
+Treat `.cursor/plans/**` or similar folders as **historical** planning output, not live contracts, unless your project says otherwise.
 
-- No stale references to replaced terms in code paths touched by the change.
-- No contradictory terminology between `src/**`, `.cursor/rules/**`, `llms.txt`, and `docs/**` / `design/**`.
-- No "legacy"/"deprecated compatibility" comments left behind unless explicitly requested.
-- Treat `.cursor/plans/**` as historical planning artifacts, not canonical contracts.
+## 4) Done criteria
+
+- No stale references in code paths touched by the change.
+- No contradictory naming between implementation and canonical docs.
+- No “temporary shim” comments unless explicitly requested and scoped.

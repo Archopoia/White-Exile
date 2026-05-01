@@ -7,7 +7,7 @@ lastReviewed: 2026-03-22
 
 # Systems gameplay quality (studio)
 
-Complements `.cursor/rules/engine-architecture.mdc` and `.cursor/rules/immersive-editor.mdc`.
+Complements `.cursor/rules/runtime-discipline.mdc` for systems that touch gameplay simulation.
 
 - Prefer data-driven tuning (config, registries, JSON) over magic numbers in hot paths.
 - Use delta time (`deltaTime`) for time-based simulation in the frame loop.

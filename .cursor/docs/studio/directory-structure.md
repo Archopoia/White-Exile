@@ -1,18 +1,19 @@
-# Directory Structure
+# Example directory structure
+
+Typical layout for a game repo — **adapt names and folders to your project**.
 
 ```text
 /
-├── llms.txt                    # Master configuration
-├── .cursor/docs/studio/                     # Agent definitions, skills, hooks, rules, docs
-├── src/                         # Game source code (core, gameplay, ai, networking, ui, tools)
-├── assets/                      # Game assets (art, audio, vfx, shaders, data)
-├── design/                      # Game design documents (gdd, narrative, levels, balance)
-├── docs/                        # Technical documentation (architecture, engine, debug, governance)
-│   └── engine/                  # Canonical engine docs (Engine_Architecture, Loading_System, etc.)
-├── tests/                       # Test suites (unit, integration, performance, playtest)
-├── tools/                       # Build and pipeline tools (ci, build, asset-pipeline)
-├── prototypes/                  # Throwaway prototypes (isolated from src/)
-└── production/                  # Production management (sprints, milestones, releases)
-    ├── session-state/           # Ephemeral session state (active.md — gitignored)
-    └── session-logs/            # Session audit trail (gitignored)
+├── README.md                    # Project overview and how to run
+├── .cursor/                     # Cursor rules, agents, skills, studio docs
+├── src/                         # Source code (layout varies by stack)
+├── assets/                      # Art, audio, data (optional naming)
+├── design/                      # GDD, narrative, balance notes
+├── docs/                        # Technical documentation
+├── tests/                       # Automated tests
+├── tools/                       # Pipelines, CI helpers
+├── prototypes/                  # Throwaway experiments (optional)
+└── production/                  # Sprints, milestones (optional)
 ```
+
+Some teams keep a single **AI or contributor index** at the repo root (for example `AGENTS.md`); others use only `README.md` and `docs/`. Pick one canonical place and keep it current.

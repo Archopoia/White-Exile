@@ -6,7 +6,7 @@ Each workflow is a **folder** under **`.cursor/skills/<name>/`** containing **`S
 
 - **Chat:** ask for a skill by name (e.g. “follow the `sprint-plan` skill”, “use `brainstorm`”).
 - **Direct:** open `.cursor/skills/<name>/SKILL.md` and work through it step by step.
-- **Rules for AI:** project rules in `.cursor/rules/` already route engine work; skills add structured workflows on top.
+- **Rules for AI:** `.cursor/rules/` routes complex work; skills add structured workflows on top.
 
 | Skill | Purpose |
 |-------|---------|
@@ -34,10 +34,10 @@ Each workflow is a **folder** under **`.cursor/skills/<name>/`** containing **`S
 | `perf-profile` | Performance profiling outline |
 | `project-stage-detect` | Project state and gaps |
 | `reverse-document` | Docs from existing code |
-| `setup-engine` | Align `technical-preferences.md` with this repo |
+| `plan-major-change` | Structured planning for non-trivial technical work |
 | `map-systems` | Systems decomposition |
 | `design-system` | Single-system GDD authoring |
 | `gate-check` | Phase readiness |
 | `team-combat` / `team-narrative` / `team-ui` / `team-release` / `team-polish` / `team-audio` / `team-level` | Multi-role orchestration prompts |
 
-For engine implementation work, prefer **`plan-engine-change`** and **`scaffold-*`** skills from `.cursor/skills/`.
+For large implementation plans, prefer **`plan-major-change`**. Add **project-specific** scaffold skills under `.cursor/skills/` when your stack or pipeline needs repeatable templates.

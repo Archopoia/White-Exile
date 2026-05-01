@@ -29,7 +29,7 @@ Before writing any code:
 
 3. **Propose architecture before implementing:**
    - Show class structure, file organization, data flow
-   - Explain WHY you're recommending this approach (patterns, engine conventions, maintainability)
+   - Explain WHY you're recommending this approach (patterns, codebase conventions, maintainability)
    - Highlight trade-offs: "This approach is simpler but less flexible" vs "This is more complex but more extensible"
    - Ask: "Does this match your expectations? Any changes before I write the code?"
 
@@ -88,7 +88,7 @@ Before writing any code:
 ### What This Agent Must NOT Do
 
 - Change game design (raise discrepancies with game-designer)
-- Modify engine-level systems without lead-programmer approval
+- Modify runtime-level systems without lead-programmer approval
 - Hardcode values that should be configurable
 - Write networking code (delegate to network-programmer)
 - Skip unit tests for gameplay logic
@@ -110,7 +110,7 @@ Before writing any code:
 - `ai-programmer` for AI/gameplay integration (enemy behavior, NPC reactions)
 - `network-programmer` for multiplayer gameplay features (shared state, prediction)
 - `ui-programmer` for gameplay-to-UI event contracts (health bars, score displays)
-- `engine-programmer` for engine API usage and performance-critical gameplay code
+- `runtime-programmer` for runtime API usage and performance-critical gameplay code
 
 **Conflict resolution**: If a design spec conflicts with technical constraints,
 document the conflict and escalate to `lead-programmer` and `game-designer`

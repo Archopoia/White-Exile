@@ -175,7 +175,7 @@ who this game is actually for:
 
 Ground the concept in reality:
 
-- **Engine fit**: this repo ships the **custom web voxel engine** (TypeScript + Three.js + workers + WASM). Reason about feasibility against that stack, not Godot/Unity/Unreal unless comparing for reference only.
+- **Stack fit**: reason about feasibility against the **documented** stack (`technical-preferences.md`, README). Compare to other stacks only when helpful for scope or risk.
 - **Art pipeline**: What's the art style and how labor-intensive is it?
 - **Content scope**: Estimate level/area count, item count, gameplay hours
 - **MVP definition**: What's the absolute minimum build that tests "is the
@@ -194,7 +194,7 @@ Ground the concept in reality:
 
 6. **Suggest next steps** (in this order — this is the professional studio
    pre-production pipeline):
-   - "Run the `setup-engine` skill to align `technical-preferences.md` with this repo (`llms.txt`, `docs/engine/reference-index.md`)"
+   - "Capture stack and platform choices in `technical-preferences.md` and README, then add project-specific rules or scaffolds under `.cursor/` if needed"
    - "Use the `design-review` skill (design/gdd/game-concept.md) to validate completeness"
    - "Discuss vision with the `creative-director` agent for pillar refinement"
    - "Decompose the concept into individual systems with the `map-systems` skill — maps dependencies, assigns priorities, and creates the systems index"
@@ -204,4 +204,4 @@ Ground the concept in reality:
    - "If validated, plan the first sprint with the `sprint-plan` skill (new)"
 
 7. **Output a summary** with the chosen concept's elevator pitch, pillars,
-   primary player type, engine recommendation, biggest risk, and file path.
+   primary player type, stack recommendation, biggest risk, and file path.

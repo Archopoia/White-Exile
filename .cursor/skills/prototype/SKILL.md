@@ -10,8 +10,8 @@ When this skill is invoked:
    question this prototype must answer. If the concept is vague, state the
    question explicitly before proceeding.
 
-2. **Read llms.txt** for project context and the current tech stack. Understand
-   what engine, language, and frameworks are in use so the prototype is built
+2. **Read README and `docs/`** for project context and the current tech stack. Understand
+   what language and frameworks are in use so the prototype is built
    with compatible tooling.
 
 3. **Create a prototype plan**: Define in 3-5 bullet points what the minimum

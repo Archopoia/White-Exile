@@ -111,7 +111,7 @@ When multiple sounds compete, this priority determines what plays:
 `[category]_[subcategory]_[name]_[variation].ext`
 - Example: `sfx_weapon_sword_swing_01.wav`
 - Example: `music_exploration_forest_loop.ogg`
-- Example: `amb_environment_cave_drip_loop.ogg`
+- Example: `amb_environment_interior_drip_loop.ogg`
 
 ### Memory Budget
 - Total audio memory: [target, e.g., 128 MB]

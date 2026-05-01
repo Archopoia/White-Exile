@@ -43,4 +43,4 @@ Hooks skip checks they cannot run; commits and pushes still proceed. See `tools/
 
 ## IDE
 
-This repo is authored for **Cursor** (VS Code–compatible). Use Rules for AI and project rules under `.cursor/rules/` as documented in `llms.txt`.
+This repo is authored for **Cursor** (VS Code–compatible). Use Rules for AI under `.cursor/rules/` and keep project facts in README / `docs/` (or your team’s doc index).

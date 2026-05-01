@@ -18,7 +18,7 @@ The project progresses through these stages:
 
 1. **Concept** — Brainstorming, game concept document
 2. **Systems Design** — Mapping systems, writing GDDs
-3. **Technical Setup** — Engine config, architecture decisions
+3. **Technical Setup** — Stack documented, architecture decisions
 4. **Pre-Production** — Prototyping, vertical slice validation
 5. **Production** — Feature development (Epic/Feature/Task tracking active)
 6. **Polish** — Performance, playtesting, bug fixing
@@ -68,10 +68,10 @@ The project progresses through these stages:
 ### Gate: Technical Setup → Pre-Production
 
 **Required Artifacts:**
-- [ ] Engine chosen (llms.txt Technology Stack is not `[CHOOSE]`)
+- [ ] Stack and platforms documented (`technical-preferences.md` / README are not placeholders)
 - [ ] Technical preferences configured (`.cursor/docs/studio/technical-preferences.md` populated)
-- [ ] At least 1 Architecture Decision Record in `docs/architecture/`
-- [ ] Engine reference docs exist in `docs/engine/` (e.g. `Engine_Architecture.md`, `reference-index.md`)
+- [ ] At least 1 Architecture Decision Record in `docs/architecture/` (create folder if needed)
+- [ ] Technical overview exists under `docs/` (architecture note, README section, or ADR index — paths are project-defined)
 
 **Quality Checks:**
 - [ ] Architecture decisions cover core systems (rendering, input, state management)

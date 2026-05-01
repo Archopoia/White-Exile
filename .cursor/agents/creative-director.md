@@ -309,7 +309,7 @@ serves the pillar?" Often 20% of the scope delivers 80% of the pillar value.
 - Approve or reject individual assets (delegate to art-director)
 - Make sprint-level scheduling decisions (delegate to producer)
 - Write final dialogue or narrative text (delegate to narrative-director)
-- Make engine or architecture choices (delegate to technical-director)
+- Make stack or architecture choices (delegate to technical-director)
 
 ### Output Format
 

@@ -204,7 +204,7 @@
 ## 10. Technical Notes
 
 **Prototype Implementation**:
-- Language/Engine: [What was used]
+- Language/Framework: [What was used]
 - Architecture: [How it was structured]
 - Shortcuts taken: [What was hacky or throwaway]
 

@@ -1,14 +1,12 @@
 ---
 name: start
 description: "First-time onboarding — asks where you are, then guides you to the right workflow. No assumptions."
-lastReviewed: 2026-03-22
+lastReviewed: 2026-05-01
 ---
 
 # Guided Onboarding
 
-This skill is the entry point for new users. It does NOT assume you have a game
-idea, an engine preference, or any prior experience. It asks first, then routes
-you to the right workflow.
+This skill is the entry point for new contributors. It asks a short orientation question, then routes to the right workflow.
 
 ---
 
@@ -21,10 +19,10 @@ Do NOT show these results unprompted — they inform your recommendations, not
 the conversation opener.
 
 Check:
-- **Engine configured?** Read `.cursor/docs/studio/technical-preferences.md`. If the
-  Engine line still looks like a placeholder, treat as not set (this repo defaults to the custom voxel engine).
+- **Stack documented?** Read `.cursor/docs/studio/technical-preferences.md`. If the
+  stack section still looks like placeholders, treat as not set.
 - **Game concept exists?** Check for `design/gdd/game-concept.md`.
-- **Source code exists?** Glob for source files in `src/` (primarily `*.ts`; `wasm/` for Rust).
+- **Source code exists?** Glob for source under your repo’s main code root (often `src/`, `app/`, or similar).
 - **Prototypes exist?** Check for subdirectories in `prototypes/`.
 - **Design docs exist?** Count markdown files in `design/gdd/`.
 - **Production artifacts?** Check for files in `production/sprints/` or
@@ -64,8 +62,8 @@ Wait for the user's answer. Do not proceed until they respond.
 
 #### If A: No idea yet
 
-The user needs creative exploration before anything else. Engine choice,
-technical setup — all of that comes later.
+The user needs creative exploration before anything else. Stack choice and
+technical setup come later.
 
 1. Acknowledge that starting from zero is completely fine
 2. Briefly explain what the `brainstorm` skill does (guided ideation using professional
@@ -73,7 +71,7 @@ technical setup — all of that comes later.
 3. Recommend running the `brainstorm` skill (open) as the next step
 4. Show the recommended path:
    - the `brainstorm` skill — discover your game concept
-   - the `setup-engine` skill — configure the engine (brainstorm will recommend one)
+   - document the stack in `technical-preferences.md` and README (after you pick frameworks)
    - the `map-systems` skill — decompose the concept into systems and plan GDD writing order
    - the `prototype` skill — test the core mechanic
    - the `sprint-plan` skill — plan the first sprint
@@ -87,7 +85,7 @@ The user has a seed but needs help growing it into a concept.
 3. Recommend running the `brainstorm` skill ([their hint]) to develop it
 4. Show the recommended path:
    - the `brainstorm` skill ([hint]) — develop the idea into a full concept
-   - the `setup-engine` skill — configure the engine
+   - document the stack in `technical-preferences.md` and README
    - the `map-systems` skill — decompose the concept into systems and plan GDD writing order
    - the `prototype` skill — test the core mechanic
    - the `sprint-plan` skill — plan the first sprint
@@ -98,15 +96,14 @@ The user knows what they want to make but hasn't documented it.
 
 1. Ask 2-3 follow-up questions to understand their concept:
    - What's the genre and core mechanic? (one sentence)
-   - Do they have an engine preference, or need help choosing?
+   - Do they have a framework preference, or need help choosing?
    - What's the rough scope? (jam game, small project, large project)
 2. Based on their answers, offer two paths:
    - **Formalize first**: Run the `brainstorm` skill to structure the concept into a
      proper game concept document with pillars, MDA analysis, and scope tiers
-   - **Jump to engine setup**: If they're confident in their concept, go
-     straight to the `setup-engine` skill and write the GDD manually afterward
+   - **Jump to stack notes**: If they're confident in their concept, capture stack choices in `technical-preferences.md` and README, then write the GDD manually afterward
 3. Show the recommended path (adapted to their choice):
-   - the `brainstorm` skill or the `setup-engine` skill (their pick)
+   - the `brainstorm` skill or document-the-stack first (their pick)
    - the `design-review` skill — validate the concept doc
    - the `map-systems` skill — decompose the concept into individual systems with dependencies and priorities
    - the `design-system` skill — author per-system GDDs (guided, section-by-section)
@@ -119,12 +116,12 @@ The user has artifacts already. Figure out what exists and what's missing.
 
 1. Share what you found in Step 1 (now it's relevant):
    - "I can see you have [X source files / Y design docs / Z prototypes]..."
-   - "Your engine is [configured as X / not yet configured]..."
+   - "Your stack is [documented as X / not yet documented]..."
 2. Recommend running the `project-stage-detect` skill for a full analysis
-3. If the engine isn't configured, note that the `setup-engine` skill should come first
+3. If the stack isn't documented, note that filling `technical-preferences.md` should come early
 4. Show the recommended path:
    - the `project-stage-detect` skill — full gap analysis
-   - the `setup-engine` skill — if not configured
+   - update `technical-preferences.md` / README — if stack is unclear
    - the `design-system` skill — if systems index exists but GDDs are incomplete
    - the `gate-check` skill — validate readiness for next phase
    - the `sprint-plan` skill — organize the work
@@ -157,12 +154,12 @@ once the user has a clear next action.
 - **User picks A but project has code**: Mention what you found — "I noticed
   there's already code in `src/`. Did you mean to pick D (existing work)? Or
   would you like to start fresh with a new concept?"
-- **User is returning (engine configured, concept exists)**: Skip onboarding
-  entirely — "It looks like you're already set up! Your engine is [X] and you
+- **User is returning (stack documented, concept exists)**: Skip onboarding
+  entirely — "It looks like you're already set up! Your stack is [X] and you
   have a game concept at `design/gdd/game-concept.md`. Want to pick up where
   you left off? Try the `sprint-plan` skill or just tell me what you'd like to work on."
 - **User doesn't fit any option**: Let them describe their situation in their
-  own words and adapt. The 4 options are starting points, not a prison.
+  own words and adapt. The four options are starting points.
 
 ---
 

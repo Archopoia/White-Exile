@@ -236,7 +236,7 @@ the medium.]
 
 | Consideration | Assessment |
 | ---- | ---- |
-| **Engine fit** | [How the concept fits this repo: TypeScript voxel engine, Three.js, workers, WASM — scope, performance, team expertise] |
+| **Stack fit** | [How the concept fits your chosen stack — scope, performance, team expertise] |
 | **Key Technical Challenges** | [What's technically hard about this game?] |
 | **Art Style** | [Pixel / 2D / 2.5D / 3D stylized / 3D realistic] |
 | **Art Pipeline Complexity** | [Low (asset store + modifications) / Medium (custom 2D) / High (custom 3D)] |
@@ -307,7 +307,7 @@ the combat-crafting loop engaging for 30+ minute sessions"]
 ## Next Steps
 
 - [ ] Get concept approval from creative-director
-- [ ] Fill in llms.txt technology stack based on engine choice (`/setup-engine`)
+- [ ] Document technology stack in README and `technical-preferences.md`
 - [ ] Create game pillars document (`/design-review` to validate)
 - [ ] Decompose concept into systems (`/map-systems` — maps dependencies, assigns priorities, guides per-system GDD writing)
 - [ ] Create first architecture decision record (`/architecture-decision`)

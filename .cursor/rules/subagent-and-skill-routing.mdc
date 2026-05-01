@@ -1,66 +1,44 @@
 ---
-description: Enforce proactive subagent and skill routing for complex work
+description: Proactive subagent and skill routing for complex work
 alwaysApply: true
-lastReviewed: 2026-03-22
+lastReviewed: 2026-05-01
 ---
-# Subagent and Skill Routing
+# Subagent and skill routing
 
-Use the best specialized helper when scope or risk justifies it.
+Use specialized helpers when scope or risk justifies it.
 
-## 1) Required Subagent Triggers
+## 1) Subagent triggers
 
-Use subagents proactively in these cases:
+- **Broad exploration:** `explore` for architecture discovery or ownership mapping.
+- **Planning:** apply the **`plan-major-change`** skill before large or ambiguous work; use **`technical-planning`** (or your tech-lead equivalent) to pressure-test high-risk plans.
+- **Validation:** `test-runner` after behavior-changing edits; `verifier` before handoff on non-trivial work.
+- **Docs:** `architecture-and-docs` when contracts or player-visible behavior changes.
+- **Renames / terminology:** `migration-and-terminology` for field, type, API, or glossary cleanup.
 
-- **Broad codebase exploration:** use `explore` for architecture discovery, multi-area searches, or ownership mapping.
-- **Pre-implementation planning review:** apply the `plan-engine-change` skill first; then use `engine-planning` when the plan is large, ambiguous, high-risk, or needs an architecture-aware pressure test before implementation.
-- **Post-change validation:** run `test-runner` after behavior-changing edits and report outcomes.
-- **Completion verification:** run `verifier` for non-trivial implementations before final handoff.
-- **Doc/architecture alignment:** run `architecture-and-docs` after behavior changes that affect contracts or docs.
-- **Contract and naming refactors:** run `migration-and-terminology` when replacing fields/types/APIs/terms or removing stale compatibility guidance.
-- **Plugin/system wiring:** run `plugin-and-systems` for `ToolPlugin`/`EditorPlugin` work and registry/event-bus integration.
-- **Component schema work:** run `ecs-and-components` when adding/changing ComponentDef data/properties/registration.
+Use additional domain agents from `.cursor/agents/` when they match the task (gameplay, audio, UI, etc.).
 
-## 2) Skill Usage Rule
+## 2) Skills
 
-Before implementing scaffold-like work, check for a matching project skill and use it first.
+Before large procedural tasks, check `.cursor/skills/` for a matching workflow (brainstorm, sprint-plan, code-review, etc.).
 
-- Node/behavior graph additions -> `scaffold-behavior-node`
-- ECS component additions -> `scaffold-ecs-component`
-- Tool plugin additions -> `scaffold-tool-plugin`
-- Editor plugin/system additions -> `scaffold-editor-plugin`
-- Worker/off-thread simulation scaffolding -> `scaffold-simulation-worker`
-- Blender prop/character scaffolding -> `scaffold-blender-prop`, `scaffold-blender-character`
-- 2D spritesheet NPC authoring (`public/sprites`, `sprite-manifest.json`) -> `scaffold-sprite-character`
-- Engine-aware planning / Cursor plan flow -> `plan-engine-change`
-- Cursor rule creation/maintenance -> `create-rule`
-- Cursor skill authoring -> `create-skill`
+For **Cursor governance** authoring, use user skills such as **`create-rule`** / **`create-skill`** when available.
 
-## 3) Parallelization Policy
+## 3) Parallelization
 
-- If multiple independent investigations are needed, launch subagents in parallel (up to safe limit).
-- Do not delegate simple single-file needle queries to subagents; use direct file/search tools instead.
+- Launch independent investigations in parallel when safe.
+- Do not delegate single-file needle queries to subagents.
 
-## 4) Background Execution Policy
+## 4) Background execution
 
-Default to foreground unless task runtime is long and non-blocking.
+- Prefer background for long test passes, broad verification, or wide doc audits when the UI allows it.
+- Poll background jobs before claiming completion.
 
-- Prefer background for `test-runner` when running broad/full test passes.
-- Prefer background for `verifier` when verification scope spans many files/systems.
-- Prefer background for `architecture-and-docs` for broad consistency audits.
-- Prefer background for long `explore` sweeps across multiple domains.
-- Keep foreground for short checks or outputs that immediately gate next edits.
-- Background runs must be polled and summarized before final handoff.
+## 5) Studio-style agents (optional)
 
-## 5) Done Criteria
+When work matches a department role in `.cursor/docs/studio/agent-coordination-map.md`, pull in those agents for reviews or handoffs.
 
-- Chosen helper path is explicit in execution (subagent and/or skill used when trigger matched).
-- If no trigger matched, proceed directly and keep work concise.
+**Typical engineering routing:** gameplay / systems design → `gameplay-programmer` / `systems-designer`; rendering → **`rendering-specialist`**; web workers / WASM (if used) → `web-platform-specialist`; tools and editor pipelines → `tools-programmer` / `editor-tools-specialist` as appropriate.
 
-## 6) Studio-style agents and skills (optional depth)
+## 6) Done criteria
 
-Use when the task matches a **department** role from `.cursor/docs/studio/agent-coordination-map.md`:
-
-- Vision, pillars, cross-discipline conflict -> `creative-director` or `technical-director` (conceptual review, not implementation ownership).
-- Scheduling, milestones, release process -> `producer`, `release-manager`, `qa-lead` as appropriate.
-- Gameplay feature implementation in `src/systems/**` -> `gameplay-programmer` / `systems-designer`; rendering -> `voxel-engine-specialist`; workers/WASM -> `web-worker-wasm-specialist`; plugins -> `editor-plugin-specialist` or existing `plugin-and-systems`.
-- Studio workflow skills live under `.cursor/skills/` (`start`, `sprint-plan`, `code-review`, `brainstorm`, etc.). Prefer project engine skills (`plan-engine-change`, scaffolds) when tasks overlap.
+The execution note should reflect which helper path was used when a trigger matched; otherwise proceed directly.

@@ -9,7 +9,7 @@ When this skill is invoked:
 1. **Read the task description** from the argument. If the description is too
    vague to estimate meaningfully, ask for clarification before proceeding.
 
-2. **Read llms.txt** for project context: tech stack, coding standards,
+2. **Read README and `docs/`** for project context: tech stack, coding standards,
    architectural patterns, and any estimation guidelines.
 
 3. **Read relevant design documents** from `design/gdd/` if the task relates
@@ -32,7 +32,7 @@ When this skill is invoked:
    **Code Complexity**:
    - Lines of code in affected files
    - Number of dependencies and coupling level
-   - Whether this touches core/engine code vs leaf/feature code
+   - Whether this touches core/runtime code vs leaf/feature code
    - Whether existing patterns can be followed or new patterns are needed
 
    **Scope**:

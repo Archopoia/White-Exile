@@ -6,7 +6,7 @@ lastReviewed: 2026-03-22
 
 When this skill is invoked:
 
-1. **Read the llms.txt** for project overview and standards.
+1. **Read README, `docs/`, and `.cursor/rules/`** for project overview and standards.
 
 2. **Read the relevant agent definition** from `.cursor/docs/studio/agents/` if a specific
    role is specified.
@@ -43,7 +43,7 @@ When this skill is invoked:
 |------|---------|--------------|
 
 ## Current Standards and Conventions
-[Summary of conventions relevant to this role from llms.txt and agent definition]
+[Summary of conventions relevant to this role from project docs and agent definition]
 
 ## Current State of Your Area
 [What has been built, what is in progress, what is planned next]

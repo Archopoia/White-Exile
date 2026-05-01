@@ -1,61 +1,34 @@
-Run an explicit browser playtest when the user asks for it.
+Run a browser or device playtest **only** when the user explicitly asked for playtesting.
 
 ## Preconditions
 
-1. Confirm playtesting was explicitly requested by the user.
-2. Check for a running `npm run dev`; if missing, start it and wait for Vite ready on port 3000.
+1. Confirm the user requested playtesting (see `.cursor/rules/ai-playtesting.mdc`).
+2. Start the project’s dev server using **its** documented command (often `npm run dev`). Use the URL and port from README or console output — do not assume a fixed port.
 
-## Procedure
+## Procedure (adapt to the project)
 
-1. Navigate to `http://localhost:3000`.
-2. Snapshot the main menu.
-3. Click `Continue` (if save exists) or `Create`, then `Start Create`.
-4. Wait until loading text `Generating` is gone.
-5. Enter game with hidden AI control:
-   - `AI Enter Game` (`#ai-enter-game`)
-6. Capture observations:
-   - Use top tab `HUD` to view debug overlay.
-   - Use top tab `Dump` to emit state to console.
-   - Take targeted screenshot(s) when requested.
-7. If menu interaction is needed mid-test:
-   - Use `AI Open Menu` (`#ai-open-menu`)
-   - Re-enter with `AI Enter Game`.
-8. Summarize findings focused on user’s requested feature.
+1. Open the running build URL.
+2. Capture the initial screen state (snapshot or screenshot as appropriate).
+3. Navigate to the gameplay or feature under test using the project’s real menu flow.
+4. Wait for loading or generation steps to finish before judging behavior.
+5. If the project documents **automation hooks** (hidden buttons, query params, debug routes), use those instead of simulating pointer-lock or fragile canvas clicks.
+6. Record observations: expected vs actual, console errors, performance notes.
+7. Summarize against the user’s question.
 
-## Input Reference
+## Controls
 
-### Movement
-| Key | Action |
+Document **project-specific** controls in README or `docs/` — do not treat the table below as canonical unless the game matches it.
+
+| Input | Typical action (examples only) |
 |---|---|
-| `W/A/S/D` | Move |
-| `Space` / `Shift` | Up / Down |
-| `Control` (hold) | Faster movement |
+| `W/A/S/D` | Character movement |
+| `Space` | Jump or ascend |
+| `Escape` | Menu / pause |
+| Mouse | Look / interact |
 
-### Common Interaction
-| Key | Action |
-|---|---|
-| Left click | Primary tool action |
-| Right click | Secondary tool action |
-| Scroll | Cycle current category item |
-| `Ctrl+Scroll` | Brush size |
-| `E` | Inspect |
-| `Escape` | Open menu / release lock (manual fallback) |
+## Reporting template
 
-### Debug/Editor Toggles
-| Key or UI | Action |
-|---|---|
-| Top tab `HUD` | Toggle debug HUD |
-| Top tab `Dump` | Dump structured state to console |
-| `L` | Lighting mode |
-| `G` | Gizmos |
-| `H` | History panel |
-| `N` | Node canvas |
-| `M` | Mute |
-
-## Reporting Template
-
-- Requested feature tested:
-- Result (pass/fail/mixed):
-- Visual or behavior notes:
-- HUD/console evidence:
-- Repro steps for issues:
+- Feature or bug under test:
+- Result (pass / fail / mixed):
+- Notes (visual, UX, performance):
+- Evidence (logs, screenshots if requested):

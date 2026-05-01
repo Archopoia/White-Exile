@@ -1,94 +1,68 @@
 ---
-description: Router for docs, Context7, and doc sync
+description: Router for docs, Context7, and documentation sync
 alwaysApply: true
-lastReviewed: 2026-03-26
+lastReviewed: 2026-05-01
 ---
-# AI Doc Router Rule
+# AI doc router
 
-Use this rule as the routing layer. Keep implementation details in canonical docs.
+Use this rule as the routing layer. **Canonical project facts** live in the repository (README, `docs/`, `design/`, architecture notes).
 
-## 1) Context7 Usage
+## 1) Context7 usage
 
-Use Context7 automatically for external dependency APIs:
+Use Context7 for **external** library and platform APIs when the answer depends on current vendor documentation (frameworks, off-the-shelf engines used as libraries, build tools, browser APIs, etc.).
 
-- Three.js
-- Vite
-- wasm-pack / wasm-bindgen
-- TypeScript compiler/type-system questions
-- IndexedDB / idb
-- Web Workers API
-- Web Audio API
-- Rapier (`@dimforge/rapier3d-compat`)
+For in-repo behavior and architecture, read local docs and code first.
 
-Do not use Context7 for engine-internal behavior. Read local docs first.
+## 2) Canonical ownership (project-defined)
 
-## 2) Canonical Ownership Map
+Maintain a short mental map; typical anchors:
 
-Update the canonical source first, then update any derived summaries.
-
-| Topic | Canonical source |
+| Topic | Typical canonical source (create if missing) |
 |---|---|
-| Plugin table (current systems) | `llms.txt` section `Current Plugins Reference` |
-| Event bus full list | `llms.txt` section `Event Bus Convention` (includes machine-checked **Full typed event index**; run `npm run check:docs-drift` or `npm run check`) |
-| Plugin event bus payload types (`PluginRegistryEventMap`) | `src/core/PluginRegistryEvents.types.ts` |
-| `EditorPlugin` / `ToolPlugin` contracts | `llms.txt` section `Plugin System` |
-| `PluginRegistry` method list | `llms.txt` section `Plugin System` |
-| Persistence modules + Continue flow | `docs/editor/Immersive_Editor_Principles.md` section `Persistence` |
-| Loading system inventory + pre-refactor map | `docs/engine/Loading_System_Overview.md` |
-| Async-first terrain rebuild policy | `docs/engine/Engine_Architecture.md` section `Async-First Terrain Rebuild Policy` |
-| HMR operational rules + bridge pattern | `.cursor/rules/engine-architecture.mdc` |
-| Worker/world-swap restore contract | `docs/engine/Engine_Architecture.md` |
-| Render ownership contract | `docs/engine/Engine_Architecture.md` section `Render Ownership Contract (Canonical)` |
-| Workspace docking runtime + panel hosting contract | `docs/engine/Engine_Architecture.md`; `llms.txt` `src/ui` map |
-| Torch voxel light field + lighting contracts (`LightingContracts`, `TorchVoxelLightField`, probe stub) | `docs/engine/Engine_Architecture.md` section `3.1.0a Torch voxel light field…`; `src/lighting/*.ts` |
-| GPU sliding volume window + `uVolumeFieldOrigin` (infinite horizontal XZ) | `docs/engine/Engine_Architecture.md` section `3.1.0a` (sliding volume bullet); `src/core/VolumeFieldConfig.ts`; `src/core/voxel-world/VolumeFieldOrigin.ts`; `src/core/voxel-world/ChunkMetrics.ts`; `TerrainSurfaceRenderer.syncVolumeFieldWindowFromCamera` |
-| Resume heavy-prewarm phase contract | `docs/engine/Engine_Architecture.md` section `Resume-Phase Heavy Work Contract` |
-| Loading overlay + first-playable (`firstPlayableWallTimeMs`, fast prewarm defaults `PrewarmBootPreferences`; EditorSystem thin path omits `broadcastUpdate`, defers `updateLOD`/heavy terrain prep until overlay clears; `shouldDeferHeavySimulationWhileBooting` for fluid sim + Rapier; `VoxelInitSystem` single-flight; post-playable hitch context in `VibeEngine`) | `docs/engine/Engine_Architecture.md` sections `Resume-Phase Heavy Work Contract`, `Degraded Worker Diagnostics Contract`; `src/ui/LoadingScreen.ts`, `src/core/WorldInit.ts`, `src/core/PrewarmBootPreferences.ts`, `src/core/VibeEngine.ts` |
-| Degraded worker diagnostics contract | `docs/engine/Engine_Architecture.md` section `Degraded Worker Diagnostics Contract` |
-| Performance regression benchmark contract | `docs/engine/Engine_Architecture.md` section `Performance Regression Harness` |
-| Runtime hitch investigation workflow | `docs/debug/Hitch_Debug_Playbook.md` |
-| Large hitch case-study history | `docs/debug/case-studies/Torch_Hitch_Postmortem.md` |
-| Runtime enforcement guardrails | `.cursor/rules/engine-architecture.mdc` |
-| Playtest procedure + controls | `.cursor/commands/playtest.md` |
-| Architecture audit checklist | `.cursor/commands/check-architecture.md` |
-| Subagent creation blueprint | `.cursor/commands/create-subagents.md` |
-| Subagent orchestration playbooks | `.cursor/commands/subagent-playbooks.md` |
-| Maintenance and anti-drift policy | `.cursor/rules/self-maintenance-and-drift-control.mdc` |
-| Migration governance gates | `docs/governance/Migration_Governance_Gates.md` |
-| Studio coordination (delegation map, roster) | `.cursor/docs/studio/agent-coordination-map.md`, `.cursor/docs/studio/agent-roster.md` |
-| Collaborative design protocol | `docs/COLLABORATIVE-DESIGN-PRINCIPLE.md` |
-| 2D spritesheet NPC pipeline (`sprite-manifest.json`, `src/characters/sprites/*`, `SpriteCharacterSystem`) | `llms.txt` §11–12; `docs/engine/Engine_Architecture.md` (2D sprite NPCs); `scaffold-sprite-character` skill |
+| Tech stack and build | `README.md`, `package.json`, vendor docs as needed |
+| Architecture | `docs/architecture.md` or `docs/` |
+| Design intent | `design/` or GDD fragments |
+| Contribution / review | `CONTRIBUTING.md` |
+| AI / agent rules | `.cursor/rules/**`, `.cursor/docs/studio/**` |
 
-## 3) Rule Routing
+If the repo has a single “index” doc (e.g. `llms.txt` or `AGENTS.md`), treat **that file** as the ownership table for **this** project and keep it updated when behavior changes.
 
-- Always-on:
-  - `.cursor/rules/typescript-typing.mdc`
-  - `.cursor/rules/ai-playtesting.mdc`
-  - `.cursor/rules/llm.mdc`
-  - `.cursor/rules/migration-and-terminology.mdc`
-  - `.cursor/rules/subagent-and-skill-routing.mdc`
-  - `.cursor/rules/self-maintenance-and-drift-control.mdc`
-- Scoped:
-  - `.cursor/rules/engine-architecture.mdc` for core/rendering/workers/wasm and architecture-level changes
-  - `.cursor/rules/immersive-editor.mdc` for systems/editor/ui/components and entity workflow changes
+## 2b) Common commands
 
-## 4) Documentation Sync Gate (Required)
+| Purpose | Path |
+|---|---|
+| Major-change planning | `.cursor/commands/plan-major-change.md` |
+| Architecture heuristic pass | `.cursor/commands/check-architecture.md` |
+| Playtest procedure | `.cursor/commands/playtest.md` |
+| Subagent playbooks | `.cursor/commands/subagent-playbooks.md` |
 
-If behavior changes, update docs in the same session:
+## 3) Rule routing
 
-1. Update the canonical source from the ownership map.
-2. Update any rule/reference summary that points to that topic.
-3. Remove stale names when features are renamed/removed.
-4. Finish by verifying no contradictory instructions remain between:
-   - `llms.txt`
-   - `.cursor/rules/*.mdc`
-   - `.cursor/commands/*.md`
-   - `docs/**`, `design/**`, and `.cursor/docs/studio/**` where studio coordination applies
+**Always-on:**
 
-## 5) Definition of Done (Engine Changes)
+- `.cursor/rules/typescript-typing.mdc`
+- `.cursor/rules/ai-playtesting.mdc`
+- `.cursor/rules/llm.mdc`
+- `.cursor/rules/migration-and-terminology.mdc`
+- `.cursor/rules/subagent-and-skill-routing.mdc`
+- `.cursor/rules/self-maintenance-and-drift-control.mdc`
 
-- Code behavior is complete and coherent.
-- Canonical doc updated for changed behavior.
-- Derived summaries/rules updated where referenced.
-- Architecture checklist passes (`.cursor/commands/check-architecture.md`).
-- Playtest docs remain consistent (`.cursor/rules/ai-playtesting.mdc` and `.cursor/commands/playtest.md`).
+**Scoped:**
+
+- `.cursor/rules/runtime-discipline.mdc` for application runtime, rendering, and concurrency
+
+Add project-specific rules under `.cursor/rules/` when a stack or pipeline needs always-on guidance.
+
+## 4) Documentation sync gate
+
+If behavior or public contracts change:
+
+1. Update the project’s canonical doc(s) first.
+2. Update derived rules, commands, or agent notes that restate those contracts.
+3. Remove stale names and dead paths — no parallel “old vs new” guidance.
+
+## 5) Definition of done (changes)
+
+- Code matches the documented contract.
+- Canonical docs and touched `.cursor` guidance stay consistent.
+- Typecheck / tests as defined by the project pass.

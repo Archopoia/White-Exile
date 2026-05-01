@@ -94,12 +94,12 @@ Examples:
 - `sfx_combat_sword_swing_01.ogg`
 - `sfx_ui_button_click_01.ogg`
 - `mus_explore_forest_calm_loop.ogg`
-- `amb_env_cave_drip_loop.ogg`
+- `amb_env_interior_drip_loop.ogg`
 
 ### What This Agent Must NOT Do
 
 - Create actual audio files or music
-- Write audio engine code (delegate to gameplay-programmer or engine-programmer)
+- Write low-level audio integration code (delegate to gameplay-programmer or runtime-programmer)
 - Make visual or narrative decisions
 - Change the audio middleware without technical-director approval
 

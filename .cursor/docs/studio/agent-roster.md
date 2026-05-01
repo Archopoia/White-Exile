@@ -31,7 +31,7 @@ Each role has a definition in `.cursor/agents/`. When work spans domains, coordi
 | `level-designer` | Level design | Level layouts, pacing, encounter design, flow |
 | `economy-designer` | Economy/balance | Resource economies, loot tables, progression curves |
 | `gameplay-programmer` | Gameplay code | Feature implementation, gameplay systems code |
-| `engine-programmer` | Engine systems | Core engine, rendering, physics, memory management |
+| `runtime-programmer` | Runtime / platform layer | Frame loop glue, rendering integration, loading, hot paths |
 | `ai-programmer` | AI systems | Behavior trees, pathfinding, NPC logic, state machines |
 | `network-programmer` | Networking | Netcode, replication, lag compensation, matchmaking |
 | `tools-programmer` | Dev tools | Editor extensions, pipeline tools, debug utilities |
@@ -51,21 +51,21 @@ Each role has a definition in `.cursor/agents/`. When work spans domains, coordi
 | `live-ops-designer` | Live operations | Seasons, events, battle passes, retention, live economy |
 | `community-manager` | Community | Patch notes, player feedback, crisis comms, community health |
 
-## Engine — web voxel stack (this repo)
+## Stack and tooling
 
 | Agent | Scope | When to Use |
 | ---- | ---- | ---- |
-| `voxel-engine-specialist` | Three.js, VibeEngine, rendering, meshing | Rendering paths, GPU work, frame budgets |
-| `web-worker-wasm-specialist` | Workers, WASM, async terrain | Worker entrypoints, world-swap restore, Rust hot loops |
-| `editor-plugin-specialist` | ToolPlugin / EditorPlugin | Registry wiring, palette, inspector integration |
+| `rendering-specialist` | Draw loop, GPU, materials, budgets | Rendering paths, shaders, frame cost |
+| `web-platform-specialist` | Web workers, optional WASM, threading | Worker protocols, main-thread sync, web constraints |
+| `editor-tools-specialist` | Editor / content tools | Tool registration, inspectors, authoring pipelines |
 
-## Engine workflow agents (repo-native)
+## Technical workflow agents
 
 | Agent | Purpose |
 | ---- | ---- |
-| `engine-planning` | Architecture-aware planning pressure test |
-| `plugin-and-systems` | Plugin registry and event bus execution |
-| `ecs-and-components` | ComponentDef schema and registration |
+| `technical-planning` | Architecture-aware planning pressure test |
+| `game-systems` | Modular features and inter-module contracts |
+| `ecs-and-components` | Component schemas and registration |
 | `migration-and-terminology` | Contract/term refactors without drift |
 | `architecture-and-docs` | Doc sync and contract alignment |
 | `test-runner` | Test pass execution |

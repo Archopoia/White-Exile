@@ -1,65 +1,49 @@
 ---
 description: Strict TypeScript typing discipline
 alwaysApply: true
-lastReviewed: 2026-03-16
+lastReviewed: 2026-05-01
 ---
-# TypeScript Typing Discipline
+# TypeScript typing discipline
 
 Follow strict typing patterns for maximum AI compatibility.
 
-## Core Rules
+## Core rules
 
-1. **No `any` types** - Use `unknown` with type guards if dynamic typing is needed
-2. **Explicit return types** - All exported functions must have explicit return types
-3. **Centralized types** - Shared types live in dedicated `.types.ts` or `.Types.ts` files
-4. **Strong type assumptions** - Trust TypeScript types, minimize runtime property checks
-5. **Type guards** - Use `is` functions for runtime type validation when needed
+1. **No `any`** — use `unknown` with type guards when values are dynamic.
+2. **Explicit return types** on exported functions and public class methods.
+3. **Centralized types** — shared shapes in dedicated `.types.ts` / `.Types.ts` files.
+4. **Trust the type system** — avoid redundant runtime shape checks when types already guarantee usage.
+5. **Type guards** — use `value is Foo` predicates for validated external input.
 
 ## Examples
 
-### Good: Explicit types, no `any`
+### Good: explicit types
 
 ```typescript
-function getEntity(id: string): EntityInfo | null {
-  const entity = inspectRegistry.getById(id);
-  return entity ? {
-    id: entity.id,
-    type: entity.type,
-    pluginId: entity.pluginId,
-    position: { x: entity.position.x, y: entity.position.y, z: entity.position.z },
-    properties: {},
-    components: [],
-  } : null;
+function getRecord(id: string): RecordSummary | null {
+  const row = registry.getById(id);
+  return row ? { id: row.id, label: row.label } : null;
 }
 ```
 
-### Bad: Using `any`
+### Bad: `any`
 
 ```typescript
-function getEntity(id: any): any {
-  // Don't do this - loses type safety
+function getRecord(id: any): any {
+  return registry.getById(id);
 }
 ```
 
-### Good: Type guard for dynamic values
+### Good: type guard
 
 ```typescript
-function isEntityType(value: unknown): value is EntityType {
-  return typeof value === 'string' &&
-    ['torch', 'fog', 'npc', 'prop', 'vfx', 'water-spring', 'vegetation'].includes(value);
-}
-
-function placeEntity(type: unknown, position: Position3D): Promise<string | null> {
-  if (!isEntityType(type)) {
-    console.warn(`[gameAPI] Invalid entity type: ${type}`);
-    return Promise.resolve(null);
-  }
-  return placeEntityInternal(type, position);
+function isDifficulty(value: unknown): value is 'easy' | 'normal' | 'hard' {
+  return value === 'easy' || value === 'normal' || value === 'hard';
 }
 ```
 
 ## Enforcement
 
-- TypeScript `strict: true` is enabled in `tsconfig.json`
-- Run `npm run check` before committing to catch type errors
-- No `@ts-ignore` or `@ts-expect-error` without justification
+- Prefer `strict: true` in `tsconfig.json` when the project uses TypeScript.
+- Run the project’s typecheck script before commit (`npm run check`, `tsc --noEmit`, etc.).
+- No `@ts-ignore` / `@ts-expect-error` without a short justification.

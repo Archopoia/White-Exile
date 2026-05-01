@@ -8,7 +8,7 @@ When this skill is invoked:
 
 1. **Read the target design document** in full.
 
-2. **Read the master llms.txt** to understand project context and standards.
+2. **Read README and `docs/`** to understand project context and standards.
 
 3. **Read related design documents** referenced or implied by the target doc
    (check `design/gdd/` for related systems).

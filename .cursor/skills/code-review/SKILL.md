@@ -8,9 +8,9 @@ When this skill is invoked:
 
 1. **Read the target file(s)** in full.
 
-2. **Read the llms.txt** for project coding standards.
+2. **Read README, `docs/`, and `.cursor/rules/`** for project coding standards.
 
-3. **Identify the system category** (engine, gameplay, AI, networking, UI, tools)
+3. **Identify the system category** (runtime/platform, gameplay, AI, networking, UI, tools)
    and apply category-specific standards.
 
 4. **Evaluate against coding standards**:
@@ -22,7 +22,7 @@ When this skill is invoked:
    - [ ] Systems expose interfaces (not concrete class dependencies)
 
 5. **Check architectural compliance**:
-   - [ ] Correct dependency direction (engine <- gameplay, not reverse)
+   - [ ] Correct dependency direction (runtime/platform layer below gameplay features, not reverse)
    - [ ] No circular dependencies between modules
    - [ ] Proper layer separation (UI does not own game state)
    - [ ] Events/signals used for cross-system communication

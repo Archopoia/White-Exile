@@ -30,20 +30,20 @@
     live-ops-designer       -- Seasons, events, battle passes, retention, live economy
     community-manager       -- Patch notes, player feedback, crisis comms
 
-  Engine Specialists (Digging — TypeScript + Three.js + workers + WASM):
-    voxel-engine-specialist     -- Three.js, VibeEngine, rendering, meshing, frame budgets
-    web-worker-wasm-specialist  -- workers, WASM, world-swap restore, terrain async contracts
-    editor-plugin-specialist    -- ToolPlugin/EditorPlugin, PluginRegistry, palette/inspector
+  Stack specialists (adapt to your project):
+    rendering-specialist        -- rendering pipeline, GPU work, frame budgets
+    web-platform-specialist     -- web workers, optional WASM, threading contracts
+    editor-tools-specialist     -- editor tools, inspectors, authoring integration
 
-  Existing engine subagents (this repo — use alongside studio roles):
-    engine-planning, plugin-and-systems, ecs-and-components, migration-and-terminology,
+  Technical workflow subagents (use alongside studio roles):
+    technical-planning, game-systems, ecs-and-components, migration-and-terminology,
     architecture-and-docs, test-runner, verifier, hitch-investigator
 ```
 
 ### Legend
 ```
 sys  = systems-designer       gp  = gameplay-programmer
-lvl  = level-designer         ep  = engine-programmer
+lvl  = level-designer         ep  = runtime-programmer
 eco  = economy-designer       ai  = ai-programmer
 ta   = technical-artist       net = network-programmer
 wrt  = writer                 tl  = tools-programmer
@@ -63,7 +63,7 @@ art-dir = art-director
 | technical-director | lead-programmer, devops-engineer, performance-analyst, technical-artist (technical decisions) |
 | producer | Any agent (task assignment within their domain only) |
 | game-designer | systems-designer, level-designer, economy-designer |
-| lead-programmer | gameplay-programmer, engine-programmer, ai-programmer, network-programmer, tools-programmer, ui-programmer |
+| lead-programmer | gameplay-programmer, runtime-programmer, ai-programmer, network-programmer, tools-programmer, ui-programmer |
 | art-director | technical-artist, ux-designer |
 | audio-director | sound-designer |
 | narrative-director | writer, world-builder |
@@ -73,8 +73,7 @@ art-dir = art-director
 | prototyper | (works independently, reports findings to producer and relevant leads) |
 | security-engineer | network-programmer (security review), lead-programmer (secure patterns) |
 | accessibility-specialist | ux-designer (accessible patterns), ui-programmer (implementation), qa-tester (a11y testing) |
-| [engine]-specialist | engine sub-specialists (delegates subsystem-specific work) |
-| [engine] sub-specialists | (advises all programmers on engine subsystem patterns and optimization) |
+| `rendering-specialist` / `web-platform-specialist` | `runtime-programmer`, `lead-programmer` for cross-cutting runtime ownership |
 | live-ops-designer | economy-designer (live economy), community-manager (event comms), analytics-engineer (engagement metrics) |
 | community-manager | (works with producer for approval, release-manager for patch note timing) |
 

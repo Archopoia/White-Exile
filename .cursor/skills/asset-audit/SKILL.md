@@ -7,7 +7,7 @@ lastReviewed: 2026-03-22
 When this skill is invoked:
 
 1. **Read the art bible or asset standards** from the relevant design docs and
-   the llms.txt naming conventions.
+   the project’s documented naming conventions (README, `docs/`, or art pipeline docs).
 
 2. **Scan the target asset directory** using Glob:
    - `assets/art/**/*` for art assets

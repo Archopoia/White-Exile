@@ -213,7 +213,7 @@
 
 **External Resources**:
 - [Article/Book]: [Relevant pattern or technique reference]
-- [Documentation]: [Engine or library docs consulted]
+- [Documentation]: [Framework or library docs consulted]
 
 **Design Documents**:
 - [GDD Section]: [If this implements a design]

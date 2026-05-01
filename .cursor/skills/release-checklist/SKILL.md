@@ -11,7 +11,7 @@ When this skill is invoked:
 1. **Read the argument** for the target platform (`pc`, `console`, `mobile`,
    or `all`). If no platform is specified, default to `all`.
 
-2. **Read llms.txt** for project context, version information, and platform
+2. **Read README and `docs/`** for project context, version information, and platform
    targets.
 
 3. **Read the current milestone** from `production/milestones/` to understand

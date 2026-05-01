@@ -119,7 +119,7 @@ player action."]
 | Launch | [Date] | Release build |
 
 **Team Size**: [X people, roles]
-**Engine**: [Custom web voxel engine — TypeScript, Three.js, workers, WASM; note any constraints]
+**Stack**: [Client framework, server if any, and key constraints — platforms, networking, scope]
 **Estimated Budget**: [Range if applicable]
 
 ---

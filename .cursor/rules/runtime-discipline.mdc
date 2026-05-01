@@ -1,0 +1,33 @@
+---
+description: Runtime discipline for game client/server code, rendering, and concurrency
+globs: "src/**"
+alwaysApply: false
+lastReviewed: 2026-05-01
+---
+# Runtime discipline
+
+Use for non-trivial changes to the **game application**: simulation loop, rendering, networking glue, workers, and dev tooling. Adapt paths to your repo.
+
+## Architecture
+
+- Clear ownership: who updates authoritative state, who runs the frame/tick loop, who presents visuals.
+- Keep hot paths small; isolate debug and one-off logic.
+- For async or worker boundaries, define message contracts and failure modes up front.
+
+## Rendering
+
+- Keep draw/submit paths intentional; avoid implicit global order where it causes bugs.
+- If you use GPU APIs, lifecycle shaders/materials consistently (create, warm up, dispose).
+
+## Concurrency
+
+- Do not block the UI thread on worker round-trips without feedback to the player.
+- Treat transferred buffers as consumed; copy when buffers must be reused.
+
+## Tooling
+
+- If you use hot reload, follow one established registration pattern — no duplicate singletons on refresh.
+
+## Diagnostics
+
+- Prefer centralized debug toggles over scattered flags in hot loops.

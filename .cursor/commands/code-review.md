@@ -1,1 +1,1 @@
-Structured code review checklist. See `.cursor/skills/code-review/SKILL.md`. For engine work, also consult `.cursor/rules/engine-architecture.mdc` and `docs/engine/Engine_Architecture.md`.
+Structured code review checklist. See `.cursor/skills/code-review/SKILL.md`. For runtime, rendering, or concurrency work, also consult `.cursor/rules/runtime-discipline.mdc` and your project’s architecture docs under `docs/`.

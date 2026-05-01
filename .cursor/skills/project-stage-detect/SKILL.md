@@ -63,8 +63,8 @@ auto-detect using these heuristics (check from most-advanced backward):
 |-------|-----------|
 | **Concept** | No game concept doc, brainstorming phase |
 | **Systems Design** | Game concept exists, systems index missing or incomplete |
-| **Technical Setup** | Systems index exists, engine not configured |
-| **Pre-Production** | Engine configured, `src/` has <10 source files |
+| **Technical Setup** | Systems index exists, stack not documented in `technical-preferences.md` / README |
+| **Pre-Production** | Stack documented, `src/` has <10 source files |
 | **Production** | `src/` has 10+ source files, active development |
 | **Polish** | Explicit only (set by the `gate-check` skill Production → Polish gate) |
 | **Release** | Explicit only (set by the `gate-check` skill Polish → Release gate) |

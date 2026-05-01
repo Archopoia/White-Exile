@@ -104,7 +104,7 @@ Each level document must contain:
 
 - Design game-wide systems (defer to game-designer or systems-designer)
 - Make story decisions (coordinate with narrative-director)
-- Implement levels in the engine
+- Implement levels in the tools or build pipeline (delegate to programmers)
 - Set difficulty parameters for the whole game (only per-encounter)
 
 ### Reports to: `game-designer`

@@ -1,36 +1,24 @@
 ---
 description: Manual-only browser playtesting trigger guard
 alwaysApply: true
-lastReviewed: 2026-03-16
+lastReviewed: 2026-05-01
 ---
-# AI Playtesting Guard (Manual Only)
+# AI playtesting guard (manual only)
 
-## Critical Rule
+## Critical rule
 
-Never launch browser tools, open localhost, navigate the game, or take screenshots
-unless the user explicitly asks to playtest.
+Never launch browser tools, open localhost, navigate the game, or take screenshots unless the user **explicitly** asks to playtest.
 
-Disallowed without explicit user request:
+## Disallowed without a clear request
 
-- "Let me verify in browser"
-- "Let me open the game to check"
-- Any proactive browser-based validation after code edits
+- “Let me verify in the browser”
+- “I’ll open the game to check”
+- Proactive browser validation after edits
 
-Allowed only when user explicitly requests playtesting with language like:
+## Allowed when the user asks
 
-- "playtest"
-- "test in browser"
-- "open the game"
-- "take a screenshot"
-- "verify in game"
+Phrases like: **playtest**, **test in browser**, **open the game**, **screenshot**, **verify in game**.
 
-## Source of Truth for Playtesting Steps
+## Procedure
 
-When playtesting is explicitly requested, follow:
-
-- `.cursor/commands/playtest.md` for full procedure and controls.
-
-Use AI control buttons for pointer-lock transitions (do not rely on canvas click or Escape key simulation):
-
-- `AI Enter Game` (`#ai-enter-game`)
-- `AI Open Menu` (`#ai-open-menu`)
+Follow `.cursor/commands/playtest.md`. Prefer any **project-documented** automation hooks over guessing UI flows.

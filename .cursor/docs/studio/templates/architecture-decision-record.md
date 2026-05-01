@@ -25,7 +25,7 @@ cost of not deciding?]
 
 ### Constraints
 
-- [Technical constraints -- engine limitations, platform requirements]
+- [Technical constraints -- platform limitations, framework constraints]
 - [Timeline constraints -- deadline pressures, dependencies]
 - [Resource constraints -- team size, expertise available]
 - [Compatibility requirements -- must work with existing systems]
