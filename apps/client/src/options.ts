@@ -376,8 +376,9 @@ function makeColorPicker(
   return wrap;
 }
 
-function makeDetails(summary: string, body: HTMLElement): HTMLElement {
+function makeDetails(summary: string, body: HTMLElement, sectionId: string): HTMLElement {
   const det = document.createElement('details');
+  det.dataset.nprSection = sectionId;
   det.style.cssText = 'margin-bottom:6px;border:1px solid rgba(120,140,220,0.18);border-radius:6px;background:rgba(20,24,36,0.6)';
   const sm = document.createElement('summary');
   sm.textContent = summary;
@@ -453,6 +454,11 @@ function buildNprPanel(
   const rebuildBody = (): void => {
     if (nprRevertRefreshers.length > nprHeaderRevertCount) {
       nprRevertRefreshers.splice(nprHeaderRevertCount);
+    }
+    const openSections = new Set<string>();
+    for (const el of body.querySelectorAll<HTMLDetailsElement>('details[data-npr-section]')) {
+      const id = el.dataset.nprSection;
+      if (id && el.open) openSections.add(id);
     }
     body.innerHTML = '';
     const s = current;
@@ -1061,7 +1067,7 @@ function buildNprPanel(
           revert: () => patch({ oilIntensity: NPR_DEFAULTS.oilIntensity }),
         },
       ),
-      makeDetails('Oil - edge / anti-halo', oilEdgeBody),
+      makeDetails('Oil - edge / anti-halo', oilEdgeBody, 'npr-oil-edge'),
     );
 
     const mistBody = document.createElement('div');
@@ -1263,13 +1269,17 @@ function buildNprPanel(
     );
 
     body.append(
-      makeDetails('Outline (Toon / Moebius)', outlineBody),
-      makeDetails('Cel — stepped shadows', celBody),
-      makeDetails('Hatching (Moebius)', hatchBody),
-      makeDetails('Oil (Rembrandt)', oilBody),
-      makeDetails('Mist (Rembrandt)', mistBody),
-      makeDetails('Hand-drawn wiggle', wiggleBody),
+      makeDetails('Outline (Toon / Moebius)', outlineBody, 'npr-outline'),
+      makeDetails('Cel — stepped shadows', celBody, 'npr-cel'),
+      makeDetails('Hatching (Moebius)', hatchBody, 'npr-hatch'),
+      makeDetails('Oil (Rembrandt)', oilBody, 'npr-oil'),
+      makeDetails('Mist (Rembrandt)', mistBody, 'npr-mist'),
+      makeDetails('Hand-drawn wiggle', wiggleBody, 'npr-wiggle'),
     );
+    for (const el of body.querySelectorAll<HTMLDetailsElement>('details[data-npr-section]')) {
+      const id = el.dataset.nprSection;
+      if (id && openSections.has(id)) el.open = true;
+    }
   };
 
   stylePicker.addEventListener('change', () => {
