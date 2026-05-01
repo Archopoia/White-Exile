@@ -102,6 +102,9 @@ const ORBIT_DIST_MAX = 52;
 const RUIN_HEIGHT = 6;
 const RUIN_RANGE = 6;
 
+/** Max CSS2D tooltips per category (others / followers / ruins / relics); nearest to local player win. */
+const MAX_NEARBY_WORLD_LABELS = 5;
+
 /** Dune-adjacent neutral so lit vs shaded reads on props, not neon stickers. */
 const ASH_PROP_COOL = new THREE.Color(0x3c4450);
 const ASH_PROP_WARM = new THREE.Color(0x403c38);
@@ -373,36 +376,100 @@ export class RoomScene {
     return { distSqToLocal: dx * dx + dy * dy + dz * dz, localLightRadius: this.localLightRadius };
   }
 
+  private distSqToLocal(worldX: number, worldY: number, worldZ: number): number {
+    const dx = worldX - this.localPos.x;
+    const dy = worldY - this.localPos.y;
+    const dz = worldZ - this.localPos.z;
+    return dx * dx + dy * dy + dz * dz;
+  }
+
   private refreshLabelTexts(): void {
     const mode = this.labelMode;
     setTooltipText(this.groundTip, labelGround(mode));
     const snap = this.lastSnap;
     if (!snap) return;
+
+    this.localLabel.visible = true;
     for (const p of snap.players) {
       if (p.id === this.playerId) {
         setTooltipText(this.localLabel, labelYou(p, mode));
-      } else {
-        const entry = this.markers.get(p.id);
-        if (entry) setTooltipText(entry.label, labelOtherPlayer(p, mode));
+        break;
       }
     }
-    for (const f of snap.followers) {
+
+    const othersOrdered = snap.players
+      .filter((p) => p.id !== this.playerId)
+      .map((p) => {
+        const wy = this.surfaceYAt(p.position.x, p.position.z) + ASH_DUNE_OTHER_PLAYER_CENTER_OFFSET;
+        return { p, distSq: this.distSqToLocal(p.position.x, wy, p.position.z) };
+      })
+      .sort((a, b) => a.distSq - b.distSq);
+    const othersShow = new Set(
+      othersOrdered.slice(0, MAX_NEARBY_WORLD_LABELS).map((o) => o.p.id),
+    );
+    for (const { p } of othersOrdered) {
+      const entry = this.markers.get(p.id);
+      if (!entry) continue;
+      const show = othersShow.has(p.id);
+      entry.label.visible = show;
+      if (show) setTooltipText(entry.label, labelOtherPlayer(p, mode));
+    }
+
+    const followersOrdered = snap.followers
+      .map((f) => ({
+        f,
+        distSq: this.distSqToLocal(
+          f.position.x,
+          this.surfaceYAt(f.position.x, f.position.z) + ASH_DUNE_FOLLOWER_CENTER_OFFSET,
+          f.position.z,
+        ),
+      }))
+      .sort((a, b) => a.distSq - b.distSq);
+    const followersShow = new Set(
+      followersOrdered.slice(0, MAX_NEARBY_WORLD_LABELS).map((o) => o.f.id),
+    );
+    for (const { f } of followersOrdered) {
       const entry = this.followerMeshes.get(f.id);
-      if (entry) {
+      if (!entry) continue;
+      const show = followersShow.has(f.id);
+      entry.label.visible = show;
+      if (show) {
         const prox = this.labelProximity(f.position.x, f.position.y, f.position.z);
         setTooltipText(entry.label, labelFollower(f, mode, prox));
       }
     }
-    for (const r of snap.ruins) {
+
+    const ruinsOrdered = snap.ruins
+      .map((r) => ({
+        r,
+        distSq: this.distSqToLocal(r.position.x, r.position.y, r.position.z),
+      }))
+      .sort((a, b) => a.distSq - b.distSq);
+    const ruinsShow = new Set(ruinsOrdered.slice(0, MAX_NEARBY_WORLD_LABELS).map((o) => o.r.id));
+    for (const { r } of ruinsOrdered) {
       const entry = this.ruinMeshes.get(r.id);
-      if (entry) {
+      if (!entry) continue;
+      const show = ruinsShow.has(r.id);
+      entry.label.visible = show;
+      if (show) {
         const prox = this.labelProximity(r.position.x, r.position.y, r.position.z);
         setTooltipText(entry.label, labelRuin(r, mode, prox));
       }
     }
-    for (const r of snap.relics) {
+
+    const relicsOrdered = snap.relics
+      .map((r) => ({
+        r,
+        distSq: this.distSqToLocal(r.position.x, r.position.y, r.position.z),
+      }))
+      .sort((a, b) => a.distSq - b.distSq);
+    const relicsShow = new Set(relicsOrdered.slice(0, MAX_NEARBY_WORLD_LABELS).map((o) => o.r.id));
+    for (const { r } of relicsOrdered) {
       const entry = this.relicMeshes.get(r.id);
-      if (entry) setTooltipText(entry.label, labelRelic(r, mode));
+      if (!entry) continue;
+      const show = relicsShow.has(r.id);
+      entry.label.visible = show;
+      if (show) setTooltipText(entry.label, labelRelic(r, mode));
     }
   }
 
