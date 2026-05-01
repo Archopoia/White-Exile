@@ -54,6 +54,13 @@ export interface NprSettings {
   outlineColor: readonly [number, number, number];
   outlineDepthWeight: number;
   outlineMinFeaturePx: number;
+  /**
+   * When thin-feature suppression is on, blend the gate toward 1 for pixels
+   * with low linear depth (near camera) so close silhouettes are not erased.
+   */
+  outlineNearThinRelax: number;
+  /** Linear depth (0=near ..1=far) below which near relax ramps in. */
+  outlineNearDepthMax: number;
 
   wiggleEnabled: boolean;
   wiggleFrequency: number;
@@ -74,10 +81,15 @@ export interface NprSettings {
   hatchLumaDark: number;
   hatchLumaMid: number;
   hatchLumaLight: number;
+  /**
+   * Crosshatch only: how many discrete luma steps from `hatchLumaLight` down to
+   * `hatchLumaDark`. Lightest bin: diagonal stripes only, no dots; deeper bins add
+   * halftone dots and stack the classic horizontal / vertical / diagonal stripe families.
+   */
+  hatchCrossSteps: number;
   /** 0 = pure dark ink, 1 = preserve underlying colour through hatch lines. */
   tonalShadowLift: number;
   rasterCellPx: number;
-
   oilEnabled: boolean;
   oilRadiusPx: number;
   oilIntensity: number;
@@ -124,6 +136,8 @@ export const NPR_DEFAULTS: NprSettings = Object.freeze({
   outlineColor: [0.0, 0.0, 0.0] as const,
   outlineDepthWeight: 25.0,
   outlineMinFeaturePx: 2.5,
+  outlineNearThinRelax: 0.62,
+  outlineNearDepthMax: 0.26,
 
   wiggleEnabled: true,
   wiggleFrequency: 0.08,
@@ -144,6 +158,7 @@ export const NPR_DEFAULTS: NprSettings = Object.freeze({
   hatchLumaDark: 0.35,
   hatchLumaMid: 0.55,
   hatchLumaLight: 0.8,
+  hatchCrossSteps: 6,
   tonalShadowLift: 0.55,
   rasterCellPx: 14.0,
 
@@ -218,6 +233,7 @@ export const NPR_PRESETS: Readonly<Record<Exclude<NprStyle, 'off' | 'custom'>, P
     hatchLumaDark: 0.32,
     hatchLumaMid: 0.5,
     hatchLumaLight: 0.72,
+    hatchCrossSteps: 8,
     tonalShadowLift: 0.4,
     oilEnabled: false,
     mistEnabled: false,
@@ -320,6 +336,83 @@ function isHatchPattern(value: unknown): value is HatchPattern {
   return typeof value === 'string' && (HATCH_PATTERNS as ReadonlyArray<string>).includes(value);
 }
 
+/**
+ * Merge a partial NPR blob (e.g. from `localStorage` or a saved session baseline)
+ * into a full `NprSettings` using the same clamps as `getNprSettings`.
+ */
+export function mergeNprFromPartialBlob(parsed: unknown): NprSettings {
+  if (!parsed || typeof parsed !== 'object') {
+    return { ...NPR_DEFAULTS };
+  }
+  const p = parsed as PartialNprBlob;
+  const d = NPR_DEFAULTS;
+  return {
+    enabled: readBool(p.enabled, d.enabled),
+    style: isNprStyle(p.style) ? p.style : d.style,
+
+    outlineEnabled: readBool(p.outlineEnabled, d.outlineEnabled),
+    outlineThicknessPx: readNumber(p.outlineThicknessPx, d.outlineThicknessPx, 0.25, 8),
+    outlineColor: readColor3(p.outlineColor, d.outlineColor),
+    outlineDepthWeight: readNumber(p.outlineDepthWeight, d.outlineDepthWeight, 0, 100),
+    outlineMinFeaturePx: readNumber(p.outlineMinFeaturePx, d.outlineMinFeaturePx, 0, 16),
+    outlineNearThinRelax: readNumber(p.outlineNearThinRelax, d.outlineNearThinRelax, 0, 1),
+    outlineNearDepthMax: readNumber(p.outlineNearDepthMax, d.outlineNearDepthMax, 0.02, 0.6),
+
+    wiggleEnabled: readBool(p.wiggleEnabled, d.wiggleEnabled),
+    wiggleFrequency: readNumber(p.wiggleFrequency, d.wiggleFrequency, 0.001, 0.5),
+    wiggleAmplitudePx: readNumber(p.wiggleAmplitudePx, d.wiggleAmplitudePx, 0, 8),
+    wiggleIrregularity: readNumber(p.wiggleIrregularity, d.wiggleIrregularity, 0, 1),
+
+    celEnabled: readBool(p.celEnabled, d.celEnabled),
+    celSteps: readNumber(p.celSteps, d.celSteps, 2, 12),
+    celStepSmoothness: readNumber(p.celStepSmoothness, d.celStepSmoothness, 0, 1),
+    celShadowTint: readColor3(p.celShadowTint, d.celShadowTint),
+    celShadowTintAmount: readNumber(p.celShadowTintAmount, d.celShadowTintAmount, 0, 1),
+    celMinLight: readNumber(p.celMinLight, d.celMinLight, 0, 0.5),
+    celMix: readNumber(p.celMix, d.celMix, 0, 1),
+
+    hatchEnabled: readBool(p.hatchEnabled, d.hatchEnabled),
+    hatchPattern: isHatchPattern(p.hatchPattern) ? p.hatchPattern : d.hatchPattern,
+    hatchModPx: readNumber(p.hatchModPx, d.hatchModPx, 2, 32),
+    hatchLumaDark: readNumber(p.hatchLumaDark, d.hatchLumaDark, 0, 1),
+    hatchLumaMid: readNumber(p.hatchLumaMid, d.hatchLumaMid, 0, 1),
+    hatchLumaLight: readNumber(p.hatchLumaLight, d.hatchLumaLight, 0, 1),
+    hatchCrossSteps: Math.round(readNumber(p.hatchCrossSteps, d.hatchCrossSteps, 3, 16)),
+    tonalShadowLift: readNumber(p.tonalShadowLift, d.tonalShadowLift, 0, 1),
+    rasterCellPx: readNumber(p.rasterCellPx, d.rasterCellPx, 4, 64),
+    oilEnabled: readBool(p.oilEnabled, d.oilEnabled),
+    oilRadiusPx: readNumber(p.oilRadiusPx, d.oilRadiusPx, 1, 10),
+    oilIntensity: readNumber(p.oilIntensity, d.oilIntensity, 0, 3),
+    oilLumaEdgeSuppress: readNumber(p.oilLumaEdgeSuppress, d.oilLumaEdgeSuppress, 0, 1),
+    oilGeomEdgeSuppress: readNumber(p.oilGeomEdgeSuppress, d.oilGeomEdgeSuppress, 0, 1),
+    oilDarkBoost: readNumber(p.oilDarkBoost, d.oilDarkBoost, 0, 0.4),
+    oilMaxBlend: readNumber(p.oilMaxBlend, d.oilMaxBlend, 0.25, 3),
+    oilDeltaClamp: readNumber(p.oilDeltaClamp, d.oilDeltaClamp, 0.05, 0.7),
+    oilDeltaClampEdgeMul: readNumber(p.oilDeltaClampEdgeMul, d.oilDeltaClampEdgeMul, 0.05, 1),
+    ...(() => {
+      let lo = readNumber(p.oilEdgeAttenLo, d.oilEdgeAttenLo, 0.001, 0.25);
+      let hi = readNumber(p.oilEdgeAttenHi, d.oilEdgeAttenHi, 0.05, 0.6);
+      if (lo > hi) [lo, hi] = [hi, lo];
+      return { oilEdgeAttenLo: lo, oilEdgeAttenHi: hi };
+    })(),
+    ...(() => {
+      let lo = readNumber(p.oilDeltaBandLo, d.oilDeltaBandLo, 0.02, 0.35);
+      let hi = readNumber(p.oilDeltaBandHi, d.oilDeltaBandHi, 0.12, 0.55);
+      if (lo > hi) [lo, hi] = [hi, lo];
+      return { oilDeltaBandLo: lo, oilDeltaBandHi: hi };
+    })(),
+
+    mistEnabled: readBool(p.mistEnabled, d.mistEnabled),
+    mistIntensity: readNumber(p.mistIntensity, d.mistIntensity, 0, 2),
+    mistDepthThreshold: readNumber(p.mistDepthThreshold, d.mistDepthThreshold, 0.0005, 0.25),
+    mistSpreadPx: readNumber(p.mistSpreadPx, d.mistSpreadPx, 0, 32),
+    mistColor: readColor3(p.mistColor, d.mistColor),
+    mistTintStrength: readNumber(p.mistTintStrength, d.mistTintStrength, 0, 1),
+    mistGlobal: readNumber(p.mistGlobal, d.mistGlobal, 0, 1),
+    mistGeomEdgeScale: readNumber(p.mistGeomEdgeScale, d.mistGeomEdgeScale, 0, 2),
+  };
+}
+
 export function getNprSettings(): NprSettings {
   let parsed: PartialNprBlob | null = null;
   try {
@@ -331,71 +424,7 @@ export function getNprSettings(): NprSettings {
   } catch {
     parsed = null;
   }
-  if (!parsed) return { ...NPR_DEFAULTS };
-  const d = NPR_DEFAULTS;
-  return {
-    enabled: readBool(parsed.enabled, d.enabled),
-    style: isNprStyle(parsed.style) ? parsed.style : d.style,
-
-    outlineEnabled: readBool(parsed.outlineEnabled, d.outlineEnabled),
-    outlineThicknessPx: readNumber(parsed.outlineThicknessPx, d.outlineThicknessPx, 0.25, 8),
-    outlineColor: readColor3(parsed.outlineColor, d.outlineColor),
-    outlineDepthWeight: readNumber(parsed.outlineDepthWeight, d.outlineDepthWeight, 0, 100),
-    outlineMinFeaturePx: readNumber(parsed.outlineMinFeaturePx, d.outlineMinFeaturePx, 0, 16),
-
-    wiggleEnabled: readBool(parsed.wiggleEnabled, d.wiggleEnabled),
-    wiggleFrequency: readNumber(parsed.wiggleFrequency, d.wiggleFrequency, 0.001, 0.5),
-    wiggleAmplitudePx: readNumber(parsed.wiggleAmplitudePx, d.wiggleAmplitudePx, 0, 8),
-    wiggleIrregularity: readNumber(parsed.wiggleIrregularity, d.wiggleIrregularity, 0, 1),
-
-    celEnabled: readBool(parsed.celEnabled, d.celEnabled),
-    celSteps: readNumber(parsed.celSteps, d.celSteps, 2, 12),
-    celStepSmoothness: readNumber(parsed.celStepSmoothness, d.celStepSmoothness, 0, 1),
-    celShadowTint: readColor3(parsed.celShadowTint, d.celShadowTint),
-    celShadowTintAmount: readNumber(parsed.celShadowTintAmount, d.celShadowTintAmount, 0, 1),
-    celMinLight: readNumber(parsed.celMinLight, d.celMinLight, 0, 0.5),
-    celMix: readNumber(parsed.celMix, d.celMix, 0, 1),
-
-    hatchEnabled: readBool(parsed.hatchEnabled, d.hatchEnabled),
-    hatchPattern: isHatchPattern(parsed.hatchPattern) ? parsed.hatchPattern : d.hatchPattern,
-    hatchModPx: readNumber(parsed.hatchModPx, d.hatchModPx, 2, 32),
-    hatchLumaDark: readNumber(parsed.hatchLumaDark, d.hatchLumaDark, 0, 1),
-    hatchLumaMid: readNumber(parsed.hatchLumaMid, d.hatchLumaMid, 0, 1),
-    hatchLumaLight: readNumber(parsed.hatchLumaLight, d.hatchLumaLight, 0, 1),
-    tonalShadowLift: readNumber(parsed.tonalShadowLift, d.tonalShadowLift, 0, 1),
-    rasterCellPx: readNumber(parsed.rasterCellPx, d.rasterCellPx, 4, 64),
-
-    oilEnabled: readBool(parsed.oilEnabled, d.oilEnabled),
-    oilRadiusPx: readNumber(parsed.oilRadiusPx, d.oilRadiusPx, 1, 10),
-    oilIntensity: readNumber(parsed.oilIntensity, d.oilIntensity, 0, 3),
-    oilLumaEdgeSuppress: readNumber(parsed.oilLumaEdgeSuppress, d.oilLumaEdgeSuppress, 0, 1),
-    oilGeomEdgeSuppress: readNumber(parsed.oilGeomEdgeSuppress, d.oilGeomEdgeSuppress, 0, 1),
-    oilDarkBoost: readNumber(parsed.oilDarkBoost, d.oilDarkBoost, 0, 0.4),
-    oilMaxBlend: readNumber(parsed.oilMaxBlend, d.oilMaxBlend, 0.25, 3),
-    oilDeltaClamp: readNumber(parsed.oilDeltaClamp, d.oilDeltaClamp, 0.05, 0.7),
-    oilDeltaClampEdgeMul: readNumber(parsed.oilDeltaClampEdgeMul, d.oilDeltaClampEdgeMul, 0.05, 1),
-    ...(() => {
-      let lo = readNumber(parsed.oilEdgeAttenLo, d.oilEdgeAttenLo, 0.001, 0.25);
-      let hi = readNumber(parsed.oilEdgeAttenHi, d.oilEdgeAttenHi, 0.05, 0.6);
-      if (lo > hi) [lo, hi] = [hi, lo];
-      return { oilEdgeAttenLo: lo, oilEdgeAttenHi: hi };
-    })(),
-    ...(() => {
-      let lo = readNumber(parsed.oilDeltaBandLo, d.oilDeltaBandLo, 0.02, 0.35);
-      let hi = readNumber(parsed.oilDeltaBandHi, d.oilDeltaBandHi, 0.12, 0.55);
-      if (lo > hi) [lo, hi] = [hi, lo];
-      return { oilDeltaBandLo: lo, oilDeltaBandHi: hi };
-    })(),
-
-    mistEnabled: readBool(parsed.mistEnabled, d.mistEnabled),
-    mistIntensity: readNumber(parsed.mistIntensity, d.mistIntensity, 0, 2),
-    mistDepthThreshold: readNumber(parsed.mistDepthThreshold, d.mistDepthThreshold, 0.0005, 0.25),
-    mistSpreadPx: readNumber(parsed.mistSpreadPx, d.mistSpreadPx, 0, 32),
-    mistColor: readColor3(parsed.mistColor, d.mistColor),
-    mistTintStrength: readNumber(parsed.mistTintStrength, d.mistTintStrength, 0, 1),
-    mistGlobal: readNumber(parsed.mistGlobal, d.mistGlobal, 0, 1),
-    mistGeomEdgeScale: readNumber(parsed.mistGeomEdgeScale, d.mistGeomEdgeScale, 0, 2),
-  };
+  return mergeNprFromPartialBlob(parsed);
 }
 
 export function saveNprSettings(s: NprSettings): void {

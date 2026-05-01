@@ -59,6 +59,8 @@ const FRAG = /* glsl */ `
   uniform vec3 uOutlineColor;
   uniform float uDepthGradientWeight;
   uniform float uOutlineMinFeaturePx;
+  uniform float uOutlineNearThinRelax;
+  uniform float uOutlineNearDepthMax;
 
   uniform int uWiggleEnabled;
   uniform float uWiggleFrequency;
@@ -80,9 +82,9 @@ const FRAG = /* glsl */ `
   uniform float uHatchLumaDark;
   uniform float uHatchLumaMid;
   uniform float uHatchLumaLight;
+  uniform float uHatchCrossSteps;
   uniform float uTonalShadowLift;
   uniform float uRasterCellPx;
-  uniform float uHatchWiggleInHatch;
 
   uniform int uOilEnabled;
   uniform float uOilRadius;
@@ -411,6 +413,12 @@ const FRAG = /* glsl */ `
         float rw = outlineBlur / max(outlineRaw, 1e-5);
         thinGate = smoothstep(lo, hi, rw);
       }
+      float linGate = sampleLinearDepth(uv + displacement);
+      float dmx = max(uOutlineNearDepthMax, 0.0001);
+      float nearK = clamp(uOutlineNearThinRelax, 0.0, 1.0)
+          * (1.0 - smoothstep(0.0, dmx, linGate));
+      thinGate = mix(thinGate, 1.0, nearK);
+      thinGate = max(thinGate, smoothstep(0.003, 0.038, gradNormal));
     }
 
     float geomEdge = clamp(outlineRaw * uMistGeomEdgeScale, 0.0, 1.0);
@@ -443,40 +451,102 @@ const FRAG = /* glsl */ `
         col *= mLight;
       }
     } else if (uHatchEnabled == 1 && uShadowPattern == 1 && inGeom) {
-      // Crosshatch:
-      //   light -> 1 diagonal stripe family
-      //   mid   -> 2 stripe families (vertical + diagonal)
-      //   dark  -> 3 stripe families (horizontal + vertical + diagonal)
+      // Crosshatch: classic px / py / pd screen-space stripes (diagonal first), no wiggle
+      // (wiggle stays on Sobel borders only). uHatchCrossSteps bins luma light-to-dark;
+      // lightest bin: diagonal only, no dots; deeper bins add dots then classic H/V/diag stack.
       float tlift = clamp(uTonalShadowLift, 0.0, 1.0);
       vec3 hatchInk = mix(uOutlineColor, col, tlift * 0.88);
       float mv = max(uHatchModPx, 2.0);
-      float hw = clamp(uHatchWiggleInHatch, 0.0, 1.0);
-      vec2 dH = displacement * hw;
       float invSx = 1.0 / max(pxSz.x, 1e-8);
       float invSy = 1.0 / max(pxSz.y, 1e-8);
-      float py = (uv.y + dH.y) * invSy;
-      float px = (uv.x + dH.x) * invSx;
-      float pd = (uv.x + dH.x) * invSy + (uv.y + dH.y) * invSx;
-      if (pixelLuma <= uHatchLumaDark) {
-        float fy = mod(py, mv);
-        float fx = mod(px, mv);
-        float fd = mod(pd, mv);
-        float wy = float(fy < ot);
-        float wx = float(fx < ot);
-        float wd = float(fd <= ot);
-        float amt = clamp(wy * 1.0 + wx * 0.28 + wd * 0.28, 0.0, 1.0);
-        col = mix(col, hatchInk, amt);
-      } else if (pixelLuma <= uHatchLumaMid) {
-        float fx = mod(px, mv);
-        float fd = mod(pd, mv);
-        float wx = float(fx < ot);
-        float wd = float(fd <= ot);
-        float amt = clamp(wx * 0.52 + wd * 0.52, 0.0, 1.0);
-        col = mix(col, hatchInk, amt);
-      } else if (pixelLuma <= uHatchLumaLight) {
-        float fd = mod(pd, mv);
-        float wd = float(fd <= ot);
-        float amt = wd * 0.5;
+      float px = uv.x * invSx;
+      float py = uv.y * invSy;
+      float pd = uv.x * invSy + uv.y * invSx;
+      float pa = uv.x * invSy - uv.y * invSx;
+
+      if (pixelLuma <= uHatchLumaLight) {
+        float span = max(uHatchLumaLight - uHatchLumaDark, 0.02);
+        float t = clamp((uHatchLumaLight - pixelLuma) / span, 0.0, 1.0);
+        float nStepsF = clamp(floor(uHatchCrossSteps + 0.5), 3.0, 16.0);
+        int nSteps = int(nStepsF);
+        int b = int(min(float(nSteps - 1), floor(t * nStepsF)));
+        int nl = min(b + 1, 16);
+
+        vec2 pDot = uv / pxSz;
+        vec2 offCell = (fract(pDot / mv) - vec2(0.5)) * mv;
+        float rd = length(offCell);
+        float inkW = 0.52;
+        float dotHit = float(rd < ot * 0.5);
+        float dotAmt = dotHit * inkW * float(b > 0);
+
+        float lineAmt = 0.0;
+        if (nl == 1) {
+          float fd = mod(pd, mv);
+          lineAmt = float(fd <= ot) * 0.5;
+        } else if (nl == 2) {
+          float fx = mod(px, mv);
+          float fd = mod(pd, mv);
+          lineAmt = clamp(float(fx < ot) * 0.52 + float(fd <= ot) * 0.52, 0.0, 1.0);
+        } else {
+          float fy = mod(py, mv);
+          float fx = mod(px, mv);
+          float fd = mod(pd, mv);
+          lineAmt = clamp(float(fy < ot) * 1.0 + float(fx < ot) * 0.28 + float(fd <= ot) * 0.28, 0.0, 1.0);
+          if (nl >= 4) {
+            float fa = mod(pa, mv);
+            lineAmt = min(1.0, lineAmt + float(fa <= ot) * 0.28);
+          }
+          if (nl >= 5) {
+            float fu = mod(px + py, mv);
+            lineAmt = min(1.0, lineAmt + float(fu < ot) * 0.22);
+          }
+          if (nl >= 6) {
+            float fv = mod(px - py, mv);
+            lineAmt = min(1.0, lineAmt + float(fv < ot) * 0.22);
+          }
+          if (nl >= 7) {
+            float fq = mod(2.0 * pd, mv);
+            lineAmt = min(1.0, lineAmt + float(fq < ot) * 0.18);
+          }
+          if (nl >= 8) {
+            float fq = mod(pd + mv * 0.25, mv);
+            lineAmt = min(1.0, lineAmt + float(fq < ot) * 0.16);
+          }
+          if (nl >= 9) {
+            float fq = mod(pa + mv * 0.3, mv);
+            lineAmt = min(1.0, lineAmt + float(fq < ot) * 0.16);
+          }
+          if (nl >= 10) {
+            float fq = mod(2.0 * px + py, mv);
+            lineAmt = min(1.0, lineAmt + float(fq < ot) * 0.15);
+          }
+          if (nl >= 11) {
+            float fq = mod(px + 2.0 * py, mv);
+            lineAmt = min(1.0, lineAmt + float(fq < ot) * 0.15);
+          }
+          if (nl >= 12) {
+            float fq = mod(2.0 * pa, mv);
+            lineAmt = min(1.0, lineAmt + float(fq < ot) * 0.14);
+          }
+          if (nl >= 13) {
+            float fq = mod(pd + px, mv);
+            lineAmt = min(1.0, lineAmt + float(fq < ot) * 0.14);
+          }
+          if (nl >= 14) {
+            float fq = mod(pa + px, mv);
+            lineAmt = min(1.0, lineAmt + float(fq < ot) * 0.13);
+          }
+          if (nl >= 15) {
+            float fq = mod(py + pd, mv);
+            lineAmt = min(1.0, lineAmt + float(fq < ot) * 0.13);
+          }
+          if (nl >= 16) {
+            float fq = mod(px * 0.5 + py * 0.5 + pd * 0.3, mv);
+            lineAmt = min(1.0, lineAmt + float(fq < ot) * 0.12);
+          }
+        }
+
+        float amt = min(1.0, dotAmt + lineAmt);
         col = mix(col, hatchInk, amt);
       }
     } else if (uHatchEnabled == 1 && inGeom) {
@@ -520,6 +590,8 @@ interface NprUniforms {
   readonly uOutlineColor: THREE.IUniform<THREE.Vector3>;
   readonly uDepthGradientWeight: THREE.IUniform<number>;
   readonly uOutlineMinFeaturePx: THREE.IUniform<number>;
+  readonly uOutlineNearThinRelax: THREE.IUniform<number>;
+  readonly uOutlineNearDepthMax: THREE.IUniform<number>;
   readonly uWiggleEnabled: THREE.IUniform<number>;
   readonly uWiggleFrequency: THREE.IUniform<number>;
   readonly uWiggleAmplitudePx: THREE.IUniform<number>;
@@ -537,9 +609,9 @@ interface NprUniforms {
   readonly uHatchLumaDark: THREE.IUniform<number>;
   readonly uHatchLumaMid: THREE.IUniform<number>;
   readonly uHatchLumaLight: THREE.IUniform<number>;
+  readonly uHatchCrossSteps: THREE.IUniform<number>;
   readonly uTonalShadowLift: THREE.IUniform<number>;
   readonly uRasterCellPx: THREE.IUniform<number>;
-  readonly uHatchWiggleInHatch: THREE.IUniform<number>;
   readonly uOilEnabled: THREE.IUniform<number>;
   readonly uOilRadius: THREE.IUniform<number>;
   readonly uOilIntensity: THREE.IUniform<number>;
@@ -623,6 +695,8 @@ export function createNprPost(renderer: THREE.WebGLRenderer, initial: NprSetting
     uOutlineColor: { value: new THREE.Vector3(0, 0, 0) },
     uDepthGradientWeight: { value: 25 },
     uOutlineMinFeaturePx: { value: 2.5 },
+    uOutlineNearThinRelax: { value: 0.62 },
+    uOutlineNearDepthMax: { value: 0.26 },
     uWiggleEnabled: { value: 1 },
     uWiggleFrequency: { value: 0.08 },
     uWiggleAmplitudePx: { value: 2 },
@@ -640,9 +714,9 @@ export function createNprPost(renderer: THREE.WebGLRenderer, initial: NprSetting
     uHatchLumaDark: { value: 0.35 },
     uHatchLumaMid: { value: 0.55 },
     uHatchLumaLight: { value: 0.8 },
+    uHatchCrossSteps: { value: 6 },
     uTonalShadowLift: { value: 0.55 },
     uRasterCellPx: { value: 14 },
-    uHatchWiggleInHatch: { value: 1 },
     uOilEnabled: { value: 0 },
     uOilRadius: { value: 3 },
     uOilIntensity: { value: 0.8 },
@@ -687,6 +761,8 @@ export function createNprPost(renderer: THREE.WebGLRenderer, initial: NprSetting
     uniforms.uOutlineColor.value.set(s.outlineColor[0], s.outlineColor[1], s.outlineColor[2]);
     uniforms.uDepthGradientWeight.value = s.outlineDepthWeight;
     uniforms.uOutlineMinFeaturePx.value = s.outlineMinFeaturePx;
+    uniforms.uOutlineNearThinRelax.value = s.outlineNearThinRelax;
+    uniforms.uOutlineNearDepthMax.value = s.outlineNearDepthMax;
 
     uniforms.uWiggleEnabled.value = s.wiggleEnabled ? 1 : 0;
     uniforms.uWiggleFrequency.value = s.wiggleFrequency;
@@ -707,6 +783,7 @@ export function createNprPost(renderer: THREE.WebGLRenderer, initial: NprSetting
     uniforms.uHatchLumaDark.value = s.hatchLumaDark;
     uniforms.uHatchLumaMid.value = s.hatchLumaMid;
     uniforms.uHatchLumaLight.value = s.hatchLumaLight;
+    uniforms.uHatchCrossSteps.value = Math.max(3, Math.min(16, Math.round(s.hatchCrossSteps)));
     uniforms.uTonalShadowLift.value = s.tonalShadowLift;
     uniforms.uRasterCellPx.value = s.rasterCellPx;
 

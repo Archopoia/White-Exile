@@ -36,6 +36,7 @@ import { type FxTier } from './flameLighting.js';
 import { updateHud, type HudState } from './hud.js';
 import { NetClient } from './net.js';
 import { getNprSettings, saveNprSettings, type NprSettings } from './nprSettings.js';
+import { nprSettingsEqual, snapNprNearCodeDefaults } from './roomOptionsDefaults.js';
 import { createRoomOptionsOverlay, type RoomOptionsOverlay } from './options.js';
 import { RoomScene } from './scene.js';
 import type { SceneVisualSettings } from './scene.js';
@@ -78,7 +79,11 @@ function boot(): RunningClient {
     skyHazeMul,
     torchReachMul,
   };
-  const nprSettings = getNprSettings();
+  const nprRaw = getNprSettings();
+  const nprSettings = snapNprNearCodeDefaults(nprRaw);
+  if (!nprSettingsEqual(nprRaw, nprSettings)) {
+    saveNprSettings(nprSettings);
+  }
 
   const hud: HudState = {
     status: 'connecting',

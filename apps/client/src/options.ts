@@ -8,7 +8,6 @@ import {
   applyPreset,
   HATCH_PATTERNS,
   HATCH_PATTERN_LABEL,
-  NPR_DEFAULTS,
   NPR_STYLES,
   NPR_STYLE_LABEL,
   type HatchPattern,
@@ -16,18 +15,13 @@ import {
   type NprStyle,
 } from './nprSettings.js';
 import {
+  buildCodeDefaultRoomOptionsSnapshot,
   buildRoomOptionsSnapshotFromInitial,
   cloneNprSettings,
-  CODE_DEFAULT_DISPLAY_NAME,
-  CODE_DEFAULT_DUNE_HEIGHT_SCALE,
-  CODE_DEFAULT_FILL_LIGHT_MUL,
-  CODE_DEFAULT_FOG_DENSITY_MUL,
-  CODE_DEFAULT_FOG_ENABLED,
-  CODE_DEFAULT_FX_TIER,
-  CODE_DEFAULT_LABEL_MODE,
-  CODE_DEFAULT_SKY_HAZE_MUL,
-  CODE_DEFAULT_TONE_EXPOSURE,
-  CODE_DEFAULT_TORCH_REACH_MUL,
+  loadUserRevertBaseline,
+  optionFloatDiffers,
+  optionRgbDiffers,
+  saveUserRevertBaseline,
   type RoomOptionsSnapshot,
   roomOptionsSnapshotEqual,
 } from './roomOptionsDefaults.js';
@@ -404,7 +398,9 @@ interface NprPanelHandle {
 function buildNprPanel(
   initial: NprSettings,
   hooks: { emitLive: (next: NprSettings) => void; emitCommit: (next: NprSettings) => void },
+  revertBaselineRef: { snap: RoomOptionsSnapshot },
 ): NprPanelHandle {
+  const br = (): NprSettings => revertBaselineRef.snap.npr;
   const nprRevertRefreshers: Array<() => void> = [];
   const rowRegNpr = (
     label: string,
@@ -466,8 +462,8 @@ function buildNprPanel(
     const outlineBody = document.createElement('div');
     outlineBody.append(
       rowRegNpr('On', makeBoolToggle('Outline enabled', s.outlineEnabled, (v) => patch({ outlineEnabled: v })), {
-        dirty: () => current.outlineEnabled !== NPR_DEFAULTS.outlineEnabled,
-        revert: () => patch({ outlineEnabled: NPR_DEFAULTS.outlineEnabled }),
+        dirty: () => current.outlineEnabled !== br().outlineEnabled,
+        revert: () => patch({ outlineEnabled: br().outlineEnabled }),
       }),
       rowRegNpr(
         'Width',
@@ -485,8 +481,8 @@ function buildNprPanel(
           () => hooks.emitCommit(current),
         ).row,
         {
-          dirty: () => current.outlineThicknessPx !== NPR_DEFAULTS.outlineThicknessPx,
-          revert: () => patch({ outlineThicknessPx: NPR_DEFAULTS.outlineThicknessPx }),
+          dirty: () => optionFloatDiffers(current.outlineThicknessPx, br().outlineThicknessPx),
+          revert: () => patch({ outlineThicknessPx: br().outlineThicknessPx }),
         },
       ),
       rowRegNpr(
@@ -505,8 +501,8 @@ function buildNprPanel(
           () => hooks.emitCommit(current),
         ).row,
         {
-          dirty: () => current.outlineDepthWeight !== NPR_DEFAULTS.outlineDepthWeight,
-          revert: () => patch({ outlineDepthWeight: NPR_DEFAULTS.outlineDepthWeight }),
+          dirty: () => optionFloatDiffers(current.outlineDepthWeight, br().outlineDepthWeight),
+          revert: () => patch({ outlineDepthWeight: br().outlineDepthWeight }),
         },
       ),
       rowRegNpr(
@@ -525,8 +521,48 @@ function buildNprPanel(
           () => hooks.emitCommit(current),
         ).row,
         {
-          dirty: () => current.outlineMinFeaturePx !== NPR_DEFAULTS.outlineMinFeaturePx,
-          revert: () => patch({ outlineMinFeaturePx: NPR_DEFAULTS.outlineMinFeaturePx }),
+          dirty: () => optionFloatDiffers(current.outlineMinFeaturePx, br().outlineMinFeaturePx),
+          revert: () => patch({ outlineMinFeaturePx: br().outlineMinFeaturePx }),
+        },
+      ),
+      rowRegNpr(
+        'Near relax',
+        makeFloatSlider(
+          0,
+          1,
+          0.02,
+          s.outlineNearThinRelax,
+          2,
+          (v) => {
+            current = { ...current, outlineNearThinRelax: v, style: 'custom' };
+            stylePicker.value = 'custom';
+            hooks.emitLive(current);
+          },
+          () => hooks.emitCommit(current),
+        ).row,
+        {
+          dirty: () => optionFloatDiffers(current.outlineNearThinRelax, br().outlineNearThinRelax),
+          revert: () => patch({ outlineNearThinRelax: br().outlineNearThinRelax }),
+        },
+      ),
+      rowRegNpr(
+        'Near depth',
+        makeFloatSlider(
+          0.04,
+          0.55,
+          0.01,
+          s.outlineNearDepthMax,
+          2,
+          (v) => {
+            current = { ...current, outlineNearDepthMax: v, style: 'custom' };
+            stylePicker.value = 'custom';
+            hooks.emitLive(current);
+          },
+          () => hooks.emitCommit(current),
+        ).row,
+        {
+          dirty: () => optionFloatDiffers(current.outlineNearDepthMax, br().outlineNearDepthMax),
+          revert: () => patch({ outlineNearDepthMax: br().outlineNearDepthMax }),
         },
       ),
       rowRegNpr(
@@ -541,13 +577,10 @@ function buildNprPanel(
           () => hooks.emitCommit(current),
         ),
         {
-          dirty: () =>
-            current.outlineColor[0] !== NPR_DEFAULTS.outlineColor[0] ||
-            current.outlineColor[1] !== NPR_DEFAULTS.outlineColor[1] ||
-            current.outlineColor[2] !== NPR_DEFAULTS.outlineColor[2],
+          dirty: () => optionRgbDiffers(current.outlineColor, br().outlineColor),
           revert: () =>
             patch({
-              outlineColor: [NPR_DEFAULTS.outlineColor[0], NPR_DEFAULTS.outlineColor[1], NPR_DEFAULTS.outlineColor[2]],
+              outlineColor: [br().outlineColor[0], br().outlineColor[1], br().outlineColor[2]],
             }),
         },
       ),
@@ -556,8 +589,8 @@ function buildNprPanel(
     const celBody = document.createElement('div');
     celBody.append(
       rowRegNpr('On', makeBoolToggle('Cel enabled', s.celEnabled, (v) => patch({ celEnabled: v })), {
-        dirty: () => current.celEnabled !== NPR_DEFAULTS.celEnabled,
-        revert: () => patch({ celEnabled: NPR_DEFAULTS.celEnabled }),
+        dirty: () => current.celEnabled !== br().celEnabled,
+        revert: () => patch({ celEnabled: br().celEnabled }),
       }),
       rowRegNpr(
         'Steps',
@@ -574,7 +607,10 @@ function buildNprPanel(
           },
           () => hooks.emitCommit(current),
         ).row,
-        { dirty: () => current.celSteps !== NPR_DEFAULTS.celSteps, revert: () => patch({ celSteps: NPR_DEFAULTS.celSteps }) },
+        {
+          dirty: () => optionFloatDiffers(current.celSteps, br().celSteps),
+          revert: () => patch({ celSteps: br().celSteps }),
+        },
       ),
       rowRegNpr(
         'Edge',
@@ -592,8 +628,8 @@ function buildNprPanel(
           () => hooks.emitCommit(current),
         ).row,
         {
-          dirty: () => current.celStepSmoothness !== NPR_DEFAULTS.celStepSmoothness,
-          revert: () => patch({ celStepSmoothness: NPR_DEFAULTS.celStepSmoothness }),
+          dirty: () => optionFloatDiffers(current.celStepSmoothness, br().celStepSmoothness),
+          revert: () => patch({ celStepSmoothness: br().celStepSmoothness }),
         },
       ),
       rowRegNpr(
@@ -611,7 +647,10 @@ function buildNprPanel(
           },
           () => hooks.emitCommit(current),
         ).row,
-        { dirty: () => current.celMinLight !== NPR_DEFAULTS.celMinLight, revert: () => patch({ celMinLight: NPR_DEFAULTS.celMinLight }) },
+        {
+          dirty: () => optionFloatDiffers(current.celMinLight, br().celMinLight),
+          revert: () => patch({ celMinLight: br().celMinLight }),
+        },
       ),
       rowRegNpr(
         'Mix',
@@ -628,7 +667,10 @@ function buildNprPanel(
           },
           () => hooks.emitCommit(current),
         ).row,
-        { dirty: () => current.celMix !== NPR_DEFAULTS.celMix, revert: () => patch({ celMix: NPR_DEFAULTS.celMix }) },
+        {
+          dirty: () => optionFloatDiffers(current.celMix, br().celMix),
+          revert: () => patch({ celMix: br().celMix }),
+        },
       ),
       rowRegNpr(
         'Tint ×',
@@ -646,8 +688,8 @@ function buildNprPanel(
           () => hooks.emitCommit(current),
         ).row,
         {
-          dirty: () => current.celShadowTintAmount !== NPR_DEFAULTS.celShadowTintAmount,
-          revert: () => patch({ celShadowTintAmount: NPR_DEFAULTS.celShadowTintAmount }),
+          dirty: () => optionFloatDiffers(current.celShadowTintAmount, br().celShadowTintAmount),
+          revert: () => patch({ celShadowTintAmount: br().celShadowTintAmount }),
         },
       ),
       rowRegNpr(
@@ -662,16 +704,13 @@ function buildNprPanel(
           () => hooks.emitCommit(current),
         ),
         {
-          dirty: () =>
-            current.celShadowTint[0] !== NPR_DEFAULTS.celShadowTint[0] ||
-            current.celShadowTint[1] !== NPR_DEFAULTS.celShadowTint[1] ||
-            current.celShadowTint[2] !== NPR_DEFAULTS.celShadowTint[2],
+          dirty: () => optionRgbDiffers(current.celShadowTint, br().celShadowTint),
           revert: () =>
             patch({
               celShadowTint: [
-                NPR_DEFAULTS.celShadowTint[0],
-                NPR_DEFAULTS.celShadowTint[1],
-                NPR_DEFAULTS.celShadowTint[2],
+                br().celShadowTint[0],
+                br().celShadowTint[1],
+                br().celShadowTint[2],
               ],
             }),
         },
@@ -692,12 +731,12 @@ function buildNprPanel(
     );
     hatchBody.append(
       rowRegNpr('On', makeBoolToggle('Hatch enabled', s.hatchEnabled, (v) => patch({ hatchEnabled: v })), {
-        dirty: () => current.hatchEnabled !== NPR_DEFAULTS.hatchEnabled,
-        revert: () => patch({ hatchEnabled: NPR_DEFAULTS.hatchEnabled }),
+        dirty: () => current.hatchEnabled !== br().hatchEnabled,
+        revert: () => patch({ hatchEnabled: br().hatchEnabled }),
       }),
       rowRegNpr('Style', hatchPatternKnob.el, {
-        dirty: () => current.hatchPattern !== NPR_DEFAULTS.hatchPattern,
-        revert: () => patch({ hatchPattern: NPR_DEFAULTS.hatchPattern }),
+        dirty: () => current.hatchPattern !== br().hatchPattern,
+        revert: () => patch({ hatchPattern: br().hatchPattern }),
       }),
       rowRegNpr(
         'Step',
@@ -714,7 +753,31 @@ function buildNprPanel(
           },
           () => hooks.emitCommit(current),
         ).row,
-        { dirty: () => current.hatchModPx !== NPR_DEFAULTS.hatchModPx, revert: () => patch({ hatchModPx: NPR_DEFAULTS.hatchModPx }) },
+        {
+          dirty: () => optionFloatDiffers(current.hatchModPx, br().hatchModPx),
+          revert: () => patch({ hatchModPx: br().hatchModPx }),
+        },
+      ),
+      rowRegNpr(
+        'Cross steps',
+        makeFloatSlider(
+          3,
+          16,
+          1,
+          s.hatchCrossSteps,
+          0,
+          (v) => {
+            const rv = Math.round(v);
+            current = { ...current, hatchCrossSteps: rv, style: 'custom' };
+            stylePicker.value = 'custom';
+            hooks.emitLive(current);
+          },
+          () => hooks.emitCommit(current),
+        ).row,
+        {
+          dirty: () => optionFloatDiffers(current.hatchCrossSteps, br().hatchCrossSteps),
+          revert: () => patch({ hatchCrossSteps: br().hatchCrossSteps }),
+        },
       ),
       rowRegNpr(
         'Dark',
@@ -732,8 +795,8 @@ function buildNprPanel(
           () => hooks.emitCommit(current),
         ).row,
         {
-          dirty: () => current.hatchLumaDark !== NPR_DEFAULTS.hatchLumaDark,
-          revert: () => patch({ hatchLumaDark: NPR_DEFAULTS.hatchLumaDark }),
+          dirty: () => optionFloatDiffers(current.hatchLumaDark, br().hatchLumaDark),
+          revert: () => patch({ hatchLumaDark: br().hatchLumaDark }),
         },
       ),
       rowRegNpr(
@@ -752,8 +815,8 @@ function buildNprPanel(
           () => hooks.emitCommit(current),
         ).row,
         {
-          dirty: () => current.hatchLumaMid !== NPR_DEFAULTS.hatchLumaMid,
-          revert: () => patch({ hatchLumaMid: NPR_DEFAULTS.hatchLumaMid }),
+          dirty: () => optionFloatDiffers(current.hatchLumaMid, br().hatchLumaMid),
+          revert: () => patch({ hatchLumaMid: br().hatchLumaMid }),
         },
       ),
       rowRegNpr(
@@ -772,8 +835,8 @@ function buildNprPanel(
           () => hooks.emitCommit(current),
         ).row,
         {
-          dirty: () => current.hatchLumaLight !== NPR_DEFAULTS.hatchLumaLight,
-          revert: () => patch({ hatchLumaLight: NPR_DEFAULTS.hatchLumaLight }),
+          dirty: () => optionFloatDiffers(current.hatchLumaLight, br().hatchLumaLight),
+          revert: () => patch({ hatchLumaLight: br().hatchLumaLight }),
         },
       ),
       rowRegNpr(
@@ -792,8 +855,8 @@ function buildNprPanel(
           () => hooks.emitCommit(current),
         ).row,
         {
-          dirty: () => current.tonalShadowLift !== NPR_DEFAULTS.tonalShadowLift,
-          revert: () => patch({ tonalShadowLift: NPR_DEFAULTS.tonalShadowLift }),
+          dirty: () => optionFloatDiffers(current.tonalShadowLift, br().tonalShadowLift),
+          revert: () => patch({ tonalShadowLift: br().tonalShadowLift }),
         },
       ),
       rowRegNpr(
@@ -812,8 +875,8 @@ function buildNprPanel(
           () => hooks.emitCommit(current),
         ).row,
         {
-          dirty: () => current.rasterCellPx !== NPR_DEFAULTS.rasterCellPx,
-          revert: () => patch({ rasterCellPx: NPR_DEFAULTS.rasterCellPx }),
+          dirty: () => optionFloatDiffers(current.rasterCellPx, br().rasterCellPx),
+          revert: () => patch({ rasterCellPx: br().rasterCellPx }),
         },
       ),
     );
@@ -837,8 +900,8 @@ function buildNprPanel(
           () => hooks.emitCommit(current),
         ).row,
         {
-          dirty: () => current.oilLumaEdgeSuppress !== NPR_DEFAULTS.oilLumaEdgeSuppress,
-          revert: () => patch({ oilLumaEdgeSuppress: NPR_DEFAULTS.oilLumaEdgeSuppress }),
+          dirty: () => optionFloatDiffers(current.oilLumaEdgeSuppress, br().oilLumaEdgeSuppress),
+          revert: () => patch({ oilLumaEdgeSuppress: br().oilLumaEdgeSuppress }),
         },
       ),
       rowRegNpr(
@@ -857,8 +920,8 @@ function buildNprPanel(
           () => hooks.emitCommit(current),
         ).row,
         {
-          dirty: () => current.oilGeomEdgeSuppress !== NPR_DEFAULTS.oilGeomEdgeSuppress,
-          revert: () => patch({ oilGeomEdgeSuppress: NPR_DEFAULTS.oilGeomEdgeSuppress }),
+          dirty: () => optionFloatDiffers(current.oilGeomEdgeSuppress, br().oilGeomEdgeSuppress),
+          revert: () => patch({ oilGeomEdgeSuppress: br().oilGeomEdgeSuppress }),
         },
       ),
       rowRegNpr(
@@ -877,8 +940,8 @@ function buildNprPanel(
           () => hooks.emitCommit(current),
         ).row,
         {
-          dirty: () => current.oilDarkBoost !== NPR_DEFAULTS.oilDarkBoost,
-          revert: () => patch({ oilDarkBoost: NPR_DEFAULTS.oilDarkBoost }),
+          dirty: () => optionFloatDiffers(current.oilDarkBoost, br().oilDarkBoost),
+          revert: () => patch({ oilDarkBoost: br().oilDarkBoost }),
         },
       ),
       rowRegNpr(
@@ -897,8 +960,8 @@ function buildNprPanel(
           () => hooks.emitCommit(current),
         ).row,
         {
-          dirty: () => current.oilMaxBlend !== NPR_DEFAULTS.oilMaxBlend,
-          revert: () => patch({ oilMaxBlend: NPR_DEFAULTS.oilMaxBlend }),
+          dirty: () => optionFloatDiffers(current.oilMaxBlend, br().oilMaxBlend),
+          revert: () => patch({ oilMaxBlend: br().oilMaxBlend }),
         },
       ),
       rowRegNpr(
@@ -917,8 +980,8 @@ function buildNprPanel(
           () => hooks.emitCommit(current),
         ).row,
         {
-          dirty: () => current.oilDeltaClamp !== NPR_DEFAULTS.oilDeltaClamp,
-          revert: () => patch({ oilDeltaClamp: NPR_DEFAULTS.oilDeltaClamp }),
+          dirty: () => optionFloatDiffers(current.oilDeltaClamp, br().oilDeltaClamp),
+          revert: () => patch({ oilDeltaClamp: br().oilDeltaClamp }),
         },
       ),
       rowRegNpr(
@@ -937,8 +1000,8 @@ function buildNprPanel(
           () => hooks.emitCommit(current),
         ).row,
         {
-          dirty: () => current.oilDeltaClampEdgeMul !== NPR_DEFAULTS.oilDeltaClampEdgeMul,
-          revert: () => patch({ oilDeltaClampEdgeMul: NPR_DEFAULTS.oilDeltaClampEdgeMul }),
+          dirty: () => optionFloatDiffers(current.oilDeltaClampEdgeMul, br().oilDeltaClampEdgeMul),
+          revert: () => patch({ oilDeltaClampEdgeMul: br().oilDeltaClampEdgeMul }),
         },
       ),
       rowRegNpr(
@@ -957,8 +1020,8 @@ function buildNprPanel(
           () => hooks.emitCommit(current),
         ).row,
         {
-          dirty: () => current.oilEdgeAttenLo !== NPR_DEFAULTS.oilEdgeAttenLo,
-          revert: () => patch({ oilEdgeAttenLo: NPR_DEFAULTS.oilEdgeAttenLo }),
+          dirty: () => optionFloatDiffers(current.oilEdgeAttenLo, br().oilEdgeAttenLo),
+          revert: () => patch({ oilEdgeAttenLo: br().oilEdgeAttenLo }),
         },
       ),
       rowRegNpr(
@@ -977,8 +1040,8 @@ function buildNprPanel(
           () => hooks.emitCommit(current),
         ).row,
         {
-          dirty: () => current.oilEdgeAttenHi !== NPR_DEFAULTS.oilEdgeAttenHi,
-          revert: () => patch({ oilEdgeAttenHi: NPR_DEFAULTS.oilEdgeAttenHi }),
+          dirty: () => optionFloatDiffers(current.oilEdgeAttenHi, br().oilEdgeAttenHi),
+          revert: () => patch({ oilEdgeAttenHi: br().oilEdgeAttenHi }),
         },
       ),
       rowRegNpr(
@@ -997,8 +1060,8 @@ function buildNprPanel(
           () => hooks.emitCommit(current),
         ).row,
         {
-          dirty: () => current.oilDeltaBandLo !== NPR_DEFAULTS.oilDeltaBandLo,
-          revert: () => patch({ oilDeltaBandLo: NPR_DEFAULTS.oilDeltaBandLo }),
+          dirty: () => optionFloatDiffers(current.oilDeltaBandLo, br().oilDeltaBandLo),
+          revert: () => patch({ oilDeltaBandLo: br().oilDeltaBandLo }),
         },
       ),
       rowRegNpr(
@@ -1017,15 +1080,15 @@ function buildNprPanel(
           () => hooks.emitCommit(current),
         ).row,
         {
-          dirty: () => current.oilDeltaBandHi !== NPR_DEFAULTS.oilDeltaBandHi,
-          revert: () => patch({ oilDeltaBandHi: NPR_DEFAULTS.oilDeltaBandHi }),
+          dirty: () => optionFloatDiffers(current.oilDeltaBandHi, br().oilDeltaBandHi),
+          revert: () => patch({ oilDeltaBandHi: br().oilDeltaBandHi }),
         },
       ),
     );
     oilBody.append(
       rowRegNpr('On', makeBoolToggle('Oil enabled', s.oilEnabled, (v) => patch({ oilEnabled: v })), {
-        dirty: () => current.oilEnabled !== NPR_DEFAULTS.oilEnabled,
-        revert: () => patch({ oilEnabled: NPR_DEFAULTS.oilEnabled }),
+        dirty: () => current.oilEnabled !== br().oilEnabled,
+        revert: () => patch({ oilEnabled: br().oilEnabled }),
       }),
       rowRegNpr(
         'Radius',
@@ -1043,8 +1106,8 @@ function buildNprPanel(
           () => hooks.emitCommit(current),
         ).row,
         {
-          dirty: () => current.oilRadiusPx !== NPR_DEFAULTS.oilRadiusPx,
-          revert: () => patch({ oilRadiusPx: NPR_DEFAULTS.oilRadiusPx }),
+          dirty: () => optionFloatDiffers(current.oilRadiusPx, br().oilRadiusPx),
+          revert: () => patch({ oilRadiusPx: br().oilRadiusPx }),
         },
       ),
       rowRegNpr(
@@ -1063,8 +1126,8 @@ function buildNprPanel(
           () => hooks.emitCommit(current),
         ).row,
         {
-          dirty: () => current.oilIntensity !== NPR_DEFAULTS.oilIntensity,
-          revert: () => patch({ oilIntensity: NPR_DEFAULTS.oilIntensity }),
+          dirty: () => optionFloatDiffers(current.oilIntensity, br().oilIntensity),
+          revert: () => patch({ oilIntensity: br().oilIntensity }),
         },
       ),
       makeDetails('Oil - edge / anti-halo', oilEdgeBody, 'npr-oil-edge'),
@@ -1073,8 +1136,8 @@ function buildNprPanel(
     const mistBody = document.createElement('div');
     mistBody.append(
       rowRegNpr('On', makeBoolToggle('Mist enabled', s.mistEnabled, (v) => patch({ mistEnabled: v })), {
-        dirty: () => current.mistEnabled !== NPR_DEFAULTS.mistEnabled,
-        revert: () => patch({ mistEnabled: NPR_DEFAULTS.mistEnabled }),
+        dirty: () => current.mistEnabled !== br().mistEnabled,
+        revert: () => patch({ mistEnabled: br().mistEnabled }),
       }),
       rowRegNpr(
         'Amount',
@@ -1092,8 +1155,8 @@ function buildNprPanel(
           () => hooks.emitCommit(current),
         ).row,
         {
-          dirty: () => current.mistIntensity !== NPR_DEFAULTS.mistIntensity,
-          revert: () => patch({ mistIntensity: NPR_DEFAULTS.mistIntensity }),
+          dirty: () => optionFloatDiffers(current.mistIntensity, br().mistIntensity),
+          revert: () => patch({ mistIntensity: br().mistIntensity }),
         },
       ),
       rowRegNpr(
@@ -1112,8 +1175,8 @@ function buildNprPanel(
           () => hooks.emitCommit(current),
         ).row,
         {
-          dirty: () => current.mistDepthThreshold !== NPR_DEFAULTS.mistDepthThreshold,
-          revert: () => patch({ mistDepthThreshold: NPR_DEFAULTS.mistDepthThreshold }),
+          dirty: () => optionFloatDiffers(current.mistDepthThreshold, br().mistDepthThreshold),
+          revert: () => patch({ mistDepthThreshold: br().mistDepthThreshold }),
         },
       ),
       rowRegNpr(
@@ -1132,8 +1195,8 @@ function buildNprPanel(
           () => hooks.emitCommit(current),
         ).row,
         {
-          dirty: () => current.mistSpreadPx !== NPR_DEFAULTS.mistSpreadPx,
-          revert: () => patch({ mistSpreadPx: NPR_DEFAULTS.mistSpreadPx }),
+          dirty: () => optionFloatDiffers(current.mistSpreadPx, br().mistSpreadPx),
+          revert: () => patch({ mistSpreadPx: br().mistSpreadPx }),
         },
       ),
       rowRegNpr(
@@ -1152,8 +1215,8 @@ function buildNprPanel(
           () => hooks.emitCommit(current),
         ).row,
         {
-          dirty: () => current.mistTintStrength !== NPR_DEFAULTS.mistTintStrength,
-          revert: () => patch({ mistTintStrength: NPR_DEFAULTS.mistTintStrength }),
+          dirty: () => optionFloatDiffers(current.mistTintStrength, br().mistTintStrength),
+          revert: () => patch({ mistTintStrength: br().mistTintStrength }),
         },
       ),
       rowRegNpr(
@@ -1169,12 +1232,10 @@ function buildNprPanel(
         ),
         {
           dirty: () =>
-            current.mistColor[0] !== NPR_DEFAULTS.mistColor[0] ||
-            current.mistColor[1] !== NPR_DEFAULTS.mistColor[1] ||
-            current.mistColor[2] !== NPR_DEFAULTS.mistColor[2],
+            optionRgbDiffers(current.mistColor, br().mistColor),
           revert: () =>
             patch({
-              mistColor: [NPR_DEFAULTS.mistColor[0], NPR_DEFAULTS.mistColor[1], NPR_DEFAULTS.mistColor[2]],
+              mistColor: [br().mistColor[0], br().mistColor[1], br().mistColor[2]],
             }),
         },
       ),
@@ -1194,8 +1255,8 @@ function buildNprPanel(
           () => hooks.emitCommit(current),
         ).row,
         {
-          dirty: () => current.mistGeomEdgeScale !== NPR_DEFAULTS.mistGeomEdgeScale,
-          revert: () => patch({ mistGeomEdgeScale: NPR_DEFAULTS.mistGeomEdgeScale }),
+          dirty: () => optionFloatDiffers(current.mistGeomEdgeScale, br().mistGeomEdgeScale),
+          revert: () => patch({ mistGeomEdgeScale: br().mistGeomEdgeScale }),
         },
       ),
     );
@@ -1203,8 +1264,8 @@ function buildNprPanel(
     const wiggleBody = document.createElement('div');
     wiggleBody.append(
       rowRegNpr('On', makeBoolToggle('Wiggle enabled', s.wiggleEnabled, (v) => patch({ wiggleEnabled: v })), {
-        dirty: () => current.wiggleEnabled !== NPR_DEFAULTS.wiggleEnabled,
-        revert: () => patch({ wiggleEnabled: NPR_DEFAULTS.wiggleEnabled }),
+        dirty: () => current.wiggleEnabled !== br().wiggleEnabled,
+        revert: () => patch({ wiggleEnabled: br().wiggleEnabled }),
       }),
       rowRegNpr(
         'Freq',
@@ -1222,8 +1283,8 @@ function buildNprPanel(
           () => hooks.emitCommit(current),
         ).row,
         {
-          dirty: () => current.wiggleFrequency !== NPR_DEFAULTS.wiggleFrequency,
-          revert: () => patch({ wiggleFrequency: NPR_DEFAULTS.wiggleFrequency }),
+          dirty: () => optionFloatDiffers(current.wiggleFrequency, br().wiggleFrequency),
+          revert: () => patch({ wiggleFrequency: br().wiggleFrequency }),
         },
       ),
       rowRegNpr(
@@ -1242,8 +1303,8 @@ function buildNprPanel(
           () => hooks.emitCommit(current),
         ).row,
         {
-          dirty: () => current.wiggleAmplitudePx !== NPR_DEFAULTS.wiggleAmplitudePx,
-          revert: () => patch({ wiggleAmplitudePx: NPR_DEFAULTS.wiggleAmplitudePx }),
+          dirty: () => optionFloatDiffers(current.wiggleAmplitudePx, br().wiggleAmplitudePx),
+          revert: () => patch({ wiggleAmplitudePx: br().wiggleAmplitudePx }),
         },
       ),
       rowRegNpr(
@@ -1262,8 +1323,8 @@ function buildNprPanel(
           () => hooks.emitCommit(current),
         ).row,
         {
-          dirty: () => current.wiggleIrregularity !== NPR_DEFAULTS.wiggleIrregularity,
-          revert: () => patch({ wiggleIrregularity: NPR_DEFAULTS.wiggleIrregularity }),
+          dirty: () => optionFloatDiffers(current.wiggleIrregularity, br().wiggleIrregularity),
+          revert: () => patch({ wiggleIrregularity: br().wiggleIrregularity }),
         },
       ),
     );
@@ -1291,17 +1352,17 @@ function buildNprPanel(
 
   root.append(
     rowRegNpr('NPR', enableWrap, {
-      dirty: () => current.enabled !== NPR_DEFAULTS.enabled,
+      dirty: () => current.enabled !== br().enabled,
       revert: () => {
-        current = { ...current, enabled: NPR_DEFAULTS.enabled };
+        current = { ...current, enabled: br().enabled };
         enableInput.checked = current.enabled;
         hooks.emitCommit(current);
       },
     }),
     rowRegNpr('Style', stylePicker, {
-      dirty: () => current.style !== NPR_DEFAULTS.style || current.enabled !== NPR_DEFAULTS.enabled,
+      dirty: () => current.style !== br().style || current.enabled !== br().enabled,
       revert: () => {
-        current = cloneNprSettings(NPR_DEFAULTS);
+        current = cloneNprSettings(br());
         stylePicker.value = current.style;
         enableInput.checked = current.enabled;
         hooks.emitCommit(current);
@@ -1339,6 +1400,11 @@ export function createRoomOptionsOverlay(cb: RoomOptionsCallbacks): RoomOptionsO
     control: HTMLElement,
     opts?: { dirty?: () => boolean; revert?: () => void },
   ): HTMLElement => settingRow(label, control, revertRefreshers, opts);
+
+  const revertBaselineRef: { snap: RoomOptionsSnapshot } = {
+    snap: loadUserRevertBaseline() ?? buildCodeDefaultRoomOptionsSnapshot(),
+  };
+  const rb = (): RoomOptionsSnapshot => revertBaselineRef.snap;
 
   let live: RoomOptionsSnapshot = buildRoomOptionsSnapshotFromInitial({
     displayName: cb.initial.displayName,
@@ -1430,6 +1496,22 @@ export function createRoomOptionsOverlay(cb: RoomOptionsCallbacks): RoomOptionsO
   title.textContent = 'Session';
   title.style.cssText = 'font-weight:600;font-size:13px';
 
+  const headerActions = document.createElement('div');
+  headerActions.style.cssText = 'display:flex;align-items:center;gap:6px;flex-shrink:0';
+
+  const saveBaselineBtn = document.createElement('button');
+  saveBaselineBtn.type = 'button';
+  saveBaselineBtn.textContent = 'Save';
+  saveBaselineBtn.title =
+    'Remember current values as the revert baseline for this browser (does not change repo defaults)';
+  saveBaselineBtn.style.cssText =
+    'padding:4px 10px;border-radius:6px;border:1px solid rgba(100,200,140,0.45);background:rgba(30,52,40,0.5);color:#c8f0d8;font-size:11px;cursor:pointer';
+  saveBaselineBtn.addEventListener('click', () => {
+    revertBaselineRef.snap = cloneRoomOptionsSnapshot(live);
+    saveUserRevertBaseline(revertBaselineRef.snap);
+    refreshRevertIndicators();
+  });
+
   const closeBtn = document.createElement('button');
   closeBtn.type = 'button';
   closeBtn.textContent = 'Close';
@@ -1440,7 +1522,8 @@ export function createRoomOptionsOverlay(cb: RoomOptionsCallbacks): RoomOptionsO
     root.style.display = 'none';
   });
 
-  header.append(title, closeBtn);
+  headerActions.append(saveBaselineBtn, closeBtn);
+  header.append(title, headerActions);
 
   const tabList = document.createElement('div');
   tabList.setAttribute('role', 'tablist');
@@ -1478,9 +1561,9 @@ export function createRoomOptionsOverlay(cb: RoomOptionsCallbacks): RoomOptionsO
 
   panelGeneral.append(
     rowReg('Name', nameInput, {
-      dirty: () => live.displayName !== CODE_DEFAULT_DISPLAY_NAME,
+      dirty: () => live.displayName !== rb().displayName,
       revert: () => {
-        live.displayName = CODE_DEFAULT_DISPLAY_NAME;
+        live.displayName = rb().displayName;
         nameInput.value = live.displayName;
         cb.onDisplayNameChange(live.displayName);
         recordHistory();
@@ -1605,29 +1688,29 @@ export function createRoomOptionsOverlay(cb: RoomOptionsCallbacks): RoomOptionsO
 
   panelGraphics.append(
     rowReg('Quality', fxKnob.el, {
-      dirty: () => live.fxTier !== CODE_DEFAULT_FX_TIER,
+      dirty: () => live.fxTier !== rb().fxTier,
       revert: () => {
-        live.fxTier = CODE_DEFAULT_FX_TIER;
-        fxKnob.setValueSilent(CODE_DEFAULT_FX_TIER);
+        live.fxTier = rb().fxTier;
+        fxKnob.setValueSilent(rb().fxTier);
         cb.onFxTierChange(live.fxTier);
         recordHistory();
         refreshRevertIndicators();
       },
     }),
     rowReg('Labels', labelKnob.el, {
-      dirty: () => live.labelMode !== CODE_DEFAULT_LABEL_MODE,
+      dirty: () => live.labelMode !== rb().labelMode,
       revert: () => {
-        live.labelMode = CODE_DEFAULT_LABEL_MODE;
-        labelKnob.setValueSilent(CODE_DEFAULT_LABEL_MODE);
+        live.labelMode = rb().labelMode;
+        labelKnob.setValueSilent(rb().labelMode);
         cb.onLabelModeChange(live.labelMode);
         recordHistory();
         refreshRevertIndicators();
       },
     }),
     rowReg('Fog', fogWrap, {
-      dirty: () => live.fogEnabled !== CODE_DEFAULT_FOG_ENABLED,
+      dirty: () => live.fogEnabled !== rb().fogEnabled,
       revert: () => {
-        live.fogEnabled = CODE_DEFAULT_FOG_ENABLED;
+        live.fogEnabled = rb().fogEnabled;
         fogCheck.checked = live.fogEnabled;
         cb.onFogChange(live.fogEnabled);
         fogDensitySlider.input.disabled = !live.fogEnabled;
@@ -1636,9 +1719,9 @@ export function createRoomOptionsOverlay(cb: RoomOptionsCallbacks): RoomOptionsO
       },
     }),
     rowReg('Fog ×', fogDensitySlider.row, {
-      dirty: () => live.fogDensityMul !== CODE_DEFAULT_FOG_DENSITY_MUL,
+      dirty: () => optionFloatDiffers(live.fogDensityMul, rb().fogDensityMul),
       revert: () => {
-        live.fogDensityMul = CODE_DEFAULT_FOG_DENSITY_MUL;
+        live.fogDensityMul = rb().fogDensityMul;
         fogDensitySlider.setValueSilent(live.fogDensityMul);
         cb.onFogDensityMulChange(live.fogDensityMul);
         recordHistory();
@@ -1646,9 +1729,9 @@ export function createRoomOptionsOverlay(cb: RoomOptionsCallbacks): RoomOptionsO
       },
     }),
     rowReg('Fill', fillSlider.row, {
-      dirty: () => live.fillLightMul !== CODE_DEFAULT_FILL_LIGHT_MUL,
+      dirty: () => optionFloatDiffers(live.fillLightMul, rb().fillLightMul),
       revert: () => {
-        live.fillLightMul = CODE_DEFAULT_FILL_LIGHT_MUL;
+        live.fillLightMul = rb().fillLightMul;
         fillSlider.setValueSilent(live.fillLightMul);
         cb.onFillLightMulChange(live.fillLightMul);
         recordHistory();
@@ -1656,9 +1739,9 @@ export function createRoomOptionsOverlay(cb: RoomOptionsCallbacks): RoomOptionsO
       },
     }),
     rowReg('Exposure', exposureSlider.row, {
-      dirty: () => live.toneExposure !== CODE_DEFAULT_TONE_EXPOSURE,
+      dirty: () => optionFloatDiffers(live.toneExposure, rb().toneExposure),
       revert: () => {
-        live.toneExposure = CODE_DEFAULT_TONE_EXPOSURE;
+        live.toneExposure = rb().toneExposure;
         exposureSlider.setValueSilent(live.toneExposure);
         cb.onToneExposureChange(live.toneExposure);
         recordHistory();
@@ -1666,9 +1749,9 @@ export function createRoomOptionsOverlay(cb: RoomOptionsCallbacks): RoomOptionsO
       },
     }),
     rowReg('Sky', skyHazeSlider.row, {
-      dirty: () => live.skyHazeMul !== CODE_DEFAULT_SKY_HAZE_MUL,
+      dirty: () => optionFloatDiffers(live.skyHazeMul, rb().skyHazeMul),
       revert: () => {
-        live.skyHazeMul = CODE_DEFAULT_SKY_HAZE_MUL;
+        live.skyHazeMul = rb().skyHazeMul;
         skyHazeSlider.setValueSilent(live.skyHazeMul);
         cb.onSkyHazeMulChange(live.skyHazeMul);
         recordHistory();
@@ -1676,9 +1759,9 @@ export function createRoomOptionsOverlay(cb: RoomOptionsCallbacks): RoomOptionsO
       },
     }),
     rowReg('Torches ×', torchReachSlider.row, {
-      dirty: () => live.torchReachMul !== CODE_DEFAULT_TORCH_REACH_MUL,
+      dirty: () => optionFloatDiffers(live.torchReachMul, rb().torchReachMul),
       revert: () => {
-        live.torchReachMul = CODE_DEFAULT_TORCH_REACH_MUL;
+        live.torchReachMul = rb().torchReachMul;
         torchReachSlider.setValueSilent(live.torchReachMul);
         cb.onTorchReachMulChange(live.torchReachMul);
         recordHistory();
@@ -1686,9 +1769,9 @@ export function createRoomOptionsOverlay(cb: RoomOptionsCallbacks): RoomOptionsO
       },
     }),
     rowReg('Dunes', duneKnob.row, {
-      dirty: () => live.duneHeightScale !== CODE_DEFAULT_DUNE_HEIGHT_SCALE,
+      dirty: () => optionFloatDiffers(live.duneHeightScale, rb().duneHeightScale),
       revert: () => {
-        live.duneHeightScale = CODE_DEFAULT_DUNE_HEIGHT_SCALE;
+        live.duneHeightScale = rb().duneHeightScale;
         duneKnob.sync(live.duneHeightScale);
         cb.onDuneHeightScalePreview(live.duneHeightScale);
         cb.onDuneHeightScaleCommit(live.duneHeightScale);
@@ -1698,19 +1781,23 @@ export function createRoomOptionsOverlay(cb: RoomOptionsCallbacks): RoomOptionsO
     }),
   );
 
-  nprPanelHandle = buildNprPanel(live.npr, {
-    emitLive: (next) => {
-      live.npr = cloneNprSettings(next);
-      cb.onNprSettingsChange(live.npr);
-      refreshRevertIndicators();
+  nprPanelHandle = buildNprPanel(
+    live.npr,
+    {
+      emitLive: (next) => {
+        live.npr = cloneNprSettings(next);
+        cb.onNprSettingsChange(live.npr);
+        refreshRevertIndicators();
+      },
+      emitCommit: (next) => {
+        live.npr = cloneNprSettings(next);
+        cb.onNprSettingsChange(live.npr);
+        if (!applyingFromHistory) recordHistory();
+        refreshRevertIndicators();
+      },
     },
-    emitCommit: (next) => {
-      live.npr = cloneNprSettings(next);
-      cb.onNprSettingsChange(live.npr);
-      if (!applyingFromHistory) recordHistory();
-      refreshRevertIndicators();
-    },
-  });
+    revertBaselineRef,
+  );
   const nprPanel = nprPanelHandle;
 
   const panelHelp = document.createElement('div');
@@ -1726,6 +1813,7 @@ export function createRoomOptionsOverlay(cb: RoomOptionsCallbacks): RoomOptionsO
     'WASD — move',
     'R — rescue · F — ruin · T — labels',
     'Ctrl+Z / Ctrl+Y — undo / redo option changes',
+    'Save — sets per-row revert baseline (this browser only)',
   ];
   for (const line of lines) {
     const li = document.createElement('li');
