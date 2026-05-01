@@ -186,6 +186,8 @@ export class RoomScene {
   private currentZone: Zone = 'safe';
   private fogEnabled = true;
   private fogDensityMul = DEFAULT_SCENE_VISUAL.fogDensityMul;
+  /** Mirrors lighting torch reach; thins exp fog slightly so distant torches read. */
+  private torchReachMul = DEFAULT_SCENE_VISUAL.torchReachMul;
   private labelMode: WorldLabelMode = getLabelMode();
   /** Latest snapshot for label text when `labelMode` changes. */
   private lastSnap: RoomSnapshot | null = null;
@@ -215,6 +217,7 @@ export class RoomScene {
     this.fogEnabled = fogEnabled;
     const v: SceneVisualSettings = { ...DEFAULT_SCENE_VISUAL, ...visual };
     this.fogDensityMul = v.fogDensityMul;
+    this.torchReachMul = v.torchReachMul;
 
     this.renderer = new THREE.WebGLRenderer({
       canvas,
@@ -274,7 +277,10 @@ export class RoomScene {
     const coreMat = new THREE.MeshStandardMaterial({ color: 0x3c4450, roughness: 0.91, metalness: 0.05 });
     applyAshCaravanCoreMaterial(coreMat, RACE_PROFILES.emberfolk.lightColor);
     this.localCore = new THREE.Mesh(coreGeom, coreMat);
-    this.localCore.castShadow = true;
+    // No cast: the caravan ball would otherwise self-shadow the dunes in its own
+    // point light — reads as a fuel-scaling dark disk underfoot (umbra shrinks as
+    // torch `distance` grows). Sun + other props still cast normally.
+    this.localCore.castShadow = false;
     this.localCore.receiveShadow = true;
     this.localGroup.add(this.localCore);
     this.localLabel = makeTooltip('');
@@ -339,7 +345,9 @@ export class RoomScene {
   }
 
   setTorchReachMul(mul: number): void {
+    this.torchReachMul = mul;
     this.lighting.setTorchReachMul(mul);
+    this.applyExpFogForCurrentZone();
   }
 
   setToneMappingExposure(exposure: number): void {
@@ -351,7 +359,9 @@ export class RoomScene {
   }
 
   private expFogDensityForZone(zone: Zone): number {
-    return fogDensityForZone(zone) * 0.52 * this.fogDensityMul;
+    const reach = THREE.MathUtils.clamp(this.torchReachMul, 1, 80);
+    const torchFogEase = 1 / Math.pow(reach, 0.28);
+    return fogDensityForZone(zone) * 0.52 * this.fogDensityMul * torchFogEase;
   }
 
   private applyExpFogForCurrentZone(): void {
@@ -796,8 +806,6 @@ export class RoomScene {
     }
     this.snapLocalYToDune();
     this.localGroup.position.copy(this.localPos);
-
-    this.lighting.setLocalRadius(Math.max(1.0, this.localLightRadius));
 
     this.moveAccum += dt;
     while (this.moveAccum >= this.moveInterval) {

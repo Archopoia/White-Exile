@@ -5,11 +5,13 @@
  *   - AmbientLight (cool skylight fill) + HemisphereLight (sky vs ground
  *     bounce) + DirectionalLight (moon-gold sun) give visible global illumination
  *     so the dunes are never "torch only". The sun casts shadows on med/high.
- *     ruins, players, and followers throw long ambient shadows on the dunes.
+ *     ruins, players, and followers throw long **sun** shadows on the dunes.
  *   - Each player owns a "flame" — a custom additive shader on crossed quads
  *     plus a PointLight at the player position. The PointLight casts shadows
- *     (cube map) on med/high so the player and nearby objects throw radial
- *     shadows in the torch light.
+ *     (cube map) on med/high. **Torch** shadows are one cubemap split over the
+ *     whole flame reach: big props (ruins) span many texels; small props
+ *     (followers, relics) need tighter PCF + bias and enough map size or they
+ *     disappear into blur/self-offset — same `castShadow` flags as everything else.
  *   - All flame lights are pre-pooled. Tier change toggles `castShadow` and
  *     resizes shadow maps in place — no shader recompiles, no allocations
  *     during play.
@@ -57,8 +59,8 @@ const TIER_CONFIG: Readonly<Record<FxTier, FlameTierConfig>> = Object.freeze({
     sunShadow: true,
     sunShadowMapSize: 1024,
     heroShadow: true,
-    // Wider PCF kernel (`shadow.radius`) needs resolution so penumbra stays smooth not noisy.
-    heroShadowMapSize: 512,
+    // Cubemap ×6 faces: extra res helps small casters (followers) vs one big ruin.
+    heroShadowMapSize: 768,
     poolShadow: false,
     poolShadowMapSize: 0,
     poolShadowCount: 0,
@@ -69,7 +71,7 @@ const TIER_CONFIG: Readonly<Record<FxTier, FlameTierConfig>> = Object.freeze({
     sunShadow: true,
     sunShadowMapSize: 2048,
     heroShadow: true,
-    heroShadowMapSize: 512,
+    heroShadowMapSize: 1024,
     poolShadow: true,
     poolShadowMapSize: 256,
     poolShadowCount: 3,
@@ -84,6 +86,15 @@ const SUN_SHADOW_RADIUS = 520;
 /** Sun sits far along the inverse light ray so direction is stable everywhere. */
 const SUN_WORLD_DISTANCE = 1600;
 const FLAME_HEIGHT = 1.6;
+/** Flame group local Y (`setLocalAttachment`). */
+const HERO_FLAME_GROUP_Y = 0.6;
+/**
+ * `PointLight` Y above caravan **core origin** (sphere center), same space as
+ * `heroFlame.group`. Keeps the lamp clearly above the opaque sphere / flame stack
+ * so the sphere does not subtend a huge umbra on the ground underfoot (donut /
+ * bullseye from self-shadow). Not inside the mesh — was just too close to the top.
+ */
+const TORCH_POINT_Y_LOCAL = HERO_FLAME_GROUP_Y + FLAME_HEIGHT + 0.22;
 
 const RACE_FLAME_COLOR: Readonly<Record<Race, number>> = Object.freeze({
   emberfolk: 0xff8a3d,
@@ -261,11 +272,26 @@ export interface FlameLighting {
   dispose(): void;
 }
 
+/**
+ * Visual flame flicker (mesh shader). Wide ±17% swing — sells "this is fire"
+ * close-up on the additive sprite where it reads as alpha pulsing.
+ */
 function flickerNoise(time: number, seed: number): number {
   const a = Math.sin(time * 7.3 + seed) * 0.5 + 0.5;
   const b = Math.sin(time * 11.1 + seed * 1.7 + 1.3) * 0.5 + 0.5;
   const c = Math.sin(time * 23.7 + seed * 0.41) * 0.5 + 0.5;
   return 0.78 + a * 0.18 + b * 0.1 + c * 0.06;
+}
+
+/**
+ * `PointLight.intensity` flicker. Deliberately tame — with linear decay
+ * each torch lights a wide patch, and ±17% swings on multiple lights would
+ * read as scene-wide pulsing instead of fire. Keep it ≲±5% and slow.
+ */
+function lightFlickerNoise(time: number, seed: number): number {
+  const a = Math.sin(time * 4.1 + seed) * 0.5 + 0.5;
+  const b = Math.sin(time * 6.7 + seed * 1.3 + 0.7) * 0.5 + 0.5;
+  return 0.95 + a * 0.04 + b * 0.02;
 }
 
 export function createFlameLighting(
@@ -308,8 +334,10 @@ export function createFlameLighting(
   // Hero flame: PointLight at player center. Radial shadows = the player
   // throws shadows on the terrain in their own torch light.
   const heroFlame = createFlameMesh(RACE_FLAME_COLOR.emberfolk, FLAME_HEIGHT, 0);
-  const heroLight = new THREE.PointLight(RACE_FLAME_COLOR.emberfolk, 3.6, 32, 1.7);
-  heroLight.position.set(0, 1.1, 0);
+  const heroLight = new THREE.PointLight(RACE_FLAME_COLOR.emberfolk, 3.6, 32, 1);
+  heroLight.position.set(0, TORCH_POINT_Y_LOCAL, 0);
+  // Decay 1 = linear falloff so `distance` is meaningful for "seeing fires" far away;
+  // decay ≥1.5 behaves like inverse-square and dies visually long before the cutoff.
 
   // Pool of other-player flames (visual + light). Pre-allocated so adding
   // and removing players never recompiles a forward shader.
@@ -318,7 +346,7 @@ export function createFlameLighting(
     const m = createFlameMesh(0xffffff, FLAME_HEIGHT, i * 11.7 + 3.1);
     m.group.visible = false;
     scene.add(m.group);
-    const pl = new THREE.PointLight(0xffffff, 0, 24, 1.7);
+    const pl = new THREE.PointLight(0xffffff, 0, 24, 1);
     pl.visible = false;
     scene.add(pl);
     flamePool.push({ light: pl, mesh: m, ownerId: null, baseIntensity: 1.6 });
@@ -336,13 +364,50 @@ export function createFlameLighting(
   const sunDir = new THREE.Vector3(0.4, -0.55, 0.7).normalize();
 
   function heroTorchDistanceWorld(): number {
-    const r = Math.max(0.15, localRadius);
-    return Math.max(2.5, r * 2.2 * torchReachMul);
+    if (localRadius <= 0) return 0.25;
+    return Math.max(0.25, localRadius * 2.2 * torchReachMul);
   }
 
   function otherTorchDistanceWorld(lightRadius: number): number {
     const or = Math.max(0.15, lightRadius);
     return Math.max(2.5, or * 2.0 * torchReachMul);
+  }
+
+  /** Extra candela when reach is cranked so dunes don't read black before `distance`. */
+  function torchVisibilityBoost(): number {
+    return Math.pow(Math.min(torchReachMul, 24), 0.5);
+  }
+
+  /**
+   * Cubemap depth precision falls as `shadow.camera.far` grows with torch reach.
+   * Fixed `normalBias` / `bias` then read as ever-larger world offsets (Peter Panning:
+   * shadow detaches from feet, gap grows with fuel/radius). Scale them down with `far`.
+   */
+  const HERO_SHADOW_FAR_REF = 52;
+
+  function syncHeroTorchShadowBias(): void {
+    if (!heroLight.castShadow) return;
+    const d = heroLight.distance;
+    // Match frustum to torch reach (+ margin). A flat `max(40, …)` vs tiny `distance`
+    // at low fuel smeared the cubemap and made the underfoot shadow huge and “fuel-linked”.
+    const far = THREE.MathUtils.clamp(d * 1.22 + 12, 14, 520);
+    heroLight.shadow.camera.far = far;
+    heroLight.shadow.camera.updateProjectionMatrix();
+    const inv = THREE.MathUtils.clamp(HERO_SHADOW_FAR_REF / far, 0.1, 1);
+    // Lower caps than before: residual Peter Panning shows as a lit sliver under props.
+    heroLight.shadow.normalBias = 0.011 * inv;
+    heroLight.shadow.bias = -0.00075 * inv;
+  }
+
+  function syncPoolTorchShadowBias(light: THREE.PointLight): void {
+    if (!light.castShadow) return;
+    const d = light.distance;
+    const far = THREE.MathUtils.clamp(d * 1.15 + 10, 16, 400);
+    light.shadow.camera.far = far;
+    light.shadow.camera.updateProjectionMatrix();
+    const inv = THREE.MathUtils.clamp(50 / far, 0.1, 1);
+    light.shadow.normalBias = 0.014 * inv;
+    light.shadow.bias = -0.00065 * inv;
   }
 
   function applyShadowSettings(): void {
@@ -371,12 +436,10 @@ export function createFlameLighting(
     heroLight.castShadow = cfg.heroShadow;
     if (cfg.heroShadow && cfg.heroShadowMapSize > 0) {
       heroLight.shadow.mapSize.set(cfg.heroShadowMapSize, cfg.heroShadowMapSize);
-      heroLight.shadow.bias = -0.005;
-      heroLight.shadow.normalBias = 0.06;
-      heroLight.shadow.radius = 18;
+      // Smaller radius = tighter PCF footprint at contact (less “air gap” under props).
+      heroLight.shadow.radius = 4;
       heroLight.shadow.camera.near = 0.2;
-      heroLight.shadow.camera.far = Math.max(40, heroTorchDistanceWorld() * 1.15);
-      heroLight.shadow.camera.updateProjectionMatrix();
+      syncHeroTorchShadowBias();
       heroLight.shadow.map?.dispose();
       heroLight.shadow.map = null;
     }
@@ -389,12 +452,9 @@ export function createFlameLighting(
       slot.light.castShadow = enable;
       if (enable && cfg.poolShadowMapSize > 0) {
         slot.light.shadow.mapSize.set(cfg.poolShadowMapSize, cfg.poolShadowMapSize);
-        slot.light.shadow.bias = -0.005;
-        slot.light.shadow.normalBias = 0.06;
-        slot.light.shadow.radius = 14;
+        slot.light.shadow.radius = 8;
         slot.light.shadow.camera.near = 0.2;
-        slot.light.shadow.camera.far = slot.light.distance;
-        slot.light.shadow.camera.updateProjectionMatrix();
+        syncPoolTorchShadowBias(slot.light);
         slot.light.shadow.map?.dispose();
         slot.light.shadow.map = null;
       }
@@ -412,7 +472,8 @@ export function createFlameLighting(
     }
     attachTarget = target;
     target.add(heroFlame.group);
-    heroFlame.group.position.set(0, 0.6, 0);
+    heroFlame.group.position.set(0, HERO_FLAME_GROUP_Y, 0);
+    heroLight.position.set(0, TORCH_POINT_Y_LOCAL, 0);
     target.add(heroLight);
     setRace(race);
   }
@@ -427,14 +488,20 @@ export function createFlameLighting(
     // Radius already reflects server fuel × followers × zone; no floor — low
     // fuel must mean short reach and low intensity (see intensity curve below).
     localRadius = Math.max(0, radius);
-    const r = Math.max(0.15, localRadius);
+    if (localRadius <= 0) {
+      heroFlame.group.visible = false;
+      heroLight.visible = false;
+      heroLight.intensity = 0;
+      heroBaseIntensity = 0;
+      heroLight.distance = 0.25;
+      return;
+    }
+    heroFlame.group.visible = true;
+    heroLight.visible = true;
     heroLight.distance = heroTorchDistanceWorld();
     // Avoid a large constant term: it used to keep torches bright even at ~0 radius.
-    heroBaseIntensity = Math.max(0.08, 0.12 + r * 0.24);
-    if (heroLight.castShadow) {
-      heroLight.shadow.camera.far = Math.max(40, heroLight.distance * 1.15);
-      heroLight.shadow.camera.updateProjectionMatrix();
-    }
+    heroBaseIntensity = Math.max(0.08, 0.12 + localRadius * 0.24);
+    syncHeroTorchShadowBias();
   }
 
   function setOtherFlames(list: ReadonlyArray<OtherFlame>): void {
@@ -449,16 +516,13 @@ export function createFlameLighting(
       slot.light.color.setHex(o.color);
       const or = Math.max(0.15, o.lightRadius);
       slot.light.distance = otherTorchDistanceWorld(o.lightRadius);
-      slot.light.position.set(o.position.x, o.position.y + 1.1, o.position.z);
+      slot.light.position.set(o.position.x, o.position.y + TORCH_POINT_Y_LOCAL, o.position.z);
       slot.light.visible = true;
       slot.mesh.setColor(o.color);
       slot.mesh.group.position.set(o.position.x, o.position.y + 0.55, o.position.z);
       slot.mesh.group.visible = true;
       slot.baseIntensity = Math.max(0.06, 0.1 + or * 0.2);
-      if (slot.light.castShadow) {
-        slot.light.shadow.camera.far = slot.light.distance;
-        slot.light.shadow.camera.updateProjectionMatrix();
-      }
+      syncPoolTorchShadowBias(slot.light);
     }
     for (let i = limited.length; i < flamePool.length; i++) {
       const slot = flamePool[i];
@@ -528,17 +592,18 @@ export function createFlameLighting(
   function update(dt: number, time: number): void {
     void dt;
     heroFlame.uniforms.uTime.value = time;
-    const heroFlick = flickerNoise(time, 0);
-    heroFlame.uniforms.uIntensity.value = heroFlick;
-    heroLight.intensity = heroBaseIntensity * heroFlick;
+    heroFlame.uniforms.uIntensity.value = flickerNoise(time, 0);
+    const vis = torchVisibilityBoost();
+    heroLight.intensity =
+      localRadius <= 0 ? 0 : heroBaseIntensity * lightFlickerNoise(time, 0) * vis;
 
     for (let i = 0; i < flamePool.length; i++) {
       const slot = flamePool[i];
       if (!slot || !slot.light.visible) continue;
-      const flick = flickerNoise(time, (i + 1) * 5.7);
-      slot.light.intensity = slot.baseIntensity * flick;
+      const seed = (i + 1) * 5.7;
+      slot.light.intensity = slot.baseIntensity * lightFlickerNoise(time, seed) * vis;
       slot.mesh.uniforms.uTime.value = time;
-      slot.mesh.uniforms.uIntensity.value = flick;
+      slot.mesh.uniforms.uIntensity.value = flickerNoise(time, seed);
     }
   }
 
