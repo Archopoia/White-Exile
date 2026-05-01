@@ -11,16 +11,13 @@ import {
   PROTOCOL_VERSION,
   RoomSnapshotSchema,
   ServerEventBurstSchema,
-  ServerEventEssenceSchema,
   ServerErrorSchema,
   ServerWelcomeSchema,
   type ClientCursorMove,
   type ClientDropBurst,
-  type ClientExtract,
   type ClientHello,
   type RoomSnapshot,
   type ServerEventBurst,
-  type ServerEventEssence,
   type ServerError,
   type ServerWelcome,
   type Vec3,
@@ -35,7 +32,7 @@ export interface NetClientOptions {
   /**
    * Optional stable token from a prior session (typically read from
    * localStorage). Lets the server reattach our existing player record so a
-   * refresh / HMR / server restart preserves essence and position.
+   * refresh / HMR / server restart preserves essence spread and position.
    */
   resumeToken?: string;
 }
@@ -44,7 +41,6 @@ export interface NetClientCallbacks {
   onWelcome?: (welcome: ServerWelcome) => void;
   onSnapshot?: (snap: RoomSnapshot) => void;
   onBurst?: (evt: ServerEventBurst) => void;
-  onEssence?: (evt: ServerEventEssence) => void;
   onError?: (err: ServerError) => void;
   onConnectionChange?: (state: 'connecting' | 'connected' | 'disconnected') => void;
 }
@@ -117,11 +113,6 @@ export class NetClient {
       if (parsed.success) this.callbacks.onBurst?.(parsed.data);
     });
 
-    this.socket.on(EVT.server.essence, (raw: unknown) => {
-      const parsed = ServerEventEssenceSchema.safeParse(raw);
-      if (parsed.success) this.callbacks.onEssence?.(parsed.data);
-    });
-
     this.socket.on(EVT.server.error, (raw: unknown) => {
       const parsed = ServerErrorSchema.safeParse(raw);
       if (parsed.success) {
@@ -148,19 +139,6 @@ export class NetClient {
     }
     const msg: ClientDropBurst = { position, intensity };
     this.socket.emit(EVT.client.dropBurst, msg);
-  }
-
-  sendExtract(surfacePoint: Vec3): void {
-    if (!this.socket.connected) {
-      inputLog('client.intent.extract.skipped', { reason: 'socket_disconnected' });
-      return;
-    }
-    if (!this.handshakeComplete) {
-      inputLog('client.intent.extract.skipped', { reason: 'awaiting_server_welcome' });
-      return;
-    }
-    const msg: ClientExtract = { surfacePoint };
-    this.socket.emit(EVT.client.extract, msg);
   }
 
   dispose(): void {

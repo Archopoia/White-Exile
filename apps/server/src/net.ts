@@ -4,7 +4,7 @@
  * Each connection:
  *   1. Awaits a ClientHello with matching protocol version.
  *   2. Receives a ServerWelcome with traceId + tickHz.
- *   3. Streams cursor / burst / extract intents.
+ *   3. Streams cursor / burst intents.
  * Every inbound payload is parsed with Zod from packages/shared. Bad payloads
  * are logged and rejected; we never trust the client for economy values.
  */
@@ -14,14 +14,12 @@ import type { Server as HttpServer } from 'node:http';
 import {
   ClientCursorMoveSchema,
   ClientDropBurstSchema,
-  ClientExtractSchema,
   ClientHelloSchema,
   EVT,
   PROTOCOL_VERSION,
   type RoomSnapshot,
   type ServerError,
   type ServerEventBurst,
-  type ServerEventEssence,
   type ServerWelcome,
 } from '@tutelary/shared';
 import { config } from './config.js';
@@ -51,13 +49,11 @@ export function attachSocketServer(
 function handleConnection(socket: Socket, room: Room, io: IOServer): void {
   const traceId = randomUUID();
   const log = childLogger({ connId: socket.id, traceId, roomId: room.id });
-  // High-volume with many bots; use LOG_LEVEL=debug to see every connect.
   log.debug({ evt: 'socket.connected' }, 'socket connected');
 
   const limits = {
     cursor: new TokenBucket({ ratePerSec: 48, burst: 96 }),
     burst: new TokenBucket({ ratePerSec: config.bursts.perSec, burst: config.bursts.perSec }),
-    extract: new TokenBucket({ ratePerSec: 8, burst: 8 }),
     other: new TokenBucket({
       ratePerSec: config.rateLimitMessagesPerSec,
       burst: config.rateLimitBurst,
@@ -82,7 +78,6 @@ function handleConnection(socket: Socket, room: Room, io: IOServer): void {
       return reject('protocol_mismatch', 'protocol mismatch', 'hello.protocol_mismatch');
     }
 
-    // Try to reattach by resumeToken before allocating a new player.
     let resumed = false;
     if (parsed.data.resumeToken) {
       const existing = room.tryReattach(parsed.data.resumeToken);
@@ -102,7 +97,6 @@ function handleConnection(socket: Socket, room: Room, io: IOServer): void {
         isBot: parsed.data.isBot ?? false,
         tier: 'dust',
         position: { x: 0, y: 0, z: 0 },
-        essence: 0,
       });
     }
 
@@ -173,7 +167,7 @@ function handleConnection(socket: Socket, room: Room, io: IOServer): void {
     const burstPayload = {
       evt: 'intent.dropBurst',
       playerId,
-      dustAdded: result.dustAdded,
+      essenceSpreadAdded: result.essenceSpreadAdded,
       intensity: parsed.data.intensity ?? 1,
       origin: parsed.data.position,
     };
@@ -181,51 +175,8 @@ function handleConnection(socket: Socket, room: Room, io: IOServer): void {
     else log.info(burstPayload, 'burst accepted');
   });
 
-  socket.on(EVT.client.extract, (raw: unknown) => {
-    if (!playerId) {
-      log.warn({ evt: 'intent.extract.ignored', reason: 'before_hello' }, 'extract before hello');
-      return;
-    }
-    if (!limits.extract.take()) {
-      return reject('rate_limit', 'extract rate exceeded', 'extract.rate_limit');
-    }
-    const parsed = ClientExtractSchema.safeParse(raw);
-    if (!parsed.success) {
-      return reject('invalid_payload', 'bad extract', 'extract.invalid');
-    }
-    const result = room.applyExtract(playerId);
-    if (!result.ok) {
-      const extDenied = {
-        evt: 'intent.extract.denied',
-        playerId,
-        reason: result.reason ?? 'unknown',
-        surfacePoint: parsed.data.surfacePoint,
-      };
-      if (room.get(playerId)?.isBot) log.debug(extDenied, 'extract denied');
-      else log.info(extDenied, 'extract denied');
-      return;
-    }
-    const evt: ServerEventEssence = {
-      playerId,
-      amount: result.essenceGained,
-      newTotal: result.newEssence,
-    };
-    socket.emit(EVT.server.essence, evt);
-    const extOk = {
-      evt: 'intent.extract',
-      playerId,
-      essenceGained: result.essenceGained,
-      newTotal: result.newEssence,
-      surfacePoint: parsed.data.surfacePoint,
-    };
-    if (room.get(playerId)?.isBot) log.debug(extOk, 'extract accepted');
-    else log.info(extOk, 'extract accepted');
-  });
-
   socket.on('disconnect', (reason) => {
     if (playerId) {
-      // Soft-disconnect: keep the record so refresh / HMR / server-restart
-      // can resume via `resumeToken`. `pruneDisconnected` finalizes.
       const marked = room.markDisconnected(playerId);
       const discPayload = { evt: 'player.disconnected', playerId, reason, marked };
       if (room.get(playerId)?.isBot) log.debug(discPayload, 'player disconnected');
@@ -253,7 +204,7 @@ function scheduleTickLoop(io: IOServer, room: Room): void {
           evt: 'room.tick',
           roomId: room.id,
           players: room.size(),
-          totalDust: snap.totalDust.toFixed(2),
+          essenceSpreadSum: room.sumEssenceSpread().toFixed(2),
           planetRadius: snap.planetRadius.toFixed(2),
         },
         'periodic tick',

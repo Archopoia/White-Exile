@@ -88,8 +88,7 @@ function boot(): RunningClient {
 
   const hud: HudState = {
     status: 'connecting',
-    essence: 0,
-    totalDust: 0,
+    essenceSpread: 0,
     planetRadius: 0,
     players: 0,
     displayName,
@@ -104,7 +103,6 @@ function boot(): RunningClient {
   const scene = new TutelaryScene(canvas, {
     onCursorMove: (target) => net?.sendCursor(target),
     onBurst: (target, intensity) => net?.sendBurst(target, intensity),
-    onExtract: (point) => net?.sendExtract(point),
   });
 
   net = new NetClient(
@@ -132,14 +130,13 @@ function boot(): RunningClient {
       },
       onSnapshot: (snap) => {
         scene.applySnapshot(snap);
-        hud.totalDust = snap.totalDust;
         hud.planetRadius = snap.planetRadius;
         hud.players = snap.players.length;
         const me = localPlayerId
           ? snap.players.find((p) => p.id === localPlayerId)
           : snap.players.find((p) => p.name === displayName);
         if (me) {
-          hud.essence = me.essence;
+          hud.essenceSpread = me.essenceSpread;
           hud.tier = me.tier;
           // First snapshot for our player after a resume: adopt server pos
           // so the spirit doesn't snap to the north pole.
@@ -151,10 +148,6 @@ function boot(): RunningClient {
         updateHud(hud);
       },
       onBurst: (evt) => scene.applyServerBurst(evt),
-      onEssence: (evt) => {
-        hud.essence = evt.newTotal;
-        updateHud(hud);
-      },
       onError: (err) => {
         inputLog('server.error', { code: err.code, message: err.message });
         debugLogger.warn('server.error', { ...err });

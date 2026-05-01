@@ -2,7 +2,7 @@
  * Dev-only Room persistence.
  *
  * Saves/loads the authoritative Room state as JSON to `config.devPersistence.path`
- * so the world (totalDust, player records, soft-disconnected records waiting
+ * so player records and soft-disconnected slots waiting
  * to resume) survives `tsx watch` restarts and graceful shutdowns.
  *
  * Disabled in production by config; this is purely a development convenience.
@@ -31,7 +31,7 @@ export async function loadRoomIfPresent(roomId: string): Promise<Room | null> {
       {
         evt: 'persistence.loaded',
         path,
-        totalDust: room.totalDust.toFixed(2),
+        essenceSpreadSum: room.sumEssenceSpread().toFixed(2),
         records: room.totalRecords(),
       },
       'restored room from dev state',

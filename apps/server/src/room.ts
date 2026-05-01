@@ -2,9 +2,8 @@
  * Authoritative room state.
  *
  * Owns:
- *   - totalDust (accumulated by all drops/passive)
- *   - per-player essence + position + tier
- *   - planet radius (derived from totalDust on each snapshot)
+ *   - per-player essence spread, position, tier
+ *   - planet radius (derived from the sum of all players' essence spread)
  *
  * Disconnects are *soft*: a player flagged `disconnected` is hidden from
  * snapshots but kept around for a grace window so a refresh / HMR / server
@@ -19,7 +18,7 @@ import {
   type SpiritTier,
   type Vec3,
   clampToPlayVolume,
-  planetRadiusFromTotalDust,
+  planetRadiusFromEssenceSpread,
 } from '@tutelary/shared';
 import { config } from './config.js';
 
@@ -29,10 +28,9 @@ export interface PlayerState {
   isBot: boolean;
   tier: SpiritTier;
   position: Vec3;
-  essence: number;
-  totalDustContributed: number;
+  /** Cumulative essence this spirit has spread (bursts + passive). */
+  essenceSpread: number;
   lastBurstMs: number;
-  lastExtractMs: number;
   /** True while the socket is gone but we're still holding the record open. */
   disconnected: boolean;
   disconnectedAt: number;
@@ -41,31 +39,55 @@ export interface PlayerState {
 export interface BurstResult {
   ok: boolean;
   reason?: 'cooldown' | 'unknown_player';
-  dustAdded: number;
-}
-
-export interface ExtractResult {
-  ok: boolean;
-  reason?: 'cooldown' | 'unknown_player' | 'miss';
-  essenceGained: number;
-  newEssence: number;
+  essenceSpreadAdded: number;
 }
 
 /** Minimal JSON shape used by the dev persistence file. */
 export interface RoomData {
   id: string;
-  totalDust: number;
   players: PlayerState[];
+}
+
+/** Loose shape for migrating older persistence files. */
+interface PersistedPlayerRaw {
+  id: string;
+  name: string;
+  isBot: boolean;
+  tier: SpiritTier;
+  position: Vec3;
+  essenceSpread?: number;
+  essence?: number;
+  totalDustContributed?: number;
+  lastBurstMs?: number;
+  lastExtractMs?: number;
+  disconnected?: boolean;
+  disconnectedAt?: number;
+}
+
+function migrateEssenceSpread(raw: PersistedPlayerRaw): number {
+  if (typeof raw.essenceSpread === 'number' && Number.isFinite(raw.essenceSpread) && raw.essenceSpread >= 0) {
+    return raw.essenceSpread;
+  }
+  const legacy = Math.max(0, raw.totalDustContributed ?? 0) + Math.max(0, raw.essence ?? 0);
+  return legacy;
 }
 
 export class Room {
   readonly id: string;
-  totalDust = 0;
   private readonly players = new Map<string, PlayerState>();
   private lastTickMs = Date.now();
 
   constructor(id: string) {
     this.id = id;
+  }
+
+  /** Sum of essence spread across all records (including soft-disconnected). */
+  sumEssenceSpread(): number {
+    let s = 0;
+    for (const p of this.players.values()) {
+      s += p.essenceSpread;
+    }
+    return s;
   }
 
   size(): number {
@@ -88,16 +110,12 @@ export class Room {
   }
 
   addPlayer(
-    p: Omit<
-      PlayerState,
-      'totalDustContributed' | 'lastBurstMs' | 'lastExtractMs' | 'disconnected' | 'disconnectedAt'
-    >,
+    p: Omit<PlayerState, 'essenceSpread' | 'lastBurstMs' | 'disconnected' | 'disconnectedAt'>,
   ): PlayerState {
     const state: PlayerState = {
       ...p,
-      totalDustContributed: 0,
+      essenceSpread: 0,
       lastBurstMs: 0,
-      lastExtractMs: 0,
       disconnected: false,
       disconnectedAt: 0,
     };
@@ -164,38 +182,21 @@ export class Room {
 
   applyBurst(playerId: string, intensity: number, now: number = Date.now()): BurstResult {
     const p = this.players.get(playerId);
-    if (!p || p.disconnected) return { ok: false, reason: 'unknown_player', dustAdded: 0 };
+    if (!p || p.disconnected) return { ok: false, reason: 'unknown_player', essenceSpreadAdded: 0 };
     if (now - p.lastBurstMs < config.bursts.cooldownMs) {
-      return { ok: false, reason: 'cooldown', dustAdded: 0 };
+      return { ok: false, reason: 'cooldown', essenceSpreadAdded: 0 };
     }
     p.lastBurstMs = now;
     const clampedIntensity = Math.min(1, Math.max(0, intensity));
-    const dustAdded = config.bursts.dustPerBurst * (0.5 + 0.5 * clampedIntensity);
-    this.totalDust += dustAdded;
-    p.totalDustContributed += dustAdded;
-    return { ok: true, dustAdded };
-  }
-
-  applyExtract(playerId: string, now: number = Date.now(), rng: () => number = Math.random): ExtractResult {
-    const p = this.players.get(playerId);
-    if (!p || p.disconnected) {
-      return { ok: false, reason: 'unknown_player', essenceGained: 0, newEssence: 0 };
-    }
-    if (now - p.lastExtractMs < config.extract.cooldownMs) {
-      return { ok: false, reason: 'cooldown', essenceGained: 0, newEssence: p.essence };
-    }
-    p.lastExtractMs = now;
-    const min = config.extract.rewardMin;
-    const max = config.extract.rewardMax;
-    const reward = min + rng() * (max - min);
-    p.essence += reward;
-    return { ok: true, essenceGained: reward, newEssence: p.essence };
+    const added =
+      config.bursts.essenceSpreadPerBurst * (0.5 + 0.5 * clampedIntensity);
+    p.essenceSpread += added;
+    return { ok: true, essenceSpreadAdded: added };
   }
 
   /**
-   * Per-tick passive simulation: small dust drip per active player, slow
-   * essence drip by elapsed real time. Returns the elapsed seconds for any
-   * caller that wants to batch derived effects.
+   * Per-tick passive simulation: slow essence spread drip per active player.
+   * Returns elapsed seconds for any caller that wants to batch derived effects.
    */
   tick(now: number = Date.now()): number {
     const dt = (now - this.lastTickMs) / 1000;
@@ -204,10 +205,7 @@ export class Room {
 
     for (const p of this.players.values()) {
       if (p.disconnected) continue;
-      const dust = config.passive.dustPerTick;
-      this.totalDust += dust;
-      p.totalDustContributed += dust;
-      p.essence += config.passive.essencePerSec * dt;
+      p.essenceSpread += config.passive.essenceSpreadPerSec * dt;
     }
     return dt;
   }
@@ -215,17 +213,17 @@ export class Room {
   snapshot(now: number = Date.now()): RoomSnapshot {
     const visible: PlayerState[] = [];
     for (const p of this.players.values()) if (!p.disconnected) visible.push(p);
+    const aggregate = this.sumEssenceSpread();
     return {
       serverTime: now,
-      totalDust: this.totalDust,
-      planetRadius: planetRadiusFromTotalDust(this.totalDust),
+      planetRadius: planetRadiusFromEssenceSpread(aggregate),
       players: visible.map((p) => ({
         id: p.id,
         name: p.name,
         isBot: p.isBot,
         tier: p.tier,
         position: p.position,
-        essence: p.essence,
+        essenceSpread: p.essenceSpread,
       })),
     };
   }
@@ -234,27 +232,25 @@ export class Room {
   serialize(): RoomData {
     return {
       id: this.id,
-      totalDust: this.totalDust,
       players: this.list(),
     };
   }
 
   /** Rehydrate a room from persisted JSON. Marks every player disconnected so
    *  they only become visible once they reconnect with their resumeToken. */
-  static restore(data: RoomData, now: number = Date.now()): Room {
+  static restore(data: RoomData & { totalDust?: number }, now: number = Date.now()): Room {
     const room = new Room(data.id);
-    room.totalDust = Number.isFinite(data.totalDust) ? Math.max(0, data.totalDust) : 0;
-    for (const raw of data.players ?? []) {
+    const rawPlayers = (data as { players?: PersistedPlayerRaw[] }).players ?? [];
+    for (const raw of rawPlayers) {
+      if (!raw?.id) continue;
       const p: PlayerState = {
         id: raw.id,
-        name: raw.name,
+        name: typeof raw.name === 'string' ? raw.name : raw.id,
         isBot: !!raw.isBot,
-        tier: raw.tier,
-        position: raw.position,
-        essence: Math.max(0, raw.essence ?? 0),
-        totalDustContributed: Math.max(0, raw.totalDustContributed ?? 0),
+        tier: raw.tier ?? 'dust',
+        position: raw.position ?? { x: 0, y: 0, z: 0 },
+        essenceSpread: migrateEssenceSpread(raw),
         lastBurstMs: 0,
-        lastExtractMs: 0,
         disconnected: true,
         disconnectedAt: now,
       };

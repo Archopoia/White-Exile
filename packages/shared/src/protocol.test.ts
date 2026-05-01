@@ -108,7 +108,6 @@ describe('Server schemas', () => {
   it('room snapshot accepts an empty player list', () => {
     const parsed = RoomSnapshotSchema.parse({
       serverTime: 0,
-      totalDust: 0,
       planetRadius: 0.5,
       players: [],
     });

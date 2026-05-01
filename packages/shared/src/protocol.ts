@@ -9,7 +9,7 @@
  */
 import { z } from 'zod';
 
-export const PROTOCOL_VERSION = 1 as const;
+export const PROTOCOL_VERSION = 2 as const;
 
 /** Compact 3D vector. Floats are clamped server-side to a play volume. */
 export const Vec3Schema = z.object({
@@ -57,16 +57,6 @@ export const ClientDropBurstSchema = z.object({
 });
 export type ClientDropBurst = z.infer<typeof ClientDropBurstSchema>;
 
-export const ClientExtractSchema = z.object({
-  surfacePoint: Vec3Schema,
-});
-export type ClientExtract = z.infer<typeof ClientExtractSchema>;
-
-export const ClientUpgradeSchema = z.object({
-  path: z.union([z.literal('mass'), z.literal('complexity')]),
-});
-export type ClientUpgrade = z.infer<typeof ClientUpgradeSchema>;
-
 /* -------------------------------------------------------------------------- */
 /* Server -> Client                                                            */
 /* -------------------------------------------------------------------------- */
@@ -90,13 +80,13 @@ export const PlayerSnapshotSchema = z.object({
   isBot: z.boolean(),
   tier: SpiritTierSchema,
   position: Vec3Schema,
-  essence: z.number().nonnegative(),
+  /** Cumulative essence this spirit has spread (bursts + passive); progression anchor. */
+  essenceSpread: z.number().nonnegative(),
 });
 export type PlayerSnapshot = z.infer<typeof PlayerSnapshotSchema>;
 
 export const RoomSnapshotSchema = z.object({
   serverTime: z.number().int().nonnegative(),
-  totalDust: z.number().nonnegative(),
   planetRadius: z.number().nonnegative(),
   players: z.array(PlayerSnapshotSchema),
 });
@@ -108,13 +98,6 @@ export const ServerEventBurstSchema = z.object({
   intensity: z.number().min(0).max(1),
 });
 export type ServerEventBurst = z.infer<typeof ServerEventBurstSchema>;
-
-export const ServerEventEssenceSchema = z.object({
-  playerId: z.string(),
-  amount: z.number(),
-  newTotal: z.number().nonnegative(),
-});
-export type ServerEventEssence = z.infer<typeof ServerEventEssenceSchema>;
 
 export const ServerErrorSchema = z.object({
   code: z.union([
@@ -137,14 +120,11 @@ export const EVT = {
     hello: 'client.hello',
     cursorMove: 'client.intent.cursorMove',
     dropBurst: 'client.intent.dropBurst',
-    extract: 'client.intent.extract',
-    upgrade: 'client.intent.upgrade',
   },
   server: {
     welcome: 'server.welcome',
     snapshot: 'server.snapshot.roomState',
     burst: 'server.event.burst',
-    essence: 'server.event.essence',
     error: 'server.error',
   },
 } as const;
@@ -156,6 +136,4 @@ export const ClientEventPayloads = {
   [EVT.client.hello]: ClientHelloSchema,
   [EVT.client.cursorMove]: ClientCursorMoveSchema,
   [EVT.client.dropBurst]: ClientDropBurstSchema,
-  [EVT.client.extract]: ClientExtractSchema,
-  [EVT.client.upgrade]: ClientUpgradeSchema,
 } as const;

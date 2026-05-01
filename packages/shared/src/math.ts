@@ -6,10 +6,10 @@
  */
 
 /**
- * Planet radius derived from the room's accumulated dust.
+ * Planet radius derived from the sum of per-player essence spread in the room.
  *
- * Per PITCH.md: radius scales as totalDust ^ 0.6, smoothed and clamped so the
- * planet is visible from the first dust speck and does not overflow the scene
+ * Radius scales as (aggregate spread) ^ 0.6, smoothed and clamped so the planet
+ * is visible from the first contribution and does not overflow the scene
  * before art polish.
  */
 export const RADIUS_BASE = 0.5;
@@ -17,9 +17,13 @@ export const RADIUS_SCALE = 0.25;
 export const RADIUS_EXPONENT = 0.6;
 export const RADIUS_MAX = 200;
 
-export function planetRadiusFromTotalDust(totalDust: number): number {
-  if (!Number.isFinite(totalDust) || totalDust <= 0) return RADIUS_BASE;
-  const grown = RADIUS_BASE + RADIUS_SCALE * totalDust ** RADIUS_EXPONENT;
+/**
+ * @param aggregatedEssenceSpread — nonnegative sum of per-player essence spread (room aggregate).
+ */
+export function planetRadiusFromEssenceSpread(aggregatedEssenceSpread: number): number {
+  if (!Number.isFinite(aggregatedEssenceSpread) || aggregatedEssenceSpread <= 0) return RADIUS_BASE;
+  const grown = RADIUS_BASE + RADIUS_SCALE * aggregatedEssenceSpread ** RADIUS_EXPONENT;
+  if (!Number.isFinite(grown) || grown <= RADIUS_BASE) return RADIUS_BASE;
   return Math.min(grown, RADIUS_MAX);
 }
 
@@ -51,8 +55,7 @@ export const PLAY_VOLUME_RADIUS = 1024;
 export function clampToPlayVolume<T extends { x: number; y: number; z: number }>(
   point: T,
 ): { x: number; y: number; z: number } {
-  const lenSq =
-    point.x * point.x + point.y * point.y + point.z * point.z;
+  const lenSq = point.x * point.x + point.y * point.y + point.z * point.z;
   if (lenSq <= PLAY_VOLUME_RADIUS * PLAY_VOLUME_RADIUS) {
     return { x: point.x, y: point.y, z: point.z };
   }

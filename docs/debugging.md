@@ -26,12 +26,12 @@
 - `room.loop_started` — tick interval initialized
 - `socket.connected` / `socket.disconnected` — raw connection lifecycle
 - `player.joined` / `player.left` — post-hello logical lifecycle
-- `dropBurst.rate_limit` / `extract.rate_limit` — token bucket rejected an intent
-- `intent.dropBurst` / `intent.extract` — **accepted** burst or extract for **human** clients at `info`; bot traffic uses `debug` only (set `LOG_LEVEL=debug` to see bots)
-- `intent.dropBurst.denied` / `intent.extract.denied` — server cooldown or other deny (`reason`)
-- `intent.dropBurst.ignored` / `intent.extract.ignored` — client sent before hello (`before_hello`)
-- `cursorMove.invalid`, `dropBurst.invalid`, `extract.invalid` — Zod parse failed
-- `room.tick` — periodic summary every ~10s with `players`, `totalDust`, `planetRadius`
+- `dropBurst.rate_limit` — token bucket rejected a burst intent
+- `intent.dropBurst` — **accepted** burst for **human** clients at `info`; bot traffic uses `debug` only (set `LOG_LEVEL=debug` to see bots)
+- `intent.dropBurst.denied` — server cooldown or other deny (`reason`)
+- `intent.dropBurst.ignored` — client sent before hello (`before_hello`)
+- `cursorMove.invalid`, `dropBurst.invalid` — Zod parse failed
+- `room.tick` — periodic summary every ~10s with `players`, `essenceSpreadSum`, `planetRadius`
 
 ### Environment variables
 
@@ -46,6 +46,8 @@
 | `LOG_FILE_PATH` | `logs/dev.ndjson` | NDJSON sink path |
 | `RATE_LIMIT_MSGS_PER_SEC` | `60` | catch-all rate limit |
 | `BURST_PER_SEC` / `BURST_COOLDOWN_MS` | 8 / 80 | dropBurst limits |
+| `BURST_ESSENCE_SPREAD` | `1.5` | burst adds `BURST_ESSENCE_SPREAD * (0.5 + 0.5 * intensity)` to `essenceSpread` |
+| `PASSIVE_ESSENCE_SPREAD_PER_SEC` | `1.1` | passive essence spread per second while connected |
 | `DEV_PERSISTENCE` | `1` (off in `NODE_ENV=production`) | persist Room JSON across `tsx watch` restarts |
 | `DEV_PERSISTENCE_PATH` | `apps/server/.dev-state/room.json` | persisted room file |
 | `DEV_PERSISTENCE_SAVE_MS` | `5000` | autosave interval |
@@ -81,7 +83,7 @@ rg 'rate_limit' logs/dev.ndjson
 
 ## Client input log (browser console)
 
-`apps/client/src/inputLog.ts` logs **`[tutelary-input]`** on every Space / E / click and on each `sendBurst` / `sendExtract` (including skips: disconnected or awaiting welcome). Open **DevTools → Console** on the game tab — these lines do **not** appear in the Vite terminal.
+`apps/client/src/inputLog.ts` logs **`[tutelary-input]`** on click and on each `sendBurst` (including skips: disconnected or awaiting welcome). Open **DevTools → Console** on the game tab — these lines do **not** appear in the Vite terminal.
 
 ## Client debug logger
 
@@ -93,7 +95,7 @@ Enable verbose logs by any of:
 - `localStorage.tutelaryDebug=1`
 - `VITE_DEBUG=1` at build time
 
-Logged events include `socket.connect`, `welcome` (with `traceId`), `connection.change`, `input.burst`, `input.extract`, `server.error`. Per-frame events are intentionally throttled.
+Logged events include `socket.connect`, `welcome` (with `traceId`), `connection.change`, `server.error`. Per-frame events are intentionally throttled.
 
 ## Bot logs
 
@@ -113,7 +115,7 @@ Pass `--seed N` to make bot motion reproducible across runs.
 
 In dev (`NODE_ENV !== 'production'`), three layers cooperate so iterating doesn't reset the world:
 
-1. **Server dev persistence** — Room state (totalDust + player records) autosaves to `apps/server/.dev-state/room.json` every `DEV_PERSISTENCE_SAVE_MS` and on shutdown. Loaded on next boot.
+1. **Server dev persistence** — Room state (player records + essence spread) autosaves to `apps/server/.dev-state/room.json` every `DEV_PERSISTENCE_SAVE_MS` and on shutdown. Loaded on next boot.
 2. **Soft disconnect + resume token** — when a client (or bot) disconnects, its record stays in `disconnected: true` for `BOT_GRACE_MS` / `HUMAN_GRACE_MS`. A reconnecting client passes `resumeToken` (echoed in `server.welcome`) to re-attach instead of getting a fresh record. Watch for `player.resumed` vs `player.joined` in server logs.
 3. **Client Vite HMR** — `apps/client/src/main.ts` self-accepts via `import.meta.hot.accept(...)`. Saving `scene.ts` / `hud.ts` / `net.ts` etc. swaps the running game in place; the socket reconnects with the cached `resumeToken` from `localStorage.tutelary.resumeToken` and the server reattaches you. Watch the browser console for `[tutelary-input] hmr.dispose` / `hmr.accepted`.
 

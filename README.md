@@ -1,6 +1,6 @@
 # Tutelary Online
 
-Real-time, browser-based shared cosmos: every player is a tutelary spirit dropping dust onto a single 3D globe. See [PITCH.md](PITCH.md) for the design.
+Real-time, browser-based shared cosmos: every player is a tutelary spirit **spreading essence** around a single 3D globe (incremental / burst loop). See [PITCH.md](PITCH.md) for the design.
 
 ## Stack
 
@@ -61,7 +61,7 @@ Or server + client + 8 bots:
 pnpm dev:full
 ```
 
-Open the client URL, move the mouse to drift through the void, click anywhere to drop a dust burst, click on the planet to extract Essence.
+Open the client URL, WASD on the sphere, **click** to send a burst (server accrues your **essence spread**); passive spread still ticks on the server.
 
 ## Bots
 

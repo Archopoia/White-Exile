@@ -5,7 +5,7 @@
  * tick loop. All authoritative game state lives in apps/server/src/room.ts.
  *
  * Dev mode also: loads/saves a Room snapshot to `.dev-state/room.json` so
- * `tsx watch` restarts don't wipe accumulated dust / essence / soft-
+ * `tsx watch` restarts don't wipe essence spread / soft-
  * disconnected players awaiting resume.
  */
 import Fastify from 'fastify';

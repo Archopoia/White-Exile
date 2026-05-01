@@ -4,8 +4,7 @@
  */
 export interface HudState {
   status: 'connecting' | 'connected' | 'disconnected';
-  essence: number;
-  totalDust: number;
+  essenceSpread: number;
   planetRadius: number;
   players: number;
   displayName: string;
@@ -15,8 +14,7 @@ export interface HudState {
 const cache = {
   status: document.getElementById('hud-status') as HTMLElement | null,
   statusDot: document.getElementById('hud-status-dot') as HTMLElement | null,
-  essence: document.getElementById('hud-essence') as HTMLElement | null,
-  totalDust: document.getElementById('hud-total-dust') as HTMLElement | null,
+  essenceSpread: document.getElementById('hud-essence-spread') as HTMLElement | null,
   radius: document.getElementById('hud-radius') as HTMLElement | null,
   players: document.getElementById('hud-players') as HTMLElement | null,
   name: document.getElementById('hud-display-name') as HTMLElement | null,
@@ -29,8 +27,7 @@ export function updateHud(state: HudState): void {
     cache.statusDot.classList.remove('connected', 'connecting', 'disconnected');
     cache.statusDot.classList.add(state.status);
   }
-  if (cache.essence) cache.essence.textContent = state.essence.toFixed(1);
-  if (cache.totalDust) cache.totalDust.textContent = state.totalDust.toFixed(1);
+  if (cache.essenceSpread) cache.essenceSpread.textContent = state.essenceSpread.toFixed(1);
   if (cache.radius) cache.radius.textContent = state.planetRadius.toFixed(2);
   if (cache.players) cache.players.textContent = String(state.players);
   if (cache.name) cache.name.textContent = state.displayName;

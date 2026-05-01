@@ -38,20 +38,14 @@ export const config = Object.freeze({
   bursts: {
     perSec: num('BURST_PER_SEC', 8),
     cooldownMs: num('BURST_COOLDOWN_MS', 80),
-    dustPerBurst: num('DUST_PER_BURST', 1.5),
+    essenceSpreadPerBurst: num('BURST_ESSENCE_SPREAD', 1.5),
   },
   passive: {
-    dustPerTick: num('PASSIVE_DUST_PER_TICK', 0.05),
-    essencePerSec: num('PASSIVE_ESSENCE_PER_SEC', 0.5),
-  },
-  extract: {
-    cooldownMs: num('EXTRACT_COOLDOWN_MS', 250),
-    rewardMin: num('EXTRACT_MIN', 1),
-    rewardMax: num('EXTRACT_MAX', 4),
+    essenceSpreadPerSec: num('PASSIVE_ESSENCE_SPREAD_PER_SEC', 1.1),
   },
   /**
    * Dev-only: persist the Room across `tsx watch` restarts so iterating on
-   * server code doesn't wipe accumulated dust / essence / bot records. Off
+   * server code doesn't wipe player records / soft-disconnected slots. Off
    * automatically in production (or set `DEV_PERSISTENCE=0` to force off).
    */
   devPersistence: {

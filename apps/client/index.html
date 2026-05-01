@@ -87,8 +87,7 @@
     <canvas id="scene" tabindex="0" aria-label="Game view — click to focus, then WASD to move"></canvas>
     <div class="hud hud--top-left" id="hud-stats">
       <div><span id="hud-status-dot" class="status-dot"></span><span id="hud-status">connecting...</span></div>
-      <div>Essence <strong id="hud-essence">0</strong></div>
-      <div>Total dust <strong id="hud-total-dust">0</strong></div>
+      <div>Essence spread <strong id="hud-essence-spread">0</strong></div>
       <div>Planet radius <strong id="hud-radius">0</strong></div>
       <div>Spirits <strong id="hud-players">0</strong></div>
     </div>
@@ -97,7 +96,7 @@
       <div style="opacity: 0.7">tier <strong id="hud-tier">dust</strong></div>
     </div>
     <div class="hud hud--bottom-center">
-      WASD to walk the planet. Space or click for burst. E or click planet to extract Essence.
+      WASD to walk the planet. Click for an essence burst (passive spread still ticks on the server).
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

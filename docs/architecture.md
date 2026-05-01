@@ -15,7 +15,6 @@ flowchart LR
   BotProc -->|websocket| IO
   Fastify --- IO
   IO --> Room
-  Room --> Sim
   Sim --> Room
   Shared -.->|Zod schemas| Browser
   Shared -.->|Zod schemas| IO
@@ -26,12 +25,11 @@ flowchart LR
 
 The server owns:
 
-- `totalDust` (room-wide cumulative)
-- per-player `essence`, `tier`, `position` (clamped to a play volume)
-- planet radius (derived each snapshot from `totalDust`)
-- burst and extract cooldowns
+- per-player **`essenceSpread`** (cumulative spread from bursts + passive), **`tier`**, **`position`** (clamped to a play volume)
+- **`planetRadius`** each snapshot: pure function of the **sum of all players’ `essenceSpread`** in the room (including soft-disconnected records until pruned)
+- burst cooldowns and rate limits
 
-Clients send **intents** (`cursorMove`, `dropBurst`, `extract`); the server validates payloads with Zod, applies cooldowns and rate limits, and broadcasts authoritative `RoomSnapshot` and event messages. The client never decides essence amounts on its own.
+Clients send **intents** (`cursorMove`, `dropBurst`); the server validates payloads with Zod, applies cooldowns and rate limits, and broadcasts authoritative `RoomSnapshot` and burst events. The client never decides essence spread amounts.
 
 ## Wire protocol
 
@@ -45,7 +43,6 @@ The single source of truth lives in [`packages/shared/src/protocol.ts`](../packa
 client.hello                  -> server.welcome | server.error(protocol_mismatch)
 client.intent.cursorMove       (intent only)
 client.intent.dropBurst        -> server.event.burst (broadcast) | server.error(rate_limit)
-client.intent.extract          -> server.event.essence (private) | server.error(...)
                               <- server.snapshot.roomState (broadcast every tick)
 ```
 
@@ -53,9 +50,9 @@ client.intent.extract          -> server.event.essence (private) | server.error(
 
 `apps/server/src/net.ts` schedules a `setInterval` at `TICK_HZ` (default 12 Hz). Each tick:
 
-1. `Room.tick()` advances passive dust + essence accumulators.
+1. `Room.tick()` advances passive essence spread for connected players.
 2. A `RoomSnapshot` is built and broadcast.
-3. Every `tickHz * 10` ticks the server emits a `room.tick` log line summarizing `totalDust`, `planetRadius`, and player count for low-frequency observability.
+3. Every `tickHz * 10` ticks the server emits a `room.tick` log line summarizing `essenceSpreadSum`, `planetRadius`, and player count for low-frequency observability.
 
 ## Rendering (client)
 
@@ -64,13 +61,13 @@ client.intent.extract          -> server.event.essence (private) | server.error(
 - Icosphere planet, scaled by `snap.planetRadius`.
 - Additive atmosphere shell.
 - Starfield (1200 points).
-- Pooled dust particles (max 4096) with simple gravity toward origin.
-- Local spirit projected onto a play sphere via raycast.
+- Pooled particle field (max 6144) with simple gravity toward origin.
+- Local spirit walks the planet in surface space; remotes follow snapshots.
 - Remote spirits added/removed from snapshots.
 
 ## Repository conventions
 
 - **Always-applied rules**: see [`.cursor/rules/`](../.cursor/rules/).
 - **Strict TypeScript**: `noUncheckedIndexedAccess`, no `any`.
-- **One canonical name per concept**: `Essence`, `totalDust`, `spiritTier`. Update everywhere on rename (see `migration-and-terminology` agent).
+- **One canonical name per concept**: `essenceSpread`, `spiritTier`. Update everywhere on rename (see `migration-and-terminology` agent).
 - **No deprecated event aliases** unless the team explicitly approves.

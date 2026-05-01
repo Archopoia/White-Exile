@@ -5,30 +5,30 @@ import {
   clamp,
   clampToPlayVolume,
   distanceSquared3,
-  planetRadiusFromTotalDust,
+  planetRadiusFromEssenceSpread,
 } from './math.js';
 
-describe('planetRadiusFromTotalDust', () => {
-  it('returns the base radius for zero or negative dust', () => {
-    expect(planetRadiusFromTotalDust(0)).toBe(RADIUS_BASE);
-    expect(planetRadiusFromTotalDust(-5)).toBe(RADIUS_BASE);
+describe('planetRadiusFromEssenceSpread', () => {
+  it('returns the base radius for zero or negative spread', () => {
+    expect(planetRadiusFromEssenceSpread(0)).toBe(RADIUS_BASE);
+    expect(planetRadiusFromEssenceSpread(-5)).toBe(RADIUS_BASE);
   });
 
-  it('grows monotonically with total dust', () => {
-    const a = planetRadiusFromTotalDust(10);
-    const b = planetRadiusFromTotalDust(100);
-    const c = planetRadiusFromTotalDust(1_000);
+  it('grows monotonically with aggregated spread', () => {
+    const a = planetRadiusFromEssenceSpread(10);
+    const b = planetRadiusFromEssenceSpread(100);
+    const c = planetRadiusFromEssenceSpread(1_000);
     expect(a).toBeLessThan(b);
     expect(b).toBeLessThan(c);
   });
 
   it('caps growth at RADIUS_MAX', () => {
-    expect(planetRadiusFromTotalDust(1e18)).toBe(RADIUS_MAX);
+    expect(planetRadiusFromEssenceSpread(1e18)).toBe(RADIUS_MAX);
   });
 
   it('handles non-finite input by returning the base', () => {
-    expect(planetRadiusFromTotalDust(Number.NaN)).toBe(RADIUS_BASE);
-    expect(planetRadiusFromTotalDust(Number.POSITIVE_INFINITY)).toBe(RADIUS_BASE);
+    expect(planetRadiusFromEssenceSpread(Number.NaN)).toBe(RADIUS_BASE);
+    expect(planetRadiusFromEssenceSpread(Number.POSITIVE_INFINITY)).toBe(RADIUS_BASE);
   });
 });
 

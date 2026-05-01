@@ -19,7 +19,6 @@ export interface BehaviorContext {
 export interface BehaviorTick {
   position: Vec3;
   burst: boolean;
-  extract?: Vec3;
 }
 
 export interface Behavior {

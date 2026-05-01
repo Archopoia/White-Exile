@@ -2,26 +2,25 @@
  * Three.js scene for Tutelary - SMG-style surface walker.
  *
  * Gameplay model:
- *   - Each spirit walks on the surface of a shared "sphere of dust" planet,
- *     anchored radially with a small offset (third-person camera trails
- *     behind, oriented to local up).
+ *   - Each spirit walks on the surface of a shared planet, anchored radially
+ *     with a small offset (third-person camera trails behind, oriented to
+ *     local up).
  *   - WASD drives the local spirit: W/S walk forward/back along great
  *     circles, A/D turn left/right around the local vertical.
- *   - Click or Space spawns a burst at the spirit's current position.
- *   - E (or click that hits the planet) requests an extract.
- *   - Every spirit, local or remote, continuously emits a slow visual dust
- *     trail toward the planet center (the "passive drop" from the pitch).
+ *   - Click sends a burst intent from the spirit's current position (server
+ *     accrues essence spread).
+ *   - Every spirit, local or remote, continuously emits a slow visual
+ *     particle trail toward the planet center (client-only VFX).
  *
- * Wire side-effects: only `onCursorMove`, `onBurst`, and `onExtract`
- * callbacks fire - the server still owns `totalDust`, essence, and per-tick
- * snapshots that drive `applySnapshot()`.
+ * Wire side-effects: `onCursorMove` and `onBurst` — the server owns essence
+ * spread and per-tick snapshots that drive `applySnapshot()`.
  */
 import * as THREE from 'three';
 import {
   type RoomSnapshot,
   type ServerEventBurst,
   type Vec3,
-  planetRadiusFromTotalDust,
+  planetRadiusFromEssenceSpread,
 } from '@tutelary/shared';
 import { inputLog } from './inputLog.js';
 
@@ -56,7 +55,6 @@ const WORLD_Y = new THREE.Vector3(0, 1, 0);
 export interface SceneCallbacks {
   onCursorMove: (target: Vec3) => void;
   onBurst: (target: Vec3, intensity: number) => void;
-  onExtract: (surfacePoint: Vec3) => void;
 }
 
 export class TutelaryScene {
@@ -86,11 +84,9 @@ export class TutelaryScene {
   private readonly dust: THREE.Points;
   private dustHead = 0;
 
-  private readonly raycaster = new THREE.Raycaster();
-  private readonly pointer = new THREE.Vector2();
   private readonly keys = new Set<string>();
 
-  private currentRadius = planetRadiusFromTotalDust(0);
+  private currentRadius = planetRadiusFromEssenceSpread(0);
   private playerId: string | null = null;
   private readonly callbacks: SceneCallbacks;
   private rafHandle = 0;
@@ -251,45 +247,19 @@ export class TutelaryScene {
 
   private bindInput(): void {
     this.canvas.addEventListener('pointerdown', this.handlePointerDown);
-    this.canvas.addEventListener('pointermove', this.handlePointerMove);
     this.canvas.addEventListener('click', this.handleClick);
     window.addEventListener('keydown', this.handleKeyDown);
     window.addEventListener('keyup', this.handleKeyUp);
     window.addEventListener('blur', this.handleBlur);
   }
 
-  private handlePointerMove = (event: PointerEvent): void => {
-    const rect = this.canvas.getBoundingClientRect();
-    this.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    this.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-  };
-
   private handleClick = (): void => {
-    const planetHit = this.raycastPlanet();
-    if (planetHit) {
-      inputLog('scene.pointer.click', { action: 'extract', hit: planetHit.toArray() });
-      this.callbacks.onExtract({ x: planetHit.x, y: planetHit.y, z: planetHit.z });
-      this.spawnDustBurst(planetHit, 0.7);
-      return;
-    }
     inputLog('scene.pointer.click', { action: 'burst' });
     this.emitBurstAtSpirit();
   };
 
   private handleKeyDown = (event: KeyboardEvent): void => {
-    const code = event.code;
-    this.keys.add(code);
-    if (code === 'Space') {
-      event.preventDefault();
-      if (event.repeat) return;
-      inputLog('scene.keydown', { key: 'Space', action: 'burst' });
-      this.emitBurstAtSpirit();
-    } else if (code === 'KeyE') {
-      event.preventDefault();
-      if (event.repeat) return;
-      inputLog('scene.keydown', { key: 'E', action: 'extract' });
-      this.emitExtractAtFeet();
-    }
+    this.keys.add(event.code);
   };
 
   private handleKeyUp = (event: KeyboardEvent): void => {
@@ -304,19 +274,6 @@ export class TutelaryScene {
     const pos = { x: this.worldPos.x, y: this.worldPos.y, z: this.worldPos.z };
     this.callbacks.onBurst(pos, 1);
     this.spawnDustBurst(this.worldPos, 1);
-  }
-
-  private emitExtractAtFeet(): void {
-    const surface = this.spiritPos.clone().multiplyScalar(this.currentRadius);
-    this.callbacks.onExtract({ x: surface.x, y: surface.y, z: surface.z });
-    this.spawnDustBurst(surface, 0.7);
-  }
-
-  private raycastPlanet(): THREE.Vector3 | null {
-    this.raycaster.setFromCamera(this.pointer, this.camera);
-    const hits = this.raycaster.intersectObject(this.planet, false);
-    const first = hits[0];
-    return first ? first.point.clone() : null;
   }
 
   private spawnDustBurst(at: THREE.Vector3, intensity: number): void {
@@ -644,7 +601,6 @@ export class TutelaryScene {
     window.removeEventListener('keyup', this.handleKeyUp);
     window.removeEventListener('blur', this.handleBlur);
     this.canvas.removeEventListener('pointerdown', this.handlePointerDown);
-    this.canvas.removeEventListener('pointermove', this.handlePointerMove);
     this.canvas.removeEventListener('click', this.handleClick);
     this.renderer.dispose();
   }
