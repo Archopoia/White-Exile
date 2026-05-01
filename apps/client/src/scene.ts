@@ -55,6 +55,7 @@ import {
 import { createNprPost, type NprPostHandle } from './nprPost.js';
 import type { NprSettings } from './nprSettings.js';
 import { type DeadSky, createDeadSky } from './sky.js';
+import { DEFAULT_SCENE_VISUAL } from './roomOptionsDefaults.js';
 import { makeTooltip, nextLabelMode, setTooltipText, type WorldLabelMode } from './tooltips.js';
 import {
   labelFollower,
@@ -86,14 +87,7 @@ export interface SceneVisualSettings {
   readonly torchReachMul: number;
 }
 
-export const DEFAULT_SCENE_VISUAL: SceneVisualSettings = Object.freeze({
-  fogDensityMul: 1,
-  fillLightMul: 1,
-  /** Lifted so lower ambient + stronger sun still lands in a playable range. */
-  toneMappingExposure: 1.32,
-  skyHazeMul: 1,
-  torchReachMul: 1,
-});
+export { DEFAULT_SCENE_VISUAL };
 
 const MOVE_SPEED = 22;
 const TMP = new THREE.Vector3();

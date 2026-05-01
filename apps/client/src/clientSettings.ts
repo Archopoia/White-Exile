@@ -13,6 +13,16 @@
 import { DEFAULT_RACE, RACES, isRace, type Race } from '@realtime-room/shared';
 
 import type { FxTier } from './flameLighting.js';
+import {
+  CODE_DEFAULT_DISPLAY_NAME,
+  CODE_DEFAULT_FILL_LIGHT_MUL,
+  CODE_DEFAULT_FOG_DENSITY_MUL,
+  CODE_DEFAULT_FX_TIER,
+  CODE_DEFAULT_LABEL_MODE,
+  CODE_DEFAULT_SKY_HAZE_MUL,
+  CODE_DEFAULT_TONE_EXPOSURE,
+  CODE_DEFAULT_TORCH_REACH_MUL,
+} from './roomOptionsDefaults.js';
 import type { WorldLabelMode } from './tooltips.js';
 
 export const FX_TIERS: ReadonlyArray<FxTier> = ['low', 'med', 'high'];
@@ -64,7 +74,7 @@ function isLabelMode(value: unknown): value is WorldLabelMode {
 
 export function getFxTier(): FxTier {
   const raw = readLs(KEY_FX);
-  return isFxTier(raw) ? raw : 'med';
+  return isFxTier(raw) ? raw : CODE_DEFAULT_FX_TIER;
 }
 
 export function setFxTier(tier: FxTier): void {
@@ -77,7 +87,7 @@ export function getLabelMode(): WorldLabelMode {
   const legacy = readLs(KEY_LABELS_LEGACY);
   if (legacy === '0') return 'off';
   if (legacy === '1') return 'full';
-  return 'full';
+  return CODE_DEFAULT_LABEL_MODE;
 }
 
 export function setLabelMode(mode: WorldLabelMode): void {
@@ -95,7 +105,7 @@ export function setFogEnabled(enabled: boolean): void {
 
 /** Multiplier on client exponential fog density (0 = none, 2.5 = very thick). Default 1. */
 export function getFogDensityMul(): number {
-  return Math.max(0, Math.min(2.5, readFloat(KEY_FOG_MUL, 1)));
+  return Math.max(0, Math.min(2.5, readFloat(KEY_FOG_MUL, CODE_DEFAULT_FOG_DENSITY_MUL)));
 }
 
 export function setFogDensityMul(mul: number): void {
@@ -105,7 +115,7 @@ export function setFogDensityMul(mul: number): void {
 
 /** Scales hemisphere + sun + ambient skylight. Default 1. */
 export function getFillLightMul(): number {
-  return Math.max(0.15, Math.min(2.75, readFloat(KEY_FILL_MUL, 1)));
+  return Math.max(0.15, Math.min(2.75, readFloat(KEY_FILL_MUL, CODE_DEFAULT_FILL_LIGHT_MUL)));
 }
 
 export function setFillLightMul(mul: number): void {
@@ -115,7 +125,7 @@ export function setFillLightMul(mul: number): void {
 
 /** ACES tone-mapping exposure. Default aligned with `DEFAULT_SCENE_VISUAL`. */
 export function getToneMappingExposure(): number {
-  return Math.max(0.35, Math.min(2.75, readFloat(KEY_TONE_EXPOSURE, 1.32)));
+  return Math.max(0.35, Math.min(2.75, readFloat(KEY_TONE_EXPOSURE, CODE_DEFAULT_TONE_EXPOSURE)));
 }
 
 export function setToneMappingExposure(exposure: number): void {
@@ -125,7 +135,7 @@ export function setToneMappingExposure(exposure: number): void {
 
 /** Multiplies sky dome haze vs zone presets. Default 1. */
 export function getSkyHazeMul(): number {
-  return Math.max(0, Math.min(1.5, readFloat(KEY_SKY_HAZE_MUL, 1)));
+  return Math.max(0, Math.min(1.5, readFloat(KEY_SKY_HAZE_MUL, CODE_DEFAULT_SKY_HAZE_MUL)));
 }
 
 export function setSkyHazeMul(mul: number): void {
@@ -138,7 +148,7 @@ export function setSkyHazeMul(mul: number): void {
  * 1 = authored server radius mapping; raise for longer view without changing sim.
  */
 export function getTorchReachMul(): number {
-  return Math.max(0.1, Math.min(80, readFloat(KEY_TORCH_REACH_MUL, 1)));
+  return Math.max(0.1, Math.min(80, readFloat(KEY_TORCH_REACH_MUL, CODE_DEFAULT_TORCH_REACH_MUL)));
 }
 
 export function setTorchReachMul(mul: number): void {
@@ -160,11 +170,7 @@ export function setRace(race: Race): void {
 export function getDisplayName(): string {
   const raw = readLs(KEY_NAME);
   if (raw && raw.trim().length > 0) return raw.slice(0, 24);
-  const adjectives = ['ash', 'cold', 'lit', 'lone', 'bold', 'still', 'bright', 'old'];
-  const nouns = ['ember', 'pyre', 'lamp', 'wick', 'spark', 'beacon', 'dust', 'kin'];
-  const a = adjectives[Math.floor(Math.random() * adjectives.length)] ?? 'ash';
-  const n = nouns[Math.floor(Math.random() * nouns.length)] ?? 'ember';
-  return `${a}-${n}`;
+  return CODE_DEFAULT_DISPLAY_NAME;
 }
 
 export function setDisplayName(name: string): void {
