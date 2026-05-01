@@ -31,6 +31,7 @@ import {
   type Race,
   type RelicSnapshot,
   type RuinSnapshot,
+  type AshDuneSampleOptions,
   type Vec3,
   type WorldConfig,
   type Zone,
@@ -109,11 +110,12 @@ export function tickWorld(
 ): SimResult {
   const derived = new Map<string, SimDerivedPlayer>();
   const clusterMembers: ClusterMember[] = [];
+  const duneOpts = { heightScale: world.config.duneHeightScale } as const;
 
   const playerArr = [...world.players.values()];
   for (const p of playerArr) {
     p.position.y =
-      ashDuneSurfaceWorldY(p.position.x, p.position.z, simulationTimeSec) +
+      ashDuneSurfaceWorldY(p.position.x, p.position.z, simulationTimeSec, duneOpts) +
       ASH_DUNE_PLAYER_CENTER_OFFSET;
   }
 
@@ -193,10 +195,10 @@ export function tickWorld(
       f.ownerId = null;
       continue;
     }
-    const target = jitterAround(owner.position, owner.id, f.id, world, simulationTimeSec);
+    const target = jitterAround(owner.position, owner.id, f.id, world, simulationTimeSec, duneOpts);
     f.position = lerp3(f.position, target, Math.min(1, dt * FOLLOW_LERP));
     f.position.y =
-      ashDuneSurfaceWorldY(f.position.x, f.position.z, simulationTimeSec) +
+      ashDuneSurfaceWorldY(f.position.x, f.position.z, simulationTimeSec, duneOpts) +
       ASH_DUNE_FOLLOWER_CENTER_OFFSET;
     if (owner.fuel < 0.15) f.morale = Math.max(0, f.morale - dt * 0.3);
     else f.morale = Math.min(1, f.morale + dt * 0.05);
@@ -281,7 +283,7 @@ export function tickWorld(
         position: {
           x: sx,
           y:
-            ashDuneSurfaceWorldY(sx, sz, simulationTimeSec) + ASH_DUNE_FOLLOWER_CENTER_OFFSET,
+            ashDuneSurfaceWorldY(sx, sz, simulationTimeSec, duneOpts) + ASH_DUNE_FOLLOWER_CENTER_OFFSET,
           z: sz,
         },
         ownerId: null,
@@ -353,23 +355,23 @@ export function tickWorld(
   for (const p of playerArr) {
     for (const f of p.followers) {
       f.position.y =
-        ashDuneSurfaceWorldY(f.position.x, f.position.z, simulationTimeSec) +
+        ashDuneSurfaceWorldY(f.position.x, f.position.z, simulationTimeSec, duneOpts) +
         ASH_DUNE_FOLLOWER_CENTER_OFFSET;
     }
   }
   for (const f of world.followers.values()) {
     f.position.y =
-      ashDuneSurfaceWorldY(f.position.x, f.position.z, simulationTimeSec) +
+      ashDuneSurfaceWorldY(f.position.x, f.position.z, simulationTimeSec, duneOpts) +
       ASH_DUNE_FOLLOWER_CENTER_OFFSET;
   }
   for (const r of world.ruins.values()) {
     r.position.y =
-      ashDuneSurfaceWorldY(r.position.x, r.position.z, simulationTimeSec) +
+      ashDuneSurfaceWorldY(r.position.x, r.position.z, simulationTimeSec, duneOpts) +
       ASH_DUNE_RUIN_CENTER_OFFSET;
   }
   for (const r of world.relics.values()) {
     r.position.y =
-      ashDuneSurfaceWorldY(r.position.x, r.position.z, simulationTimeSec) +
+      ashDuneSurfaceWorldY(r.position.x, r.position.z, simulationTimeSec, duneOpts) +
       ASH_DUNE_RELIC_CENTER_OFFSET;
   }
 
@@ -382,6 +384,7 @@ function jitterAround(
   followerId: string,
   world: SimWorld,
   simulationTimeSec: number,
+  duneOpts: AshDuneSampleOptions,
 ): Vec3 {
   void world;
   let h = 2166136261;
@@ -393,7 +396,7 @@ function jitterAround(
   const tz = center.z + Math.sin(ang) * r;
   return {
     x: tx,
-    y: ashDuneSurfaceWorldY(tx, tz, simulationTimeSec) + ASH_DUNE_FOLLOWER_CENTER_OFFSET,
+    y: ashDuneSurfaceWorldY(tx, tz, simulationTimeSec, duneOpts) + ASH_DUNE_FOLLOWER_CENTER_OFFSET,
     z: tz,
   };
 }

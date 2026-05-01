@@ -1,22 +1,22 @@
 import * as THREE from 'three';
+import { ASH_DUNE_DEFAULT_HEIGHT_SCALE } from '@realtime-room/shared';
 
 /** Uniform handles attached in `applyAshDuneTerrainShader`; updated each frame from the scene. */
 export interface AshDuneTerrainUniforms {
   readonly uTime: THREE.IUniform<number>;
   readonly uWindDir: THREE.IUniform<THREE.Vector2>;
+  readonly uDuneHeightScale: THREE.IUniform<number>;
 }
 
 const DUNE_USERDATA_KEY = 'ashDuneTerrain';
 
 function isAshDuneUserData(v: unknown): v is { uniforms: AshDuneTerrainUniforms } {
-  return (
-    typeof v === 'object' &&
-    v !== null &&
-    'uniforms' in v &&
-    typeof (v as { uniforms: unknown }).uniforms === 'object' &&
-    (v as { uniforms: { uTime?: unknown } }).uniforms !== null &&
-    typeof (v as { uniforms: { uTime?: unknown } }).uniforms?.uTime === 'object'
-  );
+  if (v === null || typeof v !== 'object') return false;
+  if (!('uniforms' in v)) return false;
+  const u = (v as { uniforms: unknown }).uniforms;
+  if (typeof u !== 'object' || u === null) return false;
+  const bag = u as { uTime?: unknown; uDuneHeightScale?: unknown };
+  return typeof bag.uTime === 'object' && bag.uTime !== null && typeof bag.uDuneHeightScale === 'object' && bag.uDuneHeightScale !== null;
 }
 
 /**
@@ -35,18 +35,21 @@ export function applyAshDuneTerrainShader(material: THREE.MeshStandardMaterial):
   const uniforms: AshDuneTerrainUniforms = {
     uTime: { value: 0 },
     uWindDir: { value: new THREE.Vector2(0.91, 0.42).normalize() },
+    uDuneHeightScale: { value: ASH_DUNE_DEFAULT_HEIGHT_SCALE },
   };
 
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, {
       uTime: uniforms.uTime,
       uWindDir: uniforms.uWindDir,
+      uDuneHeightScale: uniforms.uDuneHeightScale,
     });
 
     shader.vertexShader =
       `
       uniform float uTime;
       uniform vec2 uWindDir;
+      uniform float uDuneHeightScale;
 
       float duneHash(vec2 p) {
         return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
@@ -122,7 +125,7 @@ export function applyAshDuneTerrainShader(material: THREE.MeshStandardMaterial):
         float chop = duneFbm(p * 0.028 + vec2(t * 0.03, -t * 0.021));
         h += chop * mix(0.0, 2.2, depth * depth);
 
-        return h;
+        return h * uDuneHeightScale;
       }
     ` + shader.vertexShader;
 

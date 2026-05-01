@@ -1,87 +1,30 @@
 /**
- * Client bootstrap: Three.js scene, Socket.io, HUD, optional room options (ESC).
+ * Client bootstrap: Three.js scene, Socket.io, HUD, ESC menu.
  * HMR: dispose + reconnect; resume token keeps the same player record.
+ *
+ * All player-facing tunables live in `clientSettings.ts` and are surfaced
+ * via the ESC menu in `options.ts`. There are intentionally no URL query
+ * parameters for tunables — if you find any, delete them.
  */
-import { DEFAULT_RACE, RACES, isRace, type Race } from '@realtime-room/shared';
+import {
+  getDisplayName,
+  getLabelMode,
+  getFxTier,
+  getRace,
+  getResumeToken,
+  setDisplayName,
+  setFxTier,
+  setLabelMode,
+  setRace,
+  setResumeToken,
+} from './clientSettings.js';
 import { debugLogger } from './debug.js';
+import { type FxTier } from './flameLighting.js';
 import { updateHud, type HudState } from './hud.js';
 import { NetClient } from './net.js';
 import { createRoomOptionsOverlay, type RoomOptionsOverlay } from './options.js';
 import { RoomScene } from './scene.js';
-
-const STORAGE_NAME = 'rtRoom.displayName';
-const STORAGE_TOKEN = 'rtRoom.resumeToken';
-const STORAGE_RACE = 'rtRoom.race';
-
-function makeDisplayName(): string {
-  try {
-    const fromUrl = new URLSearchParams(window.location.search).get('name');
-    if (fromUrl) return fromUrl.slice(0, 24);
-  } catch {
-    /* ignore */
-  }
-  try {
-    const stored = window.localStorage.getItem(STORAGE_NAME);
-    if (stored && stored.length > 0) return stored.slice(0, 24);
-  } catch {
-    /* ignore */
-  }
-  const adjectives = ['ash', 'cold', 'lit', 'lone', 'bold', 'still', 'bright', 'old'];
-  const nouns = ['ember', 'pyre', 'lamp', 'wick', 'spark', 'beacon', 'dust', 'kin'];
-  const a = adjectives[Math.floor(Math.random() * adjectives.length)] ?? 'ash';
-  const n = nouns[Math.floor(Math.random() * nouns.length)] ?? 'ember';
-  return `${a}-${n}`;
-}
-
-function readResumeToken(): string | undefined {
-  try {
-    const t = window.localStorage.getItem(STORAGE_TOKEN);
-    return t && t.length > 0 ? t : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function writeResumeToken(token: string): void {
-  try {
-    window.localStorage.setItem(STORAGE_TOKEN, token);
-  } catch {
-    /* ignore */
-  }
-}
-
-function persistDisplayName(name: string): void {
-  try {
-    window.localStorage.setItem(STORAGE_NAME, name);
-  } catch {
-    /* ignore */
-  }
-}
-
-function pickRace(): Race {
-  try {
-    const fromUrl = new URLSearchParams(window.location.search).get('race');
-    if (fromUrl && isRace(fromUrl)) return fromUrl;
-  } catch {
-    /* ignore */
-  }
-  try {
-    const stored = window.localStorage.getItem(STORAGE_RACE);
-    if (stored && isRace(stored)) return stored;
-  } catch {
-    /* ignore */
-  }
-  const idx = Math.floor(Math.random() * RACES.length);
-  return RACES[idx] ?? DEFAULT_RACE;
-}
-
-function persistRace(race: Race): void {
-  try {
-    window.localStorage.setItem(STORAGE_RACE, race);
-  } catch {
-    /* ignore */
-  }
-}
+import { type WorldLabelMode } from './tooltips.js';
 
 function resolveServerUrl(): string {
   const fromEnv = import.meta.env.VITE_SERVER_URL as string | undefined;
@@ -101,10 +44,12 @@ function boot(): RunningClient {
   const canvas = document.getElementById('scene') as HTMLCanvasElement | null;
   if (!canvas) throw new Error('canvas#scene not found');
 
-  const displayName = makeDisplayName();
-  persistDisplayName(displayName);
-  const race = pickRace();
-  persistRace(race);
+  const displayName = getDisplayName();
+  setDisplayName(displayName);
+  const race = getRace();
+  setRace(race);
+  const fxTier = getFxTier();
+  const labelMode = getLabelMode();
 
   const hud: HudState = {
     status: 'connecting',
@@ -125,15 +70,36 @@ function boot(): RunningClient {
   let appliedServerPos = false;
 
   let net: NetClient | null = null;
-  const scene = new RoomScene(canvas, {
-    onMoveIntent: (position) => net?.sendMove(position),
-    onRescueIntent: () => net?.sendRescue(),
-    onActivateRuinIntent: (ruinId) => net?.sendActivateRuin(ruinId),
-  });
+  const scene = new RoomScene(
+    canvas,
+    {
+      onMoveIntent: (position) => net?.sendMove(position),
+      onRescueIntent: () => net?.sendRescue(),
+      onActivateRuinIntent: (ruinId) => net?.sendActivateRuin(ruinId),
+    },
+    fxTier,
+  );
   scene.setLocalRace(race);
+  scene.setLabelMode(labelMode);
 
-  const options = createRoomOptionsOverlay((roomNote) => {
-    net?.sendRoomSettingsPatch({ roomNote });
+  const options = createRoomOptionsOverlay({
+    onFxTierChange: (tier: FxTier) => {
+      setFxTier(tier);
+      scene.setLightingTier(tier);
+    },
+    onLabelModeChange: (mode: WorldLabelMode) => {
+      setLabelMode(mode);
+      scene.setLabelMode(mode);
+    },
+    onDisplayNameChange: (name: string) => {
+      setDisplayName(name);
+    },
+    initial: {
+      fxTier,
+      labelMode,
+      displayName,
+      race,
+    },
   });
 
   canvas.addEventListener('click', () => canvas.focus());
@@ -143,7 +109,7 @@ function boot(): RunningClient {
       url: resolveServerUrl(),
       displayName,
       race,
-      ...(readResumeToken() ? { resumeToken: readResumeToken() as string } : {}),
+      ...(getResumeToken() ? { resumeToken: getResumeToken() as string } : {}),
     },
     {
       onConnectionChange: (state) => {
@@ -155,10 +121,11 @@ function boot(): RunningClient {
         localPlayerId = welcome.playerId;
         appliedServerPos = false;
         scene.setLocalPlayerId(welcome.playerId);
+        scene.setDuneHeightScale(welcome.worldConfig.duneHeightScale);
         scene.setLocalRace(welcome.race);
         hud.race = welcome.race;
-        persistRace(welcome.race);
-        writeResumeToken(welcome.resumeToken);
+        setRace(welcome.race);
+        setResumeToken(welcome.resumeToken);
         debugLogger.info('welcome.applied', {
           playerId: welcome.playerId,
           traceId: welcome.traceId,
@@ -171,7 +138,6 @@ function boot(): RunningClient {
         hud.players = snap.players.length;
         hud.roomNote = snap.settings.roomNote;
         hud.tick = snap.tick;
-        options.syncRoomNoteFromServer(snap.settings.roomNote);
         const me = localPlayerId
           ? snap.players.find((p) => p.id === localPlayerId)
           : snap.players.find((p) => p.name === displayName);
@@ -200,7 +166,8 @@ function boot(): RunningClient {
   debugLogger.info('client.boot', {
     name: displayName,
     race,
-    hasResumeToken: !!readResumeToken(),
+    fxTier,
+    hasResumeToken: !!getResumeToken(),
   });
 
   const liveNet = net;

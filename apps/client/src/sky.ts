@@ -1,0 +1,208 @@
+/**
+ * Dead-sun sky dome.
+ *
+ * A large back-faced sphere rendered before everything else (renderOrder = -1)
+ * with a custom shader. The sun is a faint disk smeared by a horizon haze
+ * band; height-based gradient gives the "thick foggy atmosphere with smothered
+ * sun" look the pitch calls for. No real atmospheric scattering — it would
+ * look wrong (too bright) and cost too much for what the scene needs.
+ *
+ * Tuning knobs are exposed as uniforms; `setZoneTone` shifts colors so deeper
+ * zones read more oppressive without rebuilding the material.
+ */
+import * as THREE from 'three';
+
+import type { Zone } from '@realtime-room/shared';
+
+const SKY_RADIUS = 3000;
+
+export interface DeadSkyUniforms {
+  readonly uTime: THREE.IUniform<number>;
+  readonly uSunDir: THREE.IUniform<THREE.Vector3>;
+  readonly uSunColor: THREE.IUniform<THREE.Color>;
+  readonly uZenith: THREE.IUniform<THREE.Color>;
+  readonly uHorizon: THREE.IUniform<THREE.Color>;
+  readonly uGround: THREE.IUniform<THREE.Color>;
+  /** 0 = clear-ish, 1 = thick foggy haze blanketing the sun. */
+  readonly uHaze: THREE.IUniform<number>;
+}
+
+export interface DeadSky {
+  readonly mesh: THREE.Mesh;
+  readonly uniforms: DeadSkyUniforms;
+  setZoneTone(zone: Zone): void;
+  /** Sun direction is FROM the sun TOWARD the world (a light direction). */
+  setSunDirection(dir: THREE.Vector3): void;
+  dispose(): void;
+}
+
+interface ZoneTone {
+  readonly zenith: number;
+  readonly horizon: number;
+  readonly ground: number;
+  readonly sun: number;
+  readonly haze: number;
+}
+
+const ZONE_TONES: Readonly<Record<Zone, ZoneTone>> = Object.freeze({
+  safe: {
+    zenith: 0x0a0e1a,
+    horizon: 0x2c2230,
+    ground: 0x1a1620,
+    sun: 0xc6606a,
+    haze: 0.55,
+  },
+  grey: {
+    zenith: 0x070912,
+    horizon: 0x241a26,
+    ground: 0x141017,
+    sun: 0xa84e58,
+    haze: 0.7,
+  },
+  deep: {
+    zenith: 0x040510,
+    horizon: 0x1c1322,
+    ground: 0x0d0a14,
+    sun: 0x803944,
+    haze: 0.85,
+  },
+  dead: {
+    zenith: 0x010108,
+    horizon: 0x130b1a,
+    ground: 0x06040a,
+    sun: 0x5a232f,
+    haze: 0.97,
+  },
+});
+
+const VERT = /* glsl */ `
+  varying vec3 vDir;
+
+  void main() {
+    vDir = normalize((modelMatrix * vec4(position, 0.0)).xyz);
+    vec4 mvp = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    // Force depth = far plane so other geometry always wins.
+    gl_Position = mvp.xyww;
+  }
+`;
+
+const FRAG = /* glsl */ `
+  precision highp float;
+  varying vec3 vDir;
+
+  uniform float uTime;
+  uniform vec3 uSunDir;
+  uniform vec3 uSunColor;
+  uniform vec3 uZenith;
+  uniform vec3 uHorizon;
+  uniform vec3 uGround;
+  uniform float uHaze;
+
+  float skyHash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+  }
+  float skyNoise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    float a = skyHash(i);
+    float b = skyHash(i + vec2(1.0, 0.0));
+    float c = skyHash(i + vec2(0.0, 1.0));
+    float d = skyHash(i + vec2(1.0, 1.0));
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+  }
+  float skyFbm(vec2 p) {
+    float v = 0.0;
+    float a = 0.5;
+    for (int i = 0; i < 4; i++) {
+      v += a * skyNoise(p);
+      p *= 1.9;
+      a *= 0.55;
+    }
+    return v;
+  }
+
+  void main() {
+    vec3 d = normalize(vDir);
+    float h = clamp(d.y, -1.0, 1.0);
+    // Bias horizon band visually (more haze sitting low).
+    float horizonBand = smoothstep(-0.05, 0.18, h);
+    float zenithBand = smoothstep(0.15, 0.9, h);
+
+    vec3 col = mix(uHorizon, uZenith, zenithBand);
+    col = mix(uGround, col, horizonBand);
+
+    // Drifting low-frequency cloud band along horizon (only in upper hemisphere).
+    vec2 cloudUV = vec2(atan(d.x, d.z) * 1.4, max(h, 0.0) * 6.0);
+    float cloud = skyFbm(cloudUV * 0.6 + vec2(uTime * 0.012, uTime * 0.004));
+    float cloudMask = smoothstep(0.02, 0.55, max(h, 0.0)) * (1.0 - smoothstep(0.4, 1.0, h));
+    col = mix(col, uHorizon * 1.15, cloud * cloudMask * 0.45 * uHaze);
+
+    // Sun: tiny disk + wide soft halo, attenuated by haze so the sun never reads sharp.
+    float sunDot = max(dot(d, normalize(uSunDir)), 0.0);
+    float disk = smoothstep(0.997, 0.9995, sunDot);
+    float halo = pow(sunDot, mix(80.0, 24.0, uHaze));
+    float wideHalo = pow(sunDot, mix(8.0, 3.0, uHaze));
+    float hazeAtten = mix(1.0, 0.18, uHaze);
+    col += uSunColor * disk * 0.9 * hazeAtten;
+    col += uSunColor * halo * 0.55 * hazeAtten;
+    col += uSunColor * wideHalo * 0.18 * hazeAtten;
+
+    // Subtle vertical gradient noise so the dome doesn't read as a flat clearcoat.
+    float grain = (skyNoise(d.xy * 380.0 + uTime * 0.05) - 0.5) * 0.012;
+    col += grain;
+
+    gl_FragColor = vec4(col, 1.0);
+  }
+`;
+
+export function createDeadSky(scene: THREE.Scene): DeadSky {
+  const tone = ZONE_TONES.safe;
+  const uniforms: DeadSkyUniforms = {
+    uTime: { value: 0 },
+    uSunDir: { value: new THREE.Vector3(0.35, 0.18, -0.92).normalize() },
+    uSunColor: { value: new THREE.Color(tone.sun) },
+    uZenith: { value: new THREE.Color(tone.zenith) },
+    uHorizon: { value: new THREE.Color(tone.horizon) },
+    uGround: { value: new THREE.Color(tone.ground) },
+    uHaze: { value: tone.haze },
+  };
+
+  const mat = new THREE.ShaderMaterial({
+    uniforms: uniforms as unknown as { [k: string]: THREE.IUniform },
+    vertexShader: VERT,
+    fragmentShader: FRAG,
+    side: THREE.BackSide,
+    depthWrite: false,
+    depthTest: true,
+    fog: false,
+  });
+
+  const geom = new THREE.SphereGeometry(SKY_RADIUS, 32, 16);
+  const mesh = new THREE.Mesh(geom, mat);
+  mesh.frustumCulled = false;
+  mesh.renderOrder = -1;
+  mesh.name = 'dead-sky';
+  scene.add(mesh);
+
+  function setZoneTone(zone: Zone): void {
+    const t = ZONE_TONES[zone];
+    uniforms.uZenith.value.setHex(t.zenith);
+    uniforms.uHorizon.value.setHex(t.horizon);
+    uniforms.uGround.value.setHex(t.ground);
+    uniforms.uSunColor.value.setHex(t.sun);
+    uniforms.uHaze.value = t.haze;
+  }
+
+  function setSunDirection(dir: THREE.Vector3): void {
+    uniforms.uSunDir.value.copy(dir).normalize();
+  }
+
+  function dispose(): void {
+    scene.remove(mesh);
+    geom.dispose();
+    mat.dispose();
+  }
+
+  return { mesh, uniforms, setZoneTone, setSunDirection, dispose };
+}

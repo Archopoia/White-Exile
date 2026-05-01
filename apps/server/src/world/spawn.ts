@@ -45,6 +45,7 @@ function pickPositionInZone(
   rng: Rng,
   zone: Zone,
   yOffset: number,
+  config: WorldConfig,
 ): { x: number; y: number; z: number } {
   let inner = 0;
   let outer = ZONE_BANDS[ZONE_BANDS.length - 1]!.maxRadius;
@@ -62,7 +63,7 @@ function pickPositionInZone(
   const theta = rng() * Math.PI * 2;
   const x = Math.cos(theta) * radius;
   const z = Math.sin(theta) * radius;
-  const y = ashDuneSurfaceWorldY(x, z, 0) + yOffset;
+  const y = ashDuneSurfaceWorldY(x, z, 0, { heightScale: config.duneHeightScale }) + yOffset;
   return { x, y, z };
 }
 
@@ -86,7 +87,7 @@ export function generateInitialWorld(seed: number, config: WorldConfig): SpawnEn
     followers.push({
       id: `f-${seed.toString(16)}-${i}`,
       kind: pickKind(rng),
-      position: pickPositionInZone(rng, zone, ASH_DUNE_FOLLOWER_CENTER_OFFSET),
+      position: pickPositionInZone(rng, zone, ASH_DUNE_FOLLOWER_CENTER_OFFSET, config),
       ownerId: null,
       morale: 0.55 + rng() * 0.3,
     });
@@ -98,7 +99,7 @@ export function generateInitialWorld(seed: number, config: WorldConfig): SpawnEn
     const zone = ruinZones[i % ruinZones.length]!;
     ruins.push({
       id: `r-${seed.toString(16)}-${i}`,
-      position: pickPositionInZone(rng, zone, ASH_DUNE_RUIN_CENTER_OFFSET),
+      position: pickPositionInZone(rng, zone, ASH_DUNE_RUIN_CENTER_OFFSET, config),
       followerCharge: 2 + Math.floor(rng() * 4),
       activated: false,
     });
@@ -110,7 +111,7 @@ export function generateInitialWorld(seed: number, config: WorldConfig): SpawnEn
     const zone = relicZones[i % relicZones.length]!;
     relics.push({
       id: `relic-${seed.toString(16)}-${i}`,
-      position: pickPositionInZone(rng, zone, ASH_DUNE_RELIC_CENTER_OFFSET),
+      position: pickPositionInZone(rng, zone, ASH_DUNE_RELIC_CENTER_OFFSET, config),
       radiusBonus: 2 + rng() * 4,
       claimed: false,
       claimedBy: null,

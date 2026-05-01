@@ -9,7 +9,7 @@ This repo is a TypeScript monorepo: one authoritative server room, Socket.io to 
 | Part | Role |
 |------|------|
 | `apps/server` | Fastify (`/health`), Socket.io, tick loop, world simulation, ghost manager, log fan-out to `.cursor/logs/` |
-| `apps/client` | Vite + Three.js — race-tinted light spheres, zone-tinted fog, follower meshes, ruins, relics, HUD |
+| `apps/client` | Vite + Three.js — race-tinted flames with shader fire + real shadow-casting torch light, dead-sun sky dome, zone-tinted fog, follower meshes, ruins, relics, HUD |
 | `packages/shared` | `PROTOCOL_VERSION`, event names, Zod payloads, race profiles, light & fuel math, zone bands |
 | `tools/bots` | `socket.io-client` agents — `rescuer`, `caravan-seeker`, `deep-diver`, plus the original load behaviors |
 
@@ -48,13 +48,11 @@ pnpm smoke:net
 
 ## Client
 
-- **Esc** opens **Session**: room note editor plus movement, camera, and actions (pointer-lock, WASD, R/F/T). Those live there instead of on the HUD.
+- **Esc** opens **Session** (tabbed, compact): **graphics quality** and **world labels** (sliders, live), **display name** (next session), **race** (read-only, server-assigned), plus a short **Help** tab. The shared **room note** still appears on the **HUD** only (no in-menu editor).
 - **T** cycles floating **CSS2D** world labels (**off** → **keywords** → **full**; default **full**). Copy in `apps/client/src/worldLabels.ts`; proximity can surface **R** / **F** on nearby followers and ruins.
 - HUD (corners): connection, room note, tick, race, zone, light, caravan, fuel, followers.
 
-Race selection: append `?race=emberfolk|ashborn|lumen-kin` to the URL, set `localStorage.rtRoom.race`, or let the client pick a random one. The server echoes back the assigned race in the welcome.
-
-`localStorage` keys: `rtRoom.displayName`, `rtRoom.resumeToken`, `rtRoom.race`.
+There are intentionally **no URL query parameters** for tunables. Player tunables (graphics, labels, display name) are edited in the ESC menu and persisted to `localStorage` (`rtRoom.displayName`, `rtRoom.resumeToken`, `rtRoom.race`, `rtRoom.fx`, `rtRoomLabelsMode`). The room note is server state (`roomSettingsPatch`), shown on the HUD.
 
 ## Bots
 

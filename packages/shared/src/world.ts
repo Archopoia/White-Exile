@@ -176,6 +176,11 @@ export const WorldConfigSchema = z.object({
   followerCap: z.number().int().positive(),
   ruinCap: z.number().int().nonnegative(),
   relicCap: z.number().int().nonnegative(),
+  /**
+   * Multiplies procedural dune displacement everywhere (visual + authoritative Y).
+   * Typical range 1–5; default gives a stronger read near spawn than the raw shader math alone.
+   */
+  duneHeightScale: z.number().positive().max(20).default(2.8),
 });
 export type WorldConfig = z.infer<typeof WorldConfigSchema>;
 
@@ -185,4 +190,5 @@ export const DEFAULT_WORLD_CONFIG: WorldConfig = {
   followerCap: 64,
   ruinCap: 12,
   relicCap: 6,
+  duneHeightScale: 2.8,
 };

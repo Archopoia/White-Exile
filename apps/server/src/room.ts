@@ -107,7 +107,7 @@ export class Room {
           name,
           isBot: true,
           race,
-          position: clampPlayerPosition(position, this.simulationTimeSec),
+          position: clampPlayerPosition(position, this.simulationTimeSec, this.worldConfig.duneHeightScale),
           fuel: 0.85,
           followers: [],
           relicBonus: 0,
@@ -126,7 +126,9 @@ export class Room {
       },
       moveGhost: (ghostId, position) => {
         const pl = this.players.get(ghostId);
-        if (pl) pl.position = clampPlayerPosition(position, this.simulationTimeSec);
+        if (pl) {
+          pl.position = clampPlayerPosition(position, this.simulationTimeSec, this.worldConfig.duneHeightScale);
+        }
       },
       hasGhost: (ghostId) => this.ghostIds.has(ghostId),
       realPlayerCount: () => {
@@ -198,7 +200,7 @@ export class Room {
   }): PlayerState {
     const state: PlayerState = {
       ...p,
-      position: clampPlayerPosition(p.position, this.simulationTimeSec),
+      position: clampPlayerPosition(p.position, this.simulationTimeSec, this.worldConfig.duneHeightScale),
       fuel: 0.9,
       followers: [],
       relicBonus: 0,
@@ -256,7 +258,7 @@ export class Room {
   setPosition(playerId: string, position: Vec3): boolean {
     const pl = this.players.get(playerId);
     if (!pl || pl.disconnected) return false;
-    pl.position = clampPlayerPosition(position, this.simulationTimeSec);
+    pl.position = clampPlayerPosition(position, this.simulationTimeSec, this.worldConfig.duneHeightScale);
     return true;
   }
 
@@ -377,7 +379,11 @@ export class Room {
         name: typeof raw.name === 'string' ? raw.name : raw.id,
         isBot: !!raw.isBot,
         race: raw.race ?? 'emberfolk',
-        position: clampPlayerPosition(raw.position ?? { x: 0, y: 0, z: 0 }, 0),
+        position: clampPlayerPosition(
+          raw.position ?? { x: 0, y: 0, z: 0 },
+          0,
+          DEFAULT_WORLD_CONFIG.duneHeightScale,
+        ),
         fuel: typeof raw.fuel === 'number' ? raw.fuel : 0.85,
         followers: Array.isArray(raw.followers) ? [...raw.followers] : [],
         relicBonus: typeof raw.relicBonus === 'number' ? raw.relicBonus : 0,

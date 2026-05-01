@@ -3,18 +3,27 @@
  *
  * What's on screen:
  *   - Endless ash/snow dune terrain (shader displacement: height + chaos with radius from origin)
- *   - Local player (race-tinted core) + glowing light sphere whose radius
- *     mirrors authoritative server radius
- *   - Other players (orange race-tinted spheres) with their own light haloes
+ *   - Dead-sun sky dome (`sky.ts`) — gradient + horizon haze + smothered sun disk
+ *   - Local player core lit by a real shadow-casting torch flame (`flameLighting.ts`):
+ *     hero `SpotLight` (one shadow map), fill `PointLight`, and a custom
+ *     additive flame shader. Flicker drives both visual flame and cast light.
+ *   - Other players: race-tinted core, plus a pooled `PointLight` per active
+ *     player from a preallocated pool. Light radius scales the `PointLight`'s
+ *     `distance` directly — bigger fuel/followers = wider illumination on
+ *     the dunes. No fake halo spheres anywhere; what you see lit IS lit.
  *   - Stranded followers (cool tone) waiting in the fog
  *   - Owned followers trail their owner with a small core
- *   - Ruins (square pillars) and relics (octahedrons) with halo when active
+ *   - Ruins (square pillars) and relics (octahedrons), warm emissive when active
  *
  * Local movement is client-side prediction; the server clamps and rebroadcasts.
+ *
+ * Graphics quality tier is passed in via the constructor and changed live
+ * via `setLightingTier`. Source of truth: the ESC menu (`options.ts`).
  */
 import * as THREE from 'three';
 import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import {
+  ASH_DUNE_DEFAULT_HEIGHT_SCALE,
   ASH_DUNE_FOLLOWER_CENTER_OFFSET,
   ASH_DUNE_OTHER_PLAYER_CENTER_OFFSET,
   ASH_DUNE_PLAYER_CENTER_OFFSET,
@@ -29,15 +38,16 @@ import {
   type Zone,
   fogDensityForZone,
 } from '@realtime-room/shared';
+import { getLabelMode, setLabelMode as persistLabelMode } from './clientSettings.js';
 import { applyAshDuneTerrainShader, getAshDuneTerrainUniforms } from './duneTerrainMaterial.js';
 import {
-  makeTooltip,
-  nextLabelMode,
-  persistLabelMode,
-  readLabelMode,
-  setTooltipText,
-  type WorldLabelMode,
-} from './tooltips.js';
+  type FlameLighting,
+  type FxTier,
+  type OtherFlame,
+  createFlameLighting,
+} from './flameLighting.js';
+import { type DeadSky, createDeadSky } from './sky.js';
+import { makeTooltip, nextLabelMode, setTooltipText, type WorldLabelMode } from './tooltips.js';
 import {
   labelFollower,
   labelGround,
@@ -76,16 +86,14 @@ export class RoomScene {
   private readonly ground: THREE.Mesh;
   private readonly groundMat: THREE.MeshStandardMaterial;
   private readonly groundTip: CSS2DObject;
-  private readonly markers = new Map<
-    string,
-    { core: THREE.Mesh; halo: THREE.Mesh; label: CSS2DObject }
-  >();
+  private readonly lighting: FlameLighting;
+  private readonly sky: DeadSky;
+  private readonly markers = new Map<string, { core: THREE.Mesh; label: CSS2DObject }>();
   private readonly followerMeshes = new Map<string, { mesh: THREE.Mesh; label: CSS2DObject }>();
   private readonly ruinMeshes = new Map<string, { mesh: THREE.Mesh; label: CSS2DObject }>();
   private readonly relicMeshes = new Map<string, { mesh: THREE.Mesh; label: CSS2DObject }>();
   private readonly localGroup = new THREE.Group();
   private readonly localCore: THREE.Mesh;
-  private readonly localHalo: THREE.Mesh;
   private readonly localLabel: CSS2DObject;
   private readonly keys = new Set<string>();
   private readonly callbacks: SceneCallbacks;
@@ -97,9 +105,11 @@ export class RoomScene {
   private readonly moveInterval = 1 / 20;
   private rafHandle = 0;
   private currentZone: Zone = 'safe';
-  private labelMode: WorldLabelMode = readLabelMode();
+  private labelMode: WorldLabelMode = getLabelMode();
   /** Latest snapshot for label text when `labelMode` changes. */
   private lastSnap: RoomSnapshot | null = null;
+  /** Matches `worldConfig.duneHeightScale` (shader + CPU surface sampling). */
+  private duneHeightScale = ASH_DUNE_DEFAULT_HEIGHT_SCALE;
   /** Orbit yaw (rad) around world +Y through the player. */
   private camYaw = 0;
   /** Pitch (rad) above the horizontal xz plane through the player. */
@@ -112,7 +122,7 @@ export class RoomScene {
   /** Latest ruins seen so the F key can target the closest one. */
   private knownRuins: RuinSnapshot[] = [];
 
-  constructor(canvas: HTMLCanvasElement, callbacks: SceneCallbacks) {
+  constructor(canvas: HTMLCanvasElement, callbacks: SceneCallbacks, initialTier: FxTier) {
     this.canvas = canvas;
     this.callbacks = callbacks;
 
@@ -134,10 +144,14 @@ export class RoomScene {
     this.camera.lookAt(0, 0, 0);
 
     this.clock = new THREE.Clock();
-    this.scene.add(new THREE.AmbientLight(0x303a55, 0.45));
-    const dir = new THREE.DirectionalLight(0x93a4c8, 0.4);
-    dir.position.set(20, 60, 30);
-    this.scene.add(dir);
+
+    this.sky = createDeadSky(this.scene);
+    this.lighting = createFlameLighting(this.scene, this.renderer, initialTier);
+    // Stored convention: sky's `uSunDir` points TOWARD the sun, lighting's
+    // `setSunDirection` takes the FROM-the-sun vector. They are inverses.
+    const towardSun = new THREE.Vector3(0.35, 0.55, -0.4).normalize();
+    this.sky.setSunDirection(towardSun);
+    this.lighting.setSunDirection(towardSun.clone().negate());
 
     const groundGeom = new THREE.PlaneGeometry(3600, 3600, 320, 320);
     this.groundMat = new THREE.MeshStandardMaterial({
@@ -150,32 +164,27 @@ export class RoomScene {
     this.ground = new THREE.Mesh(groundGeom, this.groundMat);
     this.ground.rotation.x = -Math.PI / 2;
     this.ground.position.y = -2;
+    this.ground.receiveShadow = true;
     this.scene.add(this.ground);
 
     const coreGeom = new THREE.SphereGeometry(0.75, 22, 18);
     const coreMat = new THREE.MeshStandardMaterial({
-      color: RACE_PROFILES.emberfolk.lightColor,
+      color: 0x1a1620,
       emissive: RACE_PROFILES.emberfolk.lightColor,
-      emissiveIntensity: 1.2,
-      metalness: 0.1,
-      roughness: 0.4,
+      emissiveIntensity: 0.3,
+      metalness: 0.2,
+      roughness: 0.55,
     });
     this.localCore = new THREE.Mesh(coreGeom, coreMat);
-    const haloGeom = new THREE.SphereGeometry(1, 24, 16);
-    const haloMat = new THREE.MeshBasicMaterial({
-      color: RACE_PROFILES.emberfolk.lightColor,
-      transparent: true,
-      opacity: 0.12,
-      depthWrite: false,
-    });
-    this.localHalo = new THREE.Mesh(haloGeom, haloMat);
+    this.localCore.castShadow = true;
+    this.localCore.receiveShadow = true;
     this.localGroup.add(this.localCore);
-    this.localGroup.add(this.localHalo);
     this.localLabel = makeTooltip('');
     this.localLabel.position.set(0, 1.05, 0);
     this.localCore.add(this.localLabel);
     this.localGroup.position.copy(this.localPos);
     this.scene.add(this.localGroup);
+    this.lighting.setLocalAttachment(this.localGroup, this.localRace);
 
     this.labelRenderer = new CSS2DRenderer();
     const parent = this.canvas.parentElement ?? document.body;
@@ -210,20 +219,23 @@ export class RoomScene {
   setLocalRace(race: Race): void {
     this.localRace = race;
     const color = new THREE.Color(RACE_PROFILES[race].lightColor);
-    (this.localCore.material as THREE.MeshStandardMaterial).color.copy(color);
     (this.localCore.material as THREE.MeshStandardMaterial).emissive.copy(color);
-    (this.localHalo.material as THREE.MeshBasicMaterial).color.copy(color);
+    this.lighting.setRace(race);
   }
 
-  getLabelMode(): WorldLabelMode {
-    return this.labelMode;
+  setLightingTier(tier: FxTier): void {
+    this.lighting.setTier(tier);
   }
 
-  private setLabelMode(mode: WorldLabelMode): void {
+  setLabelMode(mode: WorldLabelMode): void {
     this.labelMode = mode;
     persistLabelMode(mode);
     this.syncLabelLayerVisibility();
     this.refreshLabelTexts();
+  }
+
+  getLabelMode(): WorldLabelMode {
+    return this.labelMode;
   }
 
   private syncLabelLayerVisibility(): void {
@@ -270,6 +282,13 @@ export class RoomScene {
     }
   }
 
+  /** Keep terrain mesh and analytic `surfaceYAt` in sync with the server `WorldConfig`. */
+  setDuneHeightScale(scale: number): void {
+    this.duneHeightScale = scale;
+    const u = getAshDuneTerrainUniforms(this.groundMat);
+    if (u) u.uDuneHeightScale.value = scale;
+  }
+
   /** First snapshot after join: snap camera to server position. */
   syncLocalFromServer(pos: Vec3): void {
     this.localPos.set(pos.x, pos.y, pos.z);
@@ -278,70 +297,71 @@ export class RoomScene {
   }
 
   applySnapshot(snap: RoomSnapshot): void {
+    this.setDuneHeightScale(snap.worldConfig.duneHeightScale);
     this.knownRuins = snap.ruins;
 
-    // Players + their light haloes.
+    // Players: a small lit core mesh + a real PointLight whose `distance`
+    // tracks `lightRadius`. No fake halo spheres — wider radius means the
+    // actual cast light reaches farther.
     const seenPlayers = new Set<string>();
+    const otherFlames: OtherFlame[] = [];
     for (const p of snap.players) {
       seenPlayers.add(p.id);
       if (p.id === this.playerId) {
         this.localLightRadius = p.lightRadius;
-        this.currentZone = p.zone;
-        this.scene.fog = new THREE.FogExp2(0x111522, fogDensityForZone(p.zone));
-        this.renderer.setClearColor(zoneClearColor(p.zone), 1);
-        this.groundMat.emissive.setHex(zoneGroundColor(p.zone));
+        this.lighting.setLocalRadius(p.lightRadius);
+        if (p.zone !== this.currentZone) {
+          this.currentZone = p.zone;
+          this.scene.fog = new THREE.FogExp2(0x111522, fogDensityForZone(p.zone));
+          this.renderer.setClearColor(zoneClearColor(p.zone), 1);
+          this.groundMat.emissive.setHex(zoneGroundColor(p.zone));
+          this.sky.setZoneTone(p.zone);
+          this.lighting.setZoneIntensity(zoneIntensityScale(p.zone));
+        }
         continue;
       }
       let entry = this.markers.get(p.id);
       const profile = RACE_PROFILES[p.race];
       if (!entry) {
         const coreMat = new THREE.MeshStandardMaterial({
-          color: profile.lightColor,
+          color: 0x1a1620,
           emissive: profile.lightColor,
-          emissiveIntensity: 0.9,
-          metalness: 0.1,
-          roughness: 0.45,
+          emissiveIntensity: 0.25,
+          metalness: 0.2,
+          roughness: 0.55,
         });
         const core = new THREE.Mesh(new THREE.SphereGeometry(0.55, 18, 14), coreMat);
-        const haloMat = new THREE.MeshBasicMaterial({
-          color: profile.lightColor,
-          transparent: true,
-          opacity: 0.1,
-          depthWrite: false,
-        });
-        const halo = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), haloMat);
+        core.castShadow = true;
+        core.receiveShadow = true;
         const label = makeTooltip('');
         label.position.set(0, 0.88, 0);
         core.add(label);
         this.scene.add(core);
-        this.scene.add(halo);
-        entry = { core, halo, label };
+        entry = { core, label };
         this.markers.set(p.id, entry);
       } else {
         const coreMat = entry.core.material as THREE.MeshStandardMaterial;
-        coreMat.color.setHex(profile.lightColor);
         coreMat.emissive.setHex(profile.lightColor);
-        const haloMat = entry.halo.material as THREE.MeshBasicMaterial;
-        haloMat.color.setHex(profile.lightColor);
       }
       entry.core.position.set(
         p.position.x,
         this.surfaceYAt(p.position.x, p.position.z) + ASH_DUNE_OTHER_PLAYER_CENTER_OFFSET,
         p.position.z,
       );
-      entry.halo.position.copy(entry.core.position);
-      const r = Math.max(1, p.lightRadius);
-      entry.halo.scale.setScalar(r);
+      otherFlames.push({
+        id: p.id,
+        position: entry.core.position,
+        color: profile.lightColor,
+        lightRadius: Math.max(1, p.lightRadius),
+      });
     }
+    this.lighting.setOtherFlames(otherFlames);
     for (const [id, entry] of this.markers) {
       if (seenPlayers.has(id)) continue;
       entry.core.remove(entry.label);
       this.scene.remove(entry.core);
-      this.scene.remove(entry.halo);
       entry.core.geometry.dispose();
       (entry.core.material as THREE.Material).dispose();
-      entry.halo.geometry.dispose();
-      (entry.halo.material as THREE.Material).dispose();
       this.markers.delete(id);
     }
 
@@ -361,13 +381,15 @@ export class RoomScene {
       const color = stranded ? 0x668fff : 0xffd6a8;
       if (!entry) {
         const mat = new THREE.MeshStandardMaterial({
-          color,
+          color: 0x14121a,
           emissive: color,
-          emissiveIntensity: stranded ? 0.7 : 1.0,
+          emissiveIntensity: stranded ? 0.4 : 0.7,
           metalness: 0.1,
           roughness: 0.55,
         });
         const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.32, 12, 10), mat);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
         const label = makeTooltip('');
         label.position.set(0, 0.52, 0);
         mesh.add(label);
@@ -376,9 +398,8 @@ export class RoomScene {
         this.followerMeshes.set(f.id, entry);
       } else {
         const mat = entry.mesh.material as THREE.MeshStandardMaterial;
-        mat.color.setHex(color);
         mat.emissive.setHex(color);
-        mat.emissiveIntensity = stranded ? 0.7 : 1.0;
+        mat.emissiveIntensity = stranded ? 0.4 : 0.7;
       }
       entry.mesh.position.set(
         f.position.x,
@@ -411,6 +432,8 @@ export class RoomScene {
           roughness: 0.5,
         });
         const mesh = new THREE.Mesh(new THREE.BoxGeometry(2, RUIN_HEIGHT, 2), mat);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
         const label = makeTooltip('');
         label.position.set(0, RUIN_HEIGHT / 2 + 0.45, 0);
         mesh.add(label);
@@ -450,6 +473,7 @@ export class RoomScene {
           opacity: r.claimed ? 0.3 : 1.0,
         });
         const mesh = new THREE.Mesh(new THREE.OctahedronGeometry(0.9, 0), mat);
+        mesh.castShadow = true;
         const label = makeTooltip('');
         label.position.set(0, 1.05, 0);
         mesh.add(label);
@@ -553,7 +577,7 @@ export class RoomScene {
   }
 
   private surfaceYAt(x: number, z: number): number {
-    return ashDuneSurfaceWorldY(x, z, this.dunePhaseSeconds());
+    return ashDuneSurfaceWorldY(x, z, this.dunePhaseSeconds(), { heightScale: this.duneHeightScale });
   }
 
   private snapLocalYToDune(): void {
@@ -585,6 +609,9 @@ export class RoomScene {
     if (duneU) {
       duneU.uTime.value += dt;
     }
+    const elapsed = this.clock.elapsedTime;
+    this.sky.uniforms.uTime.value = elapsed;
+    this.lighting.update(dt, elapsed);
 
     const strafe = (this.keys.has('KeyD') ? 1 : 0) - (this.keys.has('KeyA') ? 1 : 0);
     const forward = (this.keys.has('KeyW') ? 1 : 0) - (this.keys.has('KeyS') ? 1 : 0);
@@ -601,7 +628,7 @@ export class RoomScene {
     this.snapLocalYToDune();
     this.localGroup.position.copy(this.localPos);
 
-    this.localHalo.scale.setScalar(Math.max(1.0, this.localLightRadius));
+    this.lighting.setLocalRadius(Math.max(1.0, this.localLightRadius));
 
     this.moveAccum += dt;
     while (this.moveAccum >= this.moveInterval) {
@@ -655,11 +682,8 @@ export class RoomScene {
     for (const entry of this.markers.values()) {
       entry.core.remove(entry.label);
       this.scene.remove(entry.core);
-      this.scene.remove(entry.halo);
       entry.core.geometry.dispose();
       (entry.core.material as THREE.Material).dispose();
-      entry.halo.geometry.dispose();
-      (entry.halo.material as THREE.Material).dispose();
     }
     this.markers.clear();
     for (const e of this.followerMeshes.values()) {
@@ -696,7 +720,22 @@ export class RoomScene {
     this.localGroup.clear();
     this.ground.geometry.dispose();
     this.groundMat.dispose();
+    this.lighting.dispose();
+    this.sky.dispose();
     this.renderer.dispose();
+  }
+}
+
+function zoneIntensityScale(zone: Zone): number {
+  switch (zone) {
+    case 'safe':
+      return 1;
+    case 'grey':
+      return 0.78;
+    case 'deep':
+      return 0.55;
+    case 'dead':
+      return 0.35;
   }
 }
 

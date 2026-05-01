@@ -26,6 +26,15 @@ export const ASH_DUNE_RUIN_CENTER_OFFSET = 3;
 /** Relic octahedron resting above sand. */
 export const ASH_DUNE_RELIC_CENTER_OFFSET = 0.55;
 
+/** Used when no {@link WorldConfig.duneHeightScale} is in scope (must match Zod default on `WorldConfig`). */
+export const ASH_DUNE_DEFAULT_HEIGHT_SCALE = 2.8;
+
+/** Optional overrides for {@link ashDuneElevation} / {@link ashDuneSurfaceWorldY}. */
+export interface AshDuneSampleOptions {
+  readonly wind?: { readonly x: number; readonly z: number };
+  readonly heightScale?: number;
+}
+
 function fract(x: number): number {
   return x - Math.floor(x);
 }
@@ -89,8 +98,10 @@ export function ashDuneElevation(
   x: number,
   z: number,
   timeSeconds: number,
-  wind: { readonly x: number; readonly z: number } = ASH_DUNE_DEFAULT_WIND_XZ,
+  opts?: AshDuneSampleOptions,
 ): number {
+  const wind = opts?.wind ?? ASH_DUNE_DEFAULT_WIND_XZ;
+  const heightScale = opts?.heightScale ?? ASH_DUNE_DEFAULT_HEIGHT_SCALE;
   const r = Math.hypot(x, z);
   let depth = smoothstep(0, 420, r);
   depth = Math.pow(depth, 1.15);
@@ -133,14 +144,14 @@ export function ashDuneElevation(
   const chop = duneFbm(px * 0.028 + timeSeconds * 0.03, pz * 0.028 - timeSeconds * 0.021);
   h += chop * (2.2 * depth * depth);
 
-  return h;
+  return h * heightScale;
 }
 
 export function ashDuneSurfaceWorldY(
   x: number,
   z: number,
   timeSeconds: number,
-  wind: { readonly x: number; readonly z: number } = ASH_DUNE_DEFAULT_WIND_XZ,
+  opts?: AshDuneSampleOptions,
 ): number {
-  return ASH_DUNE_GROUND_BASE_Y + ashDuneElevation(x, z, timeSeconds, wind);
+  return ASH_DUNE_GROUND_BASE_Y + ashDuneElevation(x, z, timeSeconds, opts);
 }

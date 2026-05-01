@@ -5,6 +5,7 @@
  */
 import { io, type Socket } from 'socket.io-client';
 import {
+  DEFAULT_WORLD_CONFIG,
   EVT,
   PROTOCOL_VERSION,
   RoomSnapshotSchema,
@@ -111,7 +112,9 @@ export class Bot {
       elapsed: this.elapsed,
     };
     const out = this.opts.behavior.tick(dt, ctx);
-    const move: ClientMove = { position: clampPlayerPosition(out.position, this.elapsed) };
+    const move: ClientMove = {
+      position: clampPlayerPosition(out.position, this.elapsed, DEFAULT_WORLD_CONFIG.duneHeightScale),
+    };
     this.socket.emit(EVT.client.move, move);
     if (out.rescueFollowerId) {
       const rescue: ClientRescueIntent = { followerId: out.rescueFollowerId };

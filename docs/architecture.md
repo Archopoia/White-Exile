@@ -43,7 +43,7 @@ The server owns:
 - **Caravans** (recomputed each tick from light-field overlap)
 - **Settings** (shared room note) + monotonic **tick** counter
 
-Clients send **intents** only: `move`, `roomSettingsPatch`, `rescue`, `activateRuin`. Every payload is validated with Zod. `move` positions are accepted as `Vec3` but the room applies `clampPlayerPosition` (snap inside the play sphere, then Y onto the shared ash-dune surface plus avatar offset) for humans, restored players, external bots, and internal ghosts.
+Clients send **intents** only: `move`, `roomSettingsPatch`, `rescue`, `activateRuin`. Every payload is validated with Zod. `move` positions are accepted as `Vec3` but the room applies `clampPlayerPosition` (snap inside the play sphere, then Y onto the shared ash-dune surface plus avatar offset) for humans, restored players, external bots, and internal ghosts. Dune relief amplitude is controlled by `WorldConfig.duneHeightScale` (broadcast in welcome + snapshots; client shader uses the same factor).
 
 ## Wire protocol
 
@@ -75,9 +75,13 @@ Pure-data results (`derived`, `caravans`, counters) feed `Room.snapshot()`.
 ## Client
 
 - [`scene.ts`](../apps/client/src/scene.ts) renders ground + grid, race-tinted local core with a halo whose scale tracks the server's `lightRadius`, race-tinted markers + haloes for other players, follower spheres, ruin pillars (warm glow when activated), and rotating relic octahedrons. CSS2D labels (**T** = off → keywords → full) use [`worldLabels.ts`](../apps/client/src/worldLabels.ts) and [`tooltips.ts`](../apps/client/src/tooltips.ts) for mode persistence.
-- Fog density is set per zone using `fogDensityForZone`.
+- Lighting model is "dead sun under thick fog":
+  - [`sky.ts`](../apps/client/src/sky.ts) — back-faced sphere with a custom shader (height gradient + horizon haze + smothered sun disk + drifting noise band). Reacts to zone via `setZoneTone`.
+  - [`flameLighting.ts`](../apps/client/src/flameLighting.ts) — `HemisphereLight` (cool sky / warm ash ground), one shadow-casting `DirectionalLight` (the dead sun, ortho shadow camera tracks the player), one shadow-casting `PointLight` on the local player (radial cube shadow), and a preallocated pool of 8 `PointLight`s for other players' flames (the first 3 cast shadows on `high`). Each "flame" is a custom additive shader on crossed quads with vertical noise + per-id flicker; the same flicker drives the corresponding light intensity so visual and lit shadow agree.
+  - Graphics quality tier (`low` / `med` / `high`) is set in the ESC menu and toggles shadows + map sizes live without recreating lights. Backed by `localStorage.rtRoom.fx`; **no URL parameter** exists for it (or any other tunable).
+- Fog density is still set per zone using `fogDensityForZone`; sky tone, ground emissive, hemisphere intensity, and clear color also shift per zone via `zoneIntensityScale`/`zoneClearColor`/`zoneGroundColor` in [`scene.ts`](../apps/client/src/scene.ts).
 - Local prediction for movement; server clamps and rebroadcasts.
-- **Esc** opens the Session dialog ([`options.ts`](../apps/client/src/options.ts)): room note plus the full control reference. In-world labels can still surface **R** / **F** when you are close to a stranded follower (inside your light) or an inactive ruin.
+- **Esc** opens a compact tabbed Session dialog ([`options.ts`](../apps/client/src/options.ts)): identity, graphics (quality + labels), and a short controls reference. The room note is HUD-only. In-world labels can still surface **R** / **F** when you are close to a stranded follower (inside your light) or an inactive ruin.
 
 ## Dev persistence
 

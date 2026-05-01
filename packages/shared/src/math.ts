@@ -3,6 +3,7 @@
  */
 
 import {
+  ASH_DUNE_DEFAULT_HEIGHT_SCALE,
   ASH_DUNE_PLAYER_CENTER_OFFSET,
   ashDuneSurfaceWorldY,
 } from './ashDuneTerrain.js';
@@ -51,8 +52,11 @@ export function clampToPlayVolume<T extends { x: number; y: number; z: number }>
 export function clampPlayerPosition<T extends { x: number; y: number; z: number }>(
   point: T,
   simulationTimeSec: number,
+  duneHeightScale: number = ASH_DUNE_DEFAULT_HEIGHT_SCALE,
 ): { x: number; y: number; z: number } {
   const p = clampToPlayVolume(point);
-  const y = ashDuneSurfaceWorldY(p.x, p.z, simulationTimeSec) + ASH_DUNE_PLAYER_CENTER_OFFSET;
+  const y =
+    ashDuneSurfaceWorldY(p.x, p.z, simulationTimeSec, { heightScale: duneHeightScale }) +
+    ASH_DUNE_PLAYER_CENTER_OFFSET;
   return { x: p.x, y, z: p.z };
 }
