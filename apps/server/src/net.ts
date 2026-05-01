@@ -51,7 +51,8 @@ export function attachSocketServer(
 function handleConnection(socket: Socket, room: Room, io: IOServer): void {
   const traceId = randomUUID();
   const log = childLogger({ connId: socket.id, traceId, roomId: room.id });
-  log.info({ evt: 'socket.connected' }, 'socket connected');
+  // High-volume with many bots; use LOG_LEVEL=debug to see every connect.
+  log.debug({ evt: 'socket.connected' }, 'socket connected');
 
   const limits = {
     cursor: new TokenBucket({ ratePerSec: 48, burst: 96 }),
@@ -106,10 +107,16 @@ function handleConnection(socket: Socket, room: Room, io: IOServer): void {
     }
 
     const player = room.get(playerId);
-    log.info(
-      { evt: resumed ? 'player.resumed' : 'player.joined', playerId, name: player?.name, isBot: player?.isBot, resumed },
-      resumed ? 'player resumed' : 'player joined',
-    );
+    const joinPayload = {
+      evt: resumed ? 'player.resumed' : 'player.joined',
+      playerId,
+      name: player?.name,
+      isBot: player?.isBot,
+      resumed,
+    } as const;
+    const joinMsg = resumed ? 'player resumed' : 'player joined';
+    if (player?.isBot) log.debug(joinPayload, joinMsg);
+    else log.info(joinPayload, joinMsg);
     const welcome: ServerWelcome = {
       playerId,
       traceId,
@@ -147,15 +154,14 @@ function handleConnection(socket: Socket, room: Room, io: IOServer): void {
     }
     const result = room.applyBurst(playerId, parsed.data.intensity ?? 1);
     if (!result.ok) {
-      log.info(
-        {
-          evt: 'intent.dropBurst.denied',
-          playerId,
-          reason: result.reason ?? 'unknown',
-          intensity: parsed.data.intensity,
-        },
-        'burst denied',
-      );
+      const deniedPayload = {
+        evt: 'intent.dropBurst.denied',
+        playerId,
+        reason: result.reason ?? 'unknown',
+        intensity: parsed.data.intensity,
+      };
+      if (room.get(playerId)?.isBot) log.debug(deniedPayload, 'burst denied');
+      else log.info(deniedPayload, 'burst denied');
       return;
     }
     const evt: ServerEventBurst = {
@@ -164,16 +170,15 @@ function handleConnection(socket: Socket, room: Room, io: IOServer): void {
       intensity: parsed.data.intensity ?? 1,
     };
     io.to(ROOM_ID).emit(EVT.server.burst, evt);
-    log.info(
-      {
-        evt: 'intent.dropBurst',
-        playerId,
-        dustAdded: result.dustAdded,
-        intensity: parsed.data.intensity ?? 1,
-        origin: parsed.data.position,
-      },
-      'burst accepted',
-    );
+    const burstPayload = {
+      evt: 'intent.dropBurst',
+      playerId,
+      dustAdded: result.dustAdded,
+      intensity: parsed.data.intensity ?? 1,
+      origin: parsed.data.position,
+    };
+    if (room.get(playerId)?.isBot) log.debug(burstPayload, 'burst accepted');
+    else log.info(burstPayload, 'burst accepted');
   });
 
   socket.on(EVT.client.extract, (raw: unknown) => {
@@ -190,15 +195,14 @@ function handleConnection(socket: Socket, room: Room, io: IOServer): void {
     }
     const result = room.applyExtract(playerId);
     if (!result.ok) {
-      log.info(
-        {
-          evt: 'intent.extract.denied',
-          playerId,
-          reason: result.reason ?? 'unknown',
-          surfacePoint: parsed.data.surfacePoint,
-        },
-        'extract denied',
-      );
+      const extDenied = {
+        evt: 'intent.extract.denied',
+        playerId,
+        reason: result.reason ?? 'unknown',
+        surfacePoint: parsed.data.surfacePoint,
+      };
+      if (room.get(playerId)?.isBot) log.debug(extDenied, 'extract denied');
+      else log.info(extDenied, 'extract denied');
       return;
     }
     const evt: ServerEventEssence = {
@@ -207,16 +211,15 @@ function handleConnection(socket: Socket, room: Room, io: IOServer): void {
       newTotal: result.newEssence,
     };
     socket.emit(EVT.server.essence, evt);
-    log.info(
-      {
-        evt: 'intent.extract',
-        playerId,
-        essenceGained: result.essenceGained,
-        newTotal: result.newEssence,
-        surfacePoint: parsed.data.surfacePoint,
-      },
-      'extract accepted',
-    );
+    const extOk = {
+      evt: 'intent.extract',
+      playerId,
+      essenceGained: result.essenceGained,
+      newTotal: result.newEssence,
+      surfacePoint: parsed.data.surfacePoint,
+    };
+    if (room.get(playerId)?.isBot) log.debug(extOk, 'extract accepted');
+    else log.info(extOk, 'extract accepted');
   });
 
   socket.on('disconnect', (reason) => {
@@ -224,9 +227,11 @@ function handleConnection(socket: Socket, room: Room, io: IOServer): void {
       // Soft-disconnect: keep the record so refresh / HMR / server-restart
       // can resume via `resumeToken`. `pruneDisconnected` finalizes.
       const marked = room.markDisconnected(playerId);
-      log.info({ evt: 'player.disconnected', playerId, reason, marked }, 'player disconnected');
+      const discPayload = { evt: 'player.disconnected', playerId, reason, marked };
+      if (room.get(playerId)?.isBot) log.debug(discPayload, 'player disconnected');
+      else log.info(discPayload, 'player disconnected');
     } else {
-      log.info({ evt: 'socket.disconnected', reason }, 'socket disconnected');
+      log.debug({ evt: 'socket.disconnected', reason }, 'socket disconnected');
     }
   });
 

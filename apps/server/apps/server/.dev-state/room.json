@@ -1,6 +1,6 @@
 {
   "id": "default",
-  "totalDust": 3371.450000001523,
+  "totalDust": 4071.1000000026606,
   "players": [
     {
       "id": "45c7e6e0-1b7f-4b43-843f-a330d03307f3",
@@ -8,149 +8,149 @@
       "isBot": false,
       "tier": "dust",
       "position": {
-        "x": -11.165793312411509,
-        "y": 11.22183746452188,
-        "z": 30.809851019499423
+        "x": 18.121737590843086,
+        "y": -15.587282406485945,
+        "z": -30.25609587718349
       },
-      "essence": 128.88016979347822,
-      "totalDustContributed": 141.69999999999578,
-      "lastBurstMs": 1777642827837,
-      "lastExtractMs": 1777642823790,
-      "disconnected": false,
-      "disconnectedAt": 0
-    },
-    {
-      "id": "e9b4ff69-08d8-40a7-8bb4-c5abed1e53d4",
-      "name": "BOT_afk_03",
-      "isBot": true,
-      "tier": "dust",
-      "position": {
-        "x": -2.657524959626128,
-        "y": 12.352442387491465,
-        "z": 12.820090801264564
-      },
-      "essence": 25.025000000000098,
-      "totalDustContributed": 27.500000000000256,
+      "essence": 164.75699497327696,
+      "totalDustContributed": 174.40000000000322,
       "lastBurstMs": 0,
-      "lastExtractMs": 0,
+      "lastExtractMs": 1777642909122,
       "disconnected": false,
       "disconnectedAt": 0
     },
     {
-      "id": "c18ed6b2-0325-4a0a-a82f-c4553a0fcb04",
-      "name": "BOT_wanderer_04",
-      "isBot": true,
-      "tier": "dust",
-      "position": {
-        "x": -14.994316578667837,
-        "y": -5.627886961051422,
-        "z": 4.606401853365827
-      },
-      "essence": 24.9770000000001,
-      "totalDustContributed": 48.44999999999965,
-      "lastBurstMs": 1777642824729,
-      "lastExtractMs": 0,
-      "disconnected": false,
-      "disconnectedAt": 0
-    },
-    {
-      "id": "5ac0c408-01ac-4ed1-9454-7915e78a468a",
-      "name": "BOT_orbiter_05",
-      "isBot": true,
-      "tier": "dust",
-      "position": {
-        "x": -16.163439687348525,
-        "y": -3.601672161543993,
-        "z": -14.866863336377792
-      },
-      "essence": 24.931000000000097,
-      "totalDustContributed": 27.400000000000254,
-      "lastBurstMs": 0,
-      "lastExtractMs": 0,
-      "disconnected": false,
-      "disconnectedAt": 0
-    },
-    {
-      "id": "3d8c77e4-91d5-4766-b238-f70ab033d6ab",
+      "id": "aa7093dc-16d0-4425-8a78-86e5f25348e3",
       "name": "BOT_clicker_06",
       "isBot": true,
       "tier": "dust",
       "position": {
-        "x": -5.422706439428481,
-        "y": -0.7813929588555619,
-        "z": 12.88812453811672
+        "x": 8.92480155781285,
+        "y": 14.883146645916515,
+        "z": 3.9191873730076634
       },
-      "essence": 24.8845000000001,
-      "totalDustContributed": 145.84999999999968,
-      "lastBurstMs": 1777642829754,
+      "essence": 7.488999999999998,
+      "totalDustContributed": 48.69999999999989,
+      "lastBurstMs": 1777642917094,
       "lastExtractMs": 0,
       "disconnected": false,
       "disconnectedAt": 0
     },
     {
-      "id": "cbba74b4-7b3a-4bb5-80c5-c854d33e1791",
+      "id": "3dee5514-c167-4640-a5dd-b48b672a72d1",
       "name": "BOT_afk_07",
       "isBot": true,
       "tier": "dust",
       "position": {
-        "x": -6.8516687532534055,
-        "y": -8.629551102407277,
-        "z": -14.233252722643275
+        "x": 13.973587360316056,
+        "y": 10.457339032553136,
+        "z": -4.402603393658794
       },
-      "essence": 24.837500000000095,
-      "totalDustContributed": 27.300000000000253,
+      "essence": 7.440999999999998,
+      "totalDustContributed": 8.14999999999998,
       "lastBurstMs": 0,
       "lastExtractMs": 0,
       "disconnected": false,
       "disconnectedAt": 0
     },
     {
-      "id": "bc515e2c-9c9e-4fd3-b047-bf1522c09f80",
+      "id": "f18f8c3a-d168-4359-b5b3-c3966e325c9c",
       "name": "BOT_wanderer_00",
       "isBot": true,
       "tier": "dust",
       "position": {
-        "x": 3.3567044039680947,
-        "y": 17.023578647102056,
-        "z": 2.267744263869364
+        "x": -3.293404079709633,
+        "y": 13.878930405822386,
+        "z": 10.974670129123584
       },
-      "essence": 24.65850000000009,
-      "totalDustContributed": 45.09999999999971,
-      "lastBurstMs": 1777642824961,
+      "essence": 7.184999999999998,
+      "totalDustContributed": 21.35000000000005,
+      "lastBurstMs": 1777642916255,
       "lastExtractMs": 0,
       "disconnected": false,
       "disconnectedAt": 0
     },
     {
-      "id": "fb178e52-67c2-48d5-9308-1e68b0b8407f",
+      "id": "5aeab181-e668-44df-9465-5c6abbe36689",
       "name": "BOT_clicker_02",
       "isBot": true,
       "tier": "dust",
       "position": {
-        "x": 15.15965148985767,
-        "y": 2.4009830506791943,
-        "z": 9.079803187806414
+        "x": -4.2625698392911895,
+        "y": 10.290720554834374,
+        "z": -13.85496063864059
       },
-      "essence": 24.65850000000009,
-      "totalDustContributed": 145.59999999999974,
-      "lastBurstMs": 1777642829614,
+      "essence": 7.1404999999999985,
+      "totalDustContributed": 42.29999999999995,
+      "lastBurstMs": 1777642916908,
       "lastExtractMs": 0,
       "disconnected": false,
       "disconnectedAt": 0
     },
     {
-      "id": "d47e9318-e736-416b-9443-0283c79ab558",
+      "id": "49aa5388-68ee-4292-aa05-cf4f21eb6f41",
+      "name": "BOT_orbiter_05",
+      "isBot": true,
+      "tier": "dust",
+      "position": {
+        "x": -2.2052002147995253,
+        "y": -11.63763024499869,
+        "z": 2.0254429678133574
+      },
+      "essence": 7.003499999999999,
+      "totalDustContributed": 7.649999999999981,
+      "lastBurstMs": 0,
+      "lastExtractMs": 0,
+      "disconnected": false,
+      "disconnectedAt": 0
+    },
+    {
+      "id": "33c3e813-869c-41c2-a0a3-a92ae67bb272",
+      "name": "BOT_afk_03",
+      "isBot": true,
+      "tier": "dust",
+      "position": {
+        "x": 9.344056018363862,
+        "y": 15.144329007714987,
+        "z": -2.708858806169203
+      },
+      "essence": 7.003499999999999,
+      "totalDustContributed": 7.649999999999981,
+      "lastBurstMs": 0,
+      "lastExtractMs": 0,
+      "disconnected": false,
+      "disconnectedAt": 0
+    },
+    {
+      "id": "651d6f98-04ac-488d-82da-f976569c5d5d",
       "name": "BOT_orbiter_01",
       "isBot": true,
       "tier": "dust",
       "position": {
-        "x": 6.692615814705412,
-        "y": 15.56866479760409,
-        "z": -12.940778490581453
+        "x": 6.614174052924865,
+        "y": 9.815448006591938,
+        "z": -8.242711854756125
       },
-      "essence": 24.524000000000086,
-      "totalDustContributed": 26.950000000000248,
+      "essence": 6.961499999999999,
+      "totalDustContributed": 7.599999999999981,
       "lastBurstMs": 0,
+      "lastExtractMs": 0,
+      "disconnected": false,
+      "disconnectedAt": 0
+    },
+    {
+      "id": "be9fbcb3-458a-43b4-9c8c-eb8d4676cf5a",
+      "name": "BOT_wanderer_04",
+      "isBot": true,
+      "tier": "dust",
+      "position": {
+        "x": 14.350534766733094,
+        "y": 8.91709932319132,
+        "z": -1.1179872044229018
+      },
+      "essence": 6.821999999999998,
+      "totalDustContributed": 14.950000000000024,
+      "lastBurstMs": 1777642915927,
       "lastExtractMs": 0,
       "disconnected": false,
       "disconnectedAt": 0

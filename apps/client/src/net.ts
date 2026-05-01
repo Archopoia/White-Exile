@@ -70,7 +70,7 @@ export class NetClient {
   private bind(): void {
     this.callbacks.onConnectionChange?.('connecting');
     this.socket.on('connect', () => {
-      debugLogger.info('socket.connect', { id: this.socket.id });
+      debugLogger.debug('socket.connect', { id: this.socket.id });
       this.callbacks.onConnectionChange?.('connected');
       const hello: ClientHello = {
         protocolVersion: PROTOCOL_VERSION,
@@ -83,7 +83,7 @@ export class NetClient {
 
     this.socket.on('disconnect', (reason) => {
       this.handshakeComplete = false;
-      debugLogger.warn('socket.disconnect', { reason });
+      debugLogger.debug('socket.disconnect', { reason });
       this.callbacks.onConnectionChange?.('disconnected');
     });
 
@@ -98,11 +98,6 @@ export class NetClient {
       debugLogger.info('welcome', {
         traceId: parsed.data.traceId,
         playerId: parsed.data.playerId,
-        resumed: parsed.data.resumed,
-      });
-      inputLog('net.welcome', {
-        playerId: parsed.data.playerId,
-        traceId: parsed.data.traceId,
         resumed: parsed.data.resumed,
       });
       this.callbacks.onWelcome?.(parsed.data);
@@ -143,14 +138,6 @@ export class NetClient {
   }
 
   sendBurst(position: Vec3, intensity = 1): void {
-    inputLog('client.intent.dropBurst', {
-      intensity,
-      x: position.x,
-      y: position.y,
-      z: position.z,
-      connected: this.socket.connected,
-      handshakeComplete: this.handshakeComplete,
-    });
     if (!this.socket.connected) {
       inputLog('client.intent.dropBurst.skipped', { reason: 'socket_disconnected' });
       return;
@@ -164,13 +151,6 @@ export class NetClient {
   }
 
   sendExtract(surfacePoint: Vec3): void {
-    inputLog('client.intent.extract', {
-      x: surfacePoint.x,
-      y: surfacePoint.y,
-      z: surfacePoint.z,
-      connected: this.socket.connected,
-      handshakeComplete: this.handshakeComplete,
-    });
     if (!this.socket.connected) {
       inputLog('client.intent.extract.skipped', { reason: 'socket_disconnected' });
       return;

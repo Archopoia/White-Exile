@@ -2,9 +2,9 @@
  * Lightweight client-side debug logger.
  *
  * Disabled by default; opt in via `?debug=1`, `localStorage.tutelaryDebug=1`,
- * or VITE_DEBUG=1. Output goes through console.* with a stable prefix and a
- * structured payload so Cursor can grep traces or correlate with the server's
- * traceId.
+ * or `VITE_DEBUG=1`. When disabled, only **errors** print; info/warn/debug are
+ * suppressed so the console stays readable while `[tutelary-input]` covers
+ * local player actions.
  */
 
 type Level = 'debug' | 'info' | 'warn' | 'error';
@@ -25,7 +25,8 @@ const enabled = readFlag();
 const PREFIX = '[tutelary-client]';
 
 function emit(level: Level, evt: string, data?: Record<string, unknown>): void {
-  if (!enabled && level === 'debug') return;
+  // Quiet by default: only errors always print. Opt in for info/warn/debug.
+  if (!enabled && level !== 'error') return;
   const payload = data ? { evt, ...data } : { evt };
   switch (level) {
     case 'error':

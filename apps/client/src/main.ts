@@ -193,11 +193,11 @@ const running = boot();
 // ---------------------------------------------------------------------------
 if (import.meta.hot) {
   import.meta.hot.dispose(() => {
-    inputLog('hmr.dispose', {});
+    debugLogger.debug('hmr.dispose', {});
     running.dispose();
   });
   import.meta.hot.accept(() => {
     // Vite re-runs this module after our dispose hook fires; nothing to do here.
-    inputLog('hmr.accepted', {});
+    debugLogger.debug('hmr.accepted', {});
   });
 }

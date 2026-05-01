@@ -23,7 +23,6 @@ import {
   type Vec3,
   planetRadiusFromTotalDust,
 } from '@tutelary/shared';
-import { debugLogger } from './debug.js';
 import { inputLog } from './inputLog.js';
 
 interface SpiritMarker {
@@ -271,7 +270,6 @@ export class TutelaryScene {
       inputLog('scene.pointer.click', { action: 'extract', hit: planetHit.toArray() });
       this.callbacks.onExtract({ x: planetHit.x, y: planetHit.y, z: planetHit.z });
       this.spawnDustBurst(planetHit, 0.7);
-      debugLogger.debug('input.extract.click', { surface: planetHit.toArray() });
       return;
     }
     inputLog('scene.pointer.click', { action: 'burst' });
@@ -306,16 +304,12 @@ export class TutelaryScene {
     const pos = { x: this.worldPos.x, y: this.worldPos.y, z: this.worldPos.z };
     this.callbacks.onBurst(pos, 1);
     this.spawnDustBurst(this.worldPos, 1);
-    inputLog('scene.vfx.burst_local', { pos });
-    debugLogger.debug('input.burst', { pos });
   }
 
   private emitExtractAtFeet(): void {
     const surface = this.spiritPos.clone().multiplyScalar(this.currentRadius);
     this.callbacks.onExtract({ x: surface.x, y: surface.y, z: surface.z });
     this.spawnDustBurst(surface, 0.7);
-    inputLog('scene.vfx.extract_local', { surface: surface.toArray() });
-    debugLogger.debug('input.extract.key', { surface: surface.toArray() });
   }
 
   private raycastPlanet(): THREE.Vector3 | null {

@@ -27,7 +27,7 @@
 - `socket.connected` / `socket.disconnected` — raw connection lifecycle
 - `player.joined` / `player.left` — post-hello logical lifecycle
 - `dropBurst.rate_limit` / `extract.rate_limit` — token bucket rejected an intent
-- `intent.dropBurst` / `intent.extract` — **accepted** burst or extract (see `dustAdded`, `essenceGained`, `origin` / `surfacePoint`)
+- `intent.dropBurst` / `intent.extract` — **accepted** burst or extract for **human** clients at `info`; bot traffic uses `debug` only (set `LOG_LEVEL=debug` to see bots)
 - `intent.dropBurst.denied` / `intent.extract.denied` — server cooldown or other deny (`reason`)
 - `intent.dropBurst.ignored` / `intent.extract.ignored` — client sent before hello (`before_hello`)
 - `cursorMove.invalid`, `dropBurst.invalid`, `extract.invalid` — Zod parse failed
@@ -85,7 +85,7 @@ rg 'rate_limit' logs/dev.ndjson
 
 ## Client debug logger
 
-`apps/client/src/debug.ts` exposes `debugLogger` with a `[tutelary-client]` prefix.
+`apps/client/src/debug.ts` exposes `debugLogger` with a `[tutelary-client]` prefix. When debug mode is **off**, only **errors** print — `info`/`warn`/`debug` are suppressed so the console is not flooded during normal play.
 
 Enable verbose logs by any of:
 
