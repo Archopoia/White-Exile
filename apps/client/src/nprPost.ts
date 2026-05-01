@@ -274,6 +274,14 @@ const FRAG = /* glsl */ `
     if (n1 > 0.0) { vec3 mu = m1 / n1; float v = dot(s1 / n1 - mu * mu, vec3(1.0)); if (v < minVar) { minVar = v; kResult = mu; } }
     if (n2 > 0.0) { vec3 mu = m2 / n2; float v = dot(s2 / n2 - mu * mu, vec3(1.0)); if (v < minVar) { minVar = v; kResult = mu; } }
     if (n3 > 0.0) { vec3 mu = m3 / n3; float v = dot(s3 / n3 - mu * mu, vec3(1.0)); if (v < minVar) { minVar = v; kResult = mu; } }
+    // Small cast shadows vs oil radius: an all-sunlit quadrant has ~0 variance and wins over
+    // edge-straddling quadrants, so kResult becomes ground colour while the centre pixel is
+    // still in umbra — reads as a bright "hole" with a dark Sobel rim. Pull bogus picks back.
+    float lcPick = posterLum(sCentre);
+    float lkPick = posterLum(kResult);
+    float darkCentre = 1.0 - smoothstep(0.055, 0.38, lcPick);
+    float wrongBright = smoothstep(0.015, 0.11, lkPick - lcPick);
+    kResult = mix(kResult, sCentre, clamp(darkCentre * wrongBright, 0.0, 1.0));
     float lt = posterLum(lit);
     float darkBoost = 1.0 + uOilDarkBoost * (1.0 - smoothstep(0.0, 0.32, lt));
     float lEdge = diffuseLumaEdge(uv, pxSz);
