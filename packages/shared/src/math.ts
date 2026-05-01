@@ -4,8 +4,7 @@
 
 import {
   ASH_DUNE_DEFAULT_HEIGHT_SCALE,
-  ASH_DUNE_PLAYER_CENTER_OFFSET,
-  ashDuneSurfaceWorldY,
+  placementSurfaceY,
 } from './ashDuneTerrain.js';
 
 /** Clamp a value to a closed range. */
@@ -46,8 +45,8 @@ export function clampToPlayVolume<T extends { x: number; y: number; z: number }>
 }
 
 /**
- * Clamp inside the play sphere, then snap Y onto the ash-dune surface (see
- * {@link ashDuneSurfaceWorldY}) plus {@link ASH_DUNE_PLAYER_CENTER_OFFSET}.
+ * Clamp inside the play sphere, then snap Y onto the ash-dune surface for the
+ * canonical local-player placement offset (see `WORLD_PLACEMENT_OFFSET.player`).
  */
 export function clampPlayerPosition<T extends { x: number; y: number; z: number }>(
   point: T,
@@ -55,8 +54,8 @@ export function clampPlayerPosition<T extends { x: number; y: number; z: number 
   duneHeightScale: number = ASH_DUNE_DEFAULT_HEIGHT_SCALE,
 ): { x: number; y: number; z: number } {
   const p = clampToPlayVolume(point);
-  const y =
-    ashDuneSurfaceWorldY(p.x, p.z, simulationTimeSec, { heightScale: duneHeightScale }) +
-    ASH_DUNE_PLAYER_CENTER_OFFSET;
+  const y = placementSurfaceY('player', p.x, p.z, simulationTimeSec, {
+    heightScale: duneHeightScale,
+  });
   return { x: p.x, y, z: p.z };
 }

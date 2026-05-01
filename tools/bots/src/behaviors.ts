@@ -4,7 +4,16 @@
  * Each tick returns the next intended position **and** any optional intents
  * (rescue, activate ruin) to be sent up. The bot wrapper handles transport.
  */
-import type { FollowerSnapshot, RoomSnapshot, RuinSnapshot, Vec3 } from '@realtime-room/shared';
+import {
+  lerpVec3,
+  nearestBy,
+  randomRingXZ,
+  vec3DistSq,
+  type FollowerSnapshot,
+  type RoomSnapshot,
+  type RuinSnapshot,
+  type Vec3,
+} from '@realtime-room/shared';
 import type { Rng } from './rng.js';
 
 export interface BehaviorContext {
@@ -28,23 +37,14 @@ export interface Behavior {
 
 const PLAY_RADIUS = 320;
 
+/**
+ * Wandering bots want a soft sphere distribution (slight Y bias) so they
+ * don't pile up on the ground plane. The Y term is a 10% squash of the ring
+ * radius — kept in callers because it's a pure aesthetic, not a physics need.
+ */
 function spherePoint(rng: Rng, radius: number): Vec3 {
-  const u = rng() * 2 - 1;
-  const theta = rng() * Math.PI * 2;
-  const r = Math.sqrt(Math.max(0, 1 - u * u));
-  return {
-    x: radius * r * Math.cos(theta),
-    y: radius * u * 0.1,
-    z: radius * r * Math.sin(theta),
-  };
-}
-
-function lerpVec3(a: Vec3, b: Vec3, t: number): Vec3 {
-  return {
-    x: a.x + (b.x - a.x) * t,
-    y: a.y + (b.y - a.y) * t,
-    z: a.z + (b.z - a.z) * t,
-  };
+  const p = randomRingXZ(rng, radius, radius);
+  return { x: p.x, y: (rng() * 2 - 1) * radius * 0.1, z: p.z };
 }
 
 function self(ctx: BehaviorContext): { position: Vec3 } | null {
@@ -58,21 +58,9 @@ function nearestStrandedFollower(
   origin: Vec3,
   withinRadius?: number,
 ): FollowerSnapshot | null {
-  if (!ctx.snapshot) return null;
-  let best: FollowerSnapshot | null = null;
-  let bestSq = withinRadius ? withinRadius * withinRadius : Infinity;
-  for (const f of ctx.snapshot.followers) {
-    if (f.ownerId !== null) continue;
-    const dx = f.position.x - origin.x;
-    const dy = f.position.y - origin.y;
-    const dz = f.position.z - origin.z;
-    const sq = dx * dx + dy * dy + dz * dz;
-    if (sq < bestSq) {
-      bestSq = sq;
-      best = f;
-    }
-  }
-  return best;
+  return ctx.snapshot
+    ? nearestBy(ctx.snapshot.followers, origin, (f) => f.ownerId === null, withinRadius)
+    : null;
 }
 
 function nearestUnactivatedRuin(
@@ -80,21 +68,9 @@ function nearestUnactivatedRuin(
   origin: Vec3,
   withinRadius?: number,
 ): RuinSnapshot | null {
-  if (!ctx.snapshot) return null;
-  let best: RuinSnapshot | null = null;
-  let bestSq = withinRadius ? withinRadius * withinRadius : Infinity;
-  for (const r of ctx.snapshot.ruins) {
-    if (r.activated) continue;
-    const dx = r.position.x - origin.x;
-    const dy = r.position.y - origin.y;
-    const dz = r.position.z - origin.z;
-    const sq = dx * dx + dy * dy + dz * dz;
-    if (sq < bestSq) {
-      bestSq = sq;
-      best = r;
-    }
-  }
-  return best;
+  return ctx.snapshot
+    ? nearestBy(ctx.snapshot.ruins, origin, (r) => !r.activated, withinRadius)
+    : null;
 }
 
 class WandererBehavior implements Behavior {
@@ -178,25 +154,16 @@ class ChaserBehavior implements Behavior {
   private current: Vec3 = { x: PLAY_RADIUS, y: 0, z: 0 };
 
   tick(dt: number, ctx: BehaviorContext): BehaviorTick {
-    let target: Vec3 | null = null;
     const snap = ctx.snapshot;
-    if (snap && snap.players.length > 1) {
-      let best: Vec3 | null = null;
-      let bestDist = Number.POSITIVE_INFINITY;
-      for (const p of snap.players) {
-        if (p.id === ctx.selfPlayerId) continue;
-        const dx = p.position.x - this.current.x;
-        const dy = p.position.y - this.current.y;
-        const dz = p.position.z - this.current.z;
-        const d = dx * dx + dy * dy + dz * dz;
-        if (d > 0.01 && d < bestDist) {
-          bestDist = d;
-          best = p.position;
-        }
-      }
-      target = best;
-    }
-    if (!target) target = spherePoint(ctx.rng, 50 + ctx.rng() * 220);
+    const other =
+      snap && snap.players.length > 1
+        ? nearestBy(
+            snap.players,
+            this.current,
+            (p) => p.id !== ctx.selfPlayerId && vec3DistSq(p.position, this.current) > 0.01,
+          )
+        : null;
+    const target = other?.position ?? spherePoint(ctx.rng, 50 + ctx.rng() * 220);
     this.current = lerpVec3(this.current, target, Math.min(1, dt * 2.8));
     return { position: this.current };
   }
@@ -222,12 +189,9 @@ class RescuerBehavior implements Behavior {
     this.current = lerpVec3(this.current, goal, Math.min(1, dt * 2.0));
     const out: BehaviorTick = { position: this.current };
     if (target && me && this.rescueCooldown <= 0) {
-      const dx = me.position.x - target.position.x;
-      const dy = me.position.y - target.position.y;
-      const dz = me.position.z - target.position.z;
-      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-      const myLight = ctx.snapshot?.players.find((p) => p.id === ctx.selfPlayerId)?.lightRadius ?? 0;
-      if (dist <= myLight) {
+      const myLight =
+        ctx.snapshot?.players.find((p) => p.id === ctx.selfPlayerId)?.lightRadius ?? 0;
+      if (vec3DistSq(me.position, target.position) <= myLight * myLight) {
         out.rescueFollowerId = target.id;
         this.rescueCooldown = 1.0;
       }

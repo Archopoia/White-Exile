@@ -35,11 +35,6 @@ const KEY_RACE = 'rtRoom.race';
 const KEY_NAME = 'rtRoom.displayName';
 const KEY_TOKEN = 'rtRoom.resumeToken';
 const KEY_FOG = 'rtRoom.fog';
-const KEY_FOG_MUL = 'rtRoom.fogMul';
-const KEY_FILL_MUL = 'rtRoom.fillMul';
-const KEY_TONE_EXPOSURE = 'rtRoom.toneExposure';
-const KEY_SKY_HAZE_MUL = 'rtRoom.skyHazeMul';
-const KEY_TORCH_REACH_MUL = 'rtRoom.torchReachMul';
 
 function readLs(key: string): string | null {
   try {
@@ -62,6 +57,26 @@ function readFloat(key: string, fallback: number): number {
   if (raw === null || raw === '') return fallback;
   const n = Number(raw);
   return Number.isFinite(n) ? n : fallback;
+}
+
+/**
+ * Build a clamped float scalar backed by `localStorage`. Returns the matching
+ * `get` / `set` pair so the public API stays stable while the body collapses
+ * to a single line per scalar.
+ */
+function defineFloatScalar(
+  key: string,
+  def: number,
+  min: number,
+  max: number,
+): { get: () => number; set: (v: number) => void } {
+  const clamp = (v: number): number => Math.max(min, Math.min(max, v));
+  return {
+    get: () => clamp(readFloat(key, def)),
+    set: (v) => {
+      writeLs(key, String(clamp(v)));
+    },
+  };
 }
 
 function isFxTier(value: unknown): value is FxTier {
@@ -103,58 +118,34 @@ export function setFogEnabled(enabled: boolean): void {
   writeLs(KEY_FOG, enabled ? '1' : '0');
 }
 
-/** Multiplier on client exponential fog density (0 = none, 2.5 = very thick). Default 1. */
-export function getFogDensityMul(): number {
-  return Math.max(0, Math.min(2.5, readFloat(KEY_FOG_MUL, CODE_DEFAULT_FOG_DENSITY_MUL)));
-}
+const fogDensity = defineFloatScalar('rtRoom.fogMul', CODE_DEFAULT_FOG_DENSITY_MUL, 0, 2.5);
+const fillLight = defineFloatScalar('rtRoom.fillMul', CODE_DEFAULT_FILL_LIGHT_MUL, 0.15, 2.75);
+const toneExposure = defineFloatScalar('rtRoom.toneExposure', CODE_DEFAULT_TONE_EXPOSURE, 0.35, 2.75);
+const skyHaze = defineFloatScalar('rtRoom.skyHazeMul', CODE_DEFAULT_SKY_HAZE_MUL, 0, 1.5);
+const torchReach = defineFloatScalar('rtRoom.torchReachMul', CODE_DEFAULT_TORCH_REACH_MUL, 0.1, 80);
 
-export function setFogDensityMul(mul: number): void {
-  const v = Math.max(0, Math.min(2.5, mul));
-  writeLs(KEY_FOG_MUL, String(v));
-}
+/** Multiplier on client exponential fog density (0 = none, 2.5 = very thick). Default 1. */
+export const getFogDensityMul = fogDensity.get;
+export const setFogDensityMul = fogDensity.set;
 
 /** Scales hemisphere + sun + ambient skylight. Default 1. */
-export function getFillLightMul(): number {
-  return Math.max(0.15, Math.min(2.75, readFloat(KEY_FILL_MUL, CODE_DEFAULT_FILL_LIGHT_MUL)));
-}
-
-export function setFillLightMul(mul: number): void {
-  const v = Math.max(0.15, Math.min(2.75, mul));
-  writeLs(KEY_FILL_MUL, String(v));
-}
+export const getFillLightMul = fillLight.get;
+export const setFillLightMul = fillLight.set;
 
 /** ACES tone-mapping exposure. Default aligned with `DEFAULT_SCENE_VISUAL`. */
-export function getToneMappingExposure(): number {
-  return Math.max(0.35, Math.min(2.75, readFloat(KEY_TONE_EXPOSURE, CODE_DEFAULT_TONE_EXPOSURE)));
-}
-
-export function setToneMappingExposure(exposure: number): void {
-  const v = Math.max(0.35, Math.min(2.75, exposure));
-  writeLs(KEY_TONE_EXPOSURE, String(v));
-}
+export const getToneMappingExposure = toneExposure.get;
+export const setToneMappingExposure = toneExposure.set;
 
 /** Multiplies sky dome haze vs zone presets. Default 1. */
-export function getSkyHazeMul(): number {
-  return Math.max(0, Math.min(1.5, readFloat(KEY_SKY_HAZE_MUL, CODE_DEFAULT_SKY_HAZE_MUL)));
-}
-
-export function setSkyHazeMul(mul: number): void {
-  const v = Math.max(0, Math.min(1.5, mul));
-  writeLs(KEY_SKY_HAZE_MUL, String(v));
-}
+export const getSkyHazeMul = skyHaze.get;
+export const setSkyHazeMul = skyHaze.set;
 
 /**
  * Multiplies PointLight `distance` for every caravan torch (you + pooled players).
  * 1 = authored server radius mapping; raise for longer view without changing sim.
  */
-export function getTorchReachMul(): number {
-  return Math.max(0.1, Math.min(80, readFloat(KEY_TORCH_REACH_MUL, CODE_DEFAULT_TORCH_REACH_MUL)));
-}
-
-export function setTorchReachMul(mul: number): void {
-  const v = Math.max(0.1, Math.min(80, mul));
-  writeLs(KEY_TORCH_REACH_MUL, String(v));
-}
+export const getTorchReachMul = torchReach.get;
+export const setTorchReachMul = torchReach.set;
 
 export function getRace(): Race {
   const raw = readLs(KEY_RACE);

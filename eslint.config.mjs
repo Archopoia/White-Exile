@@ -48,6 +48,8 @@ export default [
         HTMLSelectElement: 'readonly',
         HTMLTextAreaElement: 'readonly',
         HTMLDivElement: 'readonly',
+        HTMLDetailsElement: 'readonly',
+        HTMLOptionElement: 'readonly',
         WebGLRenderingContext: 'readonly',
         ResizeObserver: 'readonly',
         PointerEvent: 'readonly',

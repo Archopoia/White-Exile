@@ -15,6 +15,12 @@ import {
   type NprStyle,
 } from './nprSettings.js';
 import {
+  NPR_FIELDS,
+  type NprBoolKey,
+  type NprColorKey,
+  type NprFloatKey,
+} from './nprSchema.js';
+import {
   buildCodeDefaultRoomOptionsSnapshot,
   buildRoomOptionsSnapshotFromInitial,
   cloneNprSettings,
@@ -447,6 +453,75 @@ function buildNprPanel(
 
   const nprHeaderRevertCount = 2;
 
+  /**
+   * Per-row helper closures. They read `current` / `br()` / `patch` from the
+   * enclosing scope so a row is one declarative line. UI ranges are passed
+   * inline because they're intentionally tighter than the data-validation
+   * clamps in `nprSchema.ts` (e.g. `oilRadiusPx`: schema 1..10, UI 1..8).
+   */
+  const nprFloat = <K extends NprFloatKey>(
+    label: string,
+    key: K,
+    min: number,
+    max: number,
+    step: number,
+    decimals: number,
+  ): HTMLElement => {
+    const isInt = NPR_FIELDS[key].kind === 'int';
+    return rowRegNpr(
+      label,
+      makeFloatSlider(
+        min,
+        max,
+        step,
+        current[key] as number,
+        decimals,
+        (v) => {
+          const rv = isInt ? Math.round(v) : v;
+          current = { ...current, [key]: rv, style: 'custom' } as NprSettings;
+          stylePicker.value = 'custom';
+          hooks.emitLive(current);
+        },
+        () => hooks.emitCommit(current),
+      ).row,
+      {
+        dirty: () => optionFloatDiffers(current[key] as number, br()[key] as number),
+        revert: () => patch({ [key]: br()[key] } as Partial<NprSettings>),
+      },
+    );
+  };
+
+  const nprBool = <K extends NprBoolKey>(label: string, ariaLabel: string, key: K): HTMLElement =>
+    rowRegNpr(
+      label,
+      makeBoolToggle(ariaLabel, current[key], (v) => patch({ [key]: v } as Partial<NprSettings>)),
+      {
+        dirty: () => current[key] !== br()[key],
+        revert: () => patch({ [key]: br()[key] } as Partial<NprSettings>),
+      },
+    );
+
+  const nprColor = <K extends NprColorKey>(label: string, key: K): HTMLElement =>
+    rowRegNpr(
+      label,
+      makeColorPicker(
+        current[key],
+        (c) => {
+          current = { ...current, [key]: c, style: 'custom' } as NprSettings;
+          stylePicker.value = 'custom';
+          hooks.emitLive(current);
+        },
+        () => hooks.emitCommit(current),
+      ),
+      {
+        dirty: () => optionRgbDiffers(current[key], br()[key]),
+        revert: () => {
+          const c = br()[key];
+          patch({ [key]: [c[0], c[1], c[2]] } as Partial<NprSettings>);
+        },
+      },
+    );
+
   const rebuildBody = (): void => {
     if (nprRevertRefreshers.length > nprHeaderRevertCount) {
       nprRevertRefreshers.splice(nprHeaderRevertCount);
@@ -457,271 +532,34 @@ function buildNprPanel(
       if (id && el.open) openSections.add(id);
     }
     body.innerHTML = '';
-    const s = current;
 
     const outlineBody = document.createElement('div');
     outlineBody.append(
-      rowRegNpr('On', makeBoolToggle('Outline enabled', s.outlineEnabled, (v) => patch({ outlineEnabled: v })), {
-        dirty: () => current.outlineEnabled !== br().outlineEnabled,
-        revert: () => patch({ outlineEnabled: br().outlineEnabled }),
-      }),
-      rowRegNpr(
-        'Width',
-        makeFloatSlider(
-          0.25,
-          4,
-          0.05,
-          s.outlineThicknessPx,
-          2,
-          (v) => {
-            current = { ...current, outlineThicknessPx: v, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ).row,
-        {
-          dirty: () => optionFloatDiffers(current.outlineThicknessPx, br().outlineThicknessPx),
-          revert: () => patch({ outlineThicknessPx: br().outlineThicknessPx }),
-        },
-      ),
-      rowRegNpr(
-        'Depth ×',
-        makeFloatSlider(
-          0,
-          60,
-          0.5,
-          s.outlineDepthWeight,
-          1,
-          (v) => {
-            current = { ...current, outlineDepthWeight: v, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ).row,
-        {
-          dirty: () => optionFloatDiffers(current.outlineDepthWeight, br().outlineDepthWeight),
-          revert: () => patch({ outlineDepthWeight: br().outlineDepthWeight }),
-        },
-      ),
-      rowRegNpr(
-        'Thin',
-        makeFloatSlider(
-          0,
-          8,
-          0.25,
-          s.outlineMinFeaturePx,
-          2,
-          (v) => {
-            current = { ...current, outlineMinFeaturePx: v, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ).row,
-        {
-          dirty: () => optionFloatDiffers(current.outlineMinFeaturePx, br().outlineMinFeaturePx),
-          revert: () => patch({ outlineMinFeaturePx: br().outlineMinFeaturePx }),
-        },
-      ),
-      rowRegNpr(
-        'Near relax',
-        makeFloatSlider(
-          0,
-          1,
-          0.02,
-          s.outlineNearThinRelax,
-          2,
-          (v) => {
-            current = { ...current, outlineNearThinRelax: v, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ).row,
-        {
-          dirty: () => optionFloatDiffers(current.outlineNearThinRelax, br().outlineNearThinRelax),
-          revert: () => patch({ outlineNearThinRelax: br().outlineNearThinRelax }),
-        },
-      ),
-      rowRegNpr(
-        'Near depth',
-        makeFloatSlider(
-          0.04,
-          0.55,
-          0.01,
-          s.outlineNearDepthMax,
-          2,
-          (v) => {
-            current = { ...current, outlineNearDepthMax: v, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ).row,
-        {
-          dirty: () => optionFloatDiffers(current.outlineNearDepthMax, br().outlineNearDepthMax),
-          revert: () => patch({ outlineNearDepthMax: br().outlineNearDepthMax }),
-        },
-      ),
-      rowRegNpr(
-        'Color',
-        makeColorPicker(
-          s.outlineColor,
-          (c) => {
-            current = { ...current, outlineColor: c, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ),
-        {
-          dirty: () => optionRgbDiffers(current.outlineColor, br().outlineColor),
-          revert: () =>
-            patch({
-              outlineColor: [br().outlineColor[0], br().outlineColor[1], br().outlineColor[2]],
-            }),
-        },
-      ),
+      nprBool('On', 'Outline enabled', 'outlineEnabled'),
+      nprFloat('Width', 'outlineThicknessPx', 0.25, 4, 0.05, 2),
+      nprFloat('Depth ×', 'outlineDepthWeight', 0, 60, 0.5, 1),
+      nprFloat('Thin', 'outlineMinFeaturePx', 0, 8, 0.25, 2),
+      nprFloat('Near relax', 'outlineNearThinRelax', 0, 1, 0.02, 2),
+      nprFloat('Near depth', 'outlineNearDepthMax', 0.04, 0.55, 0.01, 2),
+      nprColor('Color', 'outlineColor'),
     );
 
     const celBody = document.createElement('div');
     celBody.append(
-      rowRegNpr('On', makeBoolToggle('Cel enabled', s.celEnabled, (v) => patch({ celEnabled: v })), {
-        dirty: () => current.celEnabled !== br().celEnabled,
-        revert: () => patch({ celEnabled: br().celEnabled }),
-      }),
-      rowRegNpr(
-        'Steps',
-        makeFloatSlider(
-          2,
-          12,
-          1,
-          s.celSteps,
-          0,
-          (v) => {
-            current = { ...current, celSteps: v, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ).row,
-        {
-          dirty: () => optionFloatDiffers(current.celSteps, br().celSteps),
-          revert: () => patch({ celSteps: br().celSteps }),
-        },
-      ),
-      rowRegNpr(
-        'Edge',
-        makeFloatSlider(
-          0,
-          0.5,
-          0.01,
-          s.celStepSmoothness,
-          2,
-          (v) => {
-            current = { ...current, celStepSmoothness: v, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ).row,
-        {
-          dirty: () => optionFloatDiffers(current.celStepSmoothness, br().celStepSmoothness),
-          revert: () => patch({ celStepSmoothness: br().celStepSmoothness }),
-        },
-      ),
-      rowRegNpr(
-        'Floor',
-        makeFloatSlider(
-          0,
-          0.4,
-          0.01,
-          s.celMinLight,
-          2,
-          (v) => {
-            current = { ...current, celMinLight: v, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ).row,
-        {
-          dirty: () => optionFloatDiffers(current.celMinLight, br().celMinLight),
-          revert: () => patch({ celMinLight: br().celMinLight }),
-        },
-      ),
-      rowRegNpr(
-        'Mix',
-        makeFloatSlider(
-          0,
-          1,
-          0.05,
-          s.celMix,
-          2,
-          (v) => {
-            current = { ...current, celMix: v, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ).row,
-        {
-          dirty: () => optionFloatDiffers(current.celMix, br().celMix),
-          revert: () => patch({ celMix: br().celMix }),
-        },
-      ),
-      rowRegNpr(
-        'Tint ×',
-        makeFloatSlider(
-          0,
-          1,
-          0.05,
-          s.celShadowTintAmount,
-          2,
-          (v) => {
-            current = { ...current, celShadowTintAmount: v, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ).row,
-        {
-          dirty: () => optionFloatDiffers(current.celShadowTintAmount, br().celShadowTintAmount),
-          revert: () => patch({ celShadowTintAmount: br().celShadowTintAmount }),
-        },
-      ),
-      rowRegNpr(
-        'Tint',
-        makeColorPicker(
-          s.celShadowTint,
-          (c) => {
-            current = { ...current, celShadowTint: c, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ),
-        {
-          dirty: () => optionRgbDiffers(current.celShadowTint, br().celShadowTint),
-          revert: () =>
-            patch({
-              celShadowTint: [
-                br().celShadowTint[0],
-                br().celShadowTint[1],
-                br().celShadowTint[2],
-              ],
-            }),
-        },
-      ),
+      nprBool('On', 'Cel enabled', 'celEnabled'),
+      nprFloat('Steps', 'celSteps', 2, 12, 1, 0),
+      nprFloat('Edge', 'celStepSmoothness', 0, 0.5, 0.01, 2),
+      nprFloat('Floor', 'celMinLight', 0, 0.4, 0.01, 2),
+      nprFloat('Mix', 'celMix', 0, 1, 0.05, 2),
+      nprFloat('Tint ×', 'celShadowTintAmount', 0, 1, 0.05, 2),
+      nprColor('Tint', 'celShadowTint'),
     );
 
     const hatchBody = document.createElement('div');
     const hatchPatternKnob = makeDiscreteKnob<HatchPattern>(
       HATCH_PATTERNS,
       HATCH_PATTERN_LABEL,
-      s.hatchPattern,
+      current.hatchPattern,
       (next) => {
         current = { ...current, hatchPattern: next, style: 'custom' };
         stylePicker.value = 'custom';
@@ -730,603 +568,58 @@ function buildNprPanel(
       () => hooks.emitCommit(current),
     );
     hatchBody.append(
-      rowRegNpr('On', makeBoolToggle('Hatch enabled', s.hatchEnabled, (v) => patch({ hatchEnabled: v })), {
-        dirty: () => current.hatchEnabled !== br().hatchEnabled,
-        revert: () => patch({ hatchEnabled: br().hatchEnabled }),
-      }),
+      nprBool('On', 'Hatch enabled', 'hatchEnabled'),
       rowRegNpr('Style', hatchPatternKnob.el, {
         dirty: () => current.hatchPattern !== br().hatchPattern,
         revert: () => patch({ hatchPattern: br().hatchPattern }),
       }),
-      rowRegNpr(
-        'Step',
-        makeFloatSlider(
-          2,
-          24,
-          0.5,
-          s.hatchModPx,
-          1,
-          (v) => {
-            current = { ...current, hatchModPx: v, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ).row,
-        {
-          dirty: () => optionFloatDiffers(current.hatchModPx, br().hatchModPx),
-          revert: () => patch({ hatchModPx: br().hatchModPx }),
-        },
-      ),
-      rowRegNpr(
-        'Cross steps',
-        makeFloatSlider(
-          3,
-          16,
-          1,
-          s.hatchCrossSteps,
-          0,
-          (v) => {
-            const rv = Math.round(v);
-            current = { ...current, hatchCrossSteps: rv, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ).row,
-        {
-          dirty: () => optionFloatDiffers(current.hatchCrossSteps, br().hatchCrossSteps),
-          revert: () => patch({ hatchCrossSteps: br().hatchCrossSteps }),
-        },
-      ),
-      rowRegNpr(
-        'Dark',
-        makeFloatSlider(
-          0,
-          1,
-          0.01,
-          s.hatchLumaDark,
-          2,
-          (v) => {
-            current = { ...current, hatchLumaDark: v, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ).row,
-        {
-          dirty: () => optionFloatDiffers(current.hatchLumaDark, br().hatchLumaDark),
-          revert: () => patch({ hatchLumaDark: br().hatchLumaDark }),
-        },
-      ),
-      rowRegNpr(
-        'Mid',
-        makeFloatSlider(
-          0,
-          1,
-          0.01,
-          s.hatchLumaMid,
-          2,
-          (v) => {
-            current = { ...current, hatchLumaMid: v, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ).row,
-        {
-          dirty: () => optionFloatDiffers(current.hatchLumaMid, br().hatchLumaMid),
-          revert: () => patch({ hatchLumaMid: br().hatchLumaMid }),
-        },
-      ),
-      rowRegNpr(
-        'Light',
-        makeFloatSlider(
-          0,
-          1,
-          0.01,
-          s.hatchLumaLight,
-          2,
-          (v) => {
-            current = { ...current, hatchLumaLight: v, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ).row,
-        {
-          dirty: () => optionFloatDiffers(current.hatchLumaLight, br().hatchLumaLight),
-          revert: () => patch({ hatchLumaLight: br().hatchLumaLight }),
-        },
-      ),
-      rowRegNpr(
-        'Lift',
-        makeFloatSlider(
-          0,
-          1,
-          0.05,
-          s.tonalShadowLift,
-          2,
-          (v) => {
-            current = { ...current, tonalShadowLift: v, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ).row,
-        {
-          dirty: () => optionFloatDiffers(current.tonalShadowLift, br().tonalShadowLift),
-          revert: () => patch({ tonalShadowLift: br().tonalShadowLift }),
-        },
-      ),
-      rowRegNpr(
-        'Cell',
-        makeFloatSlider(
-          4,
-          32,
-          1,
-          s.rasterCellPx,
-          0,
-          (v) => {
-            current = { ...current, rasterCellPx: v, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ).row,
-        {
-          dirty: () => optionFloatDiffers(current.rasterCellPx, br().rasterCellPx),
-          revert: () => patch({ rasterCellPx: br().rasterCellPx }),
-        },
-      ),
+      nprFloat('Step', 'hatchModPx', 2, 24, 0.5, 1),
+      nprFloat('Cross steps', 'hatchCrossSteps', 3, 16, 1, 0),
+      nprFloat('Dark', 'hatchLumaDark', 0, 1, 0.01, 2),
+      nprFloat('Mid', 'hatchLumaMid', 0, 1, 0.01, 2),
+      nprFloat('Light', 'hatchLumaLight', 0, 1, 0.01, 2),
+      nprFloat('Lift', 'tonalShadowLift', 0, 1, 0.05, 2),
+      nprFloat('Cell', 'rasterCellPx', 4, 32, 1, 0),
     );
 
-    const oilBody = document.createElement('div');
     const oilEdgeBody = document.createElement('div');
     oilEdgeBody.append(
-      rowRegNpr(
-        'Luma pull',
-        makeFloatSlider(
-          0,
-          1,
-          0.02,
-          s.oilLumaEdgeSuppress,
-          2,
-          (v) => {
-            current = { ...current, oilLumaEdgeSuppress: v, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ).row,
-        {
-          dirty: () => optionFloatDiffers(current.oilLumaEdgeSuppress, br().oilLumaEdgeSuppress),
-          revert: () => patch({ oilLumaEdgeSuppress: br().oilLumaEdgeSuppress }),
-        },
-      ),
-      rowRegNpr(
-        'Geom pull',
-        makeFloatSlider(
-          0,
-          1,
-          0.02,
-          s.oilGeomEdgeSuppress,
-          2,
-          (v) => {
-            current = { ...current, oilGeomEdgeSuppress: v, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ).row,
-        {
-          dirty: () => optionFloatDiffers(current.oilGeomEdgeSuppress, br().oilGeomEdgeSuppress),
-          revert: () => patch({ oilGeomEdgeSuppress: br().oilGeomEdgeSuppress }),
-        },
-      ),
-      rowRegNpr(
-        'Dark+',
-        makeFloatSlider(
-          0,
-          0.4,
-          0.01,
-          s.oilDarkBoost,
-          2,
-          (v) => {
-            current = { ...current, oilDarkBoost: v, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ).row,
-        {
-          dirty: () => optionFloatDiffers(current.oilDarkBoost, br().oilDarkBoost),
-          revert: () => patch({ oilDarkBoost: br().oilDarkBoost }),
-        },
-      ),
-      rowRegNpr(
-        'Max blend',
-        makeFloatSlider(
-          0.25,
-          3,
-          0.05,
-          s.oilMaxBlend,
-          2,
-          (v) => {
-            current = { ...current, oilMaxBlend: v, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ).row,
-        {
-          dirty: () => optionFloatDiffers(current.oilMaxBlend, br().oilMaxBlend),
-          revert: () => patch({ oilMaxBlend: br().oilMaxBlend }),
-        },
-      ),
-      rowRegNpr(
-        'Delta cap',
-        makeFloatSlider(
-          0.05,
-          0.7,
-          0.01,
-          s.oilDeltaClamp,
-          2,
-          (v) => {
-            current = { ...current, oilDeltaClamp: v, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ).row,
-        {
-          dirty: () => optionFloatDiffers(current.oilDeltaClamp, br().oilDeltaClamp),
-          revert: () => patch({ oilDeltaClamp: br().oilDeltaClamp }),
-        },
-      ),
-      rowRegNpr(
-        'Edge d x',
-        makeFloatSlider(
-          0.05,
-          1,
-          0.025,
-          s.oilDeltaClampEdgeMul,
-          3,
-          (v) => {
-            current = { ...current, oilDeltaClampEdgeMul: v, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ).row,
-        {
-          dirty: () => optionFloatDiffers(current.oilDeltaClampEdgeMul, br().oilDeltaClampEdgeMul),
-          revert: () => patch({ oilDeltaClampEdgeMul: br().oilDeltaClampEdgeMul }),
-        },
-      ),
-      rowRegNpr(
-        'Atten lo',
-        makeFloatSlider(
-          0.001,
-          0.25,
-          0.005,
-          s.oilEdgeAttenLo,
-          3,
-          (v) => {
-            current = { ...current, oilEdgeAttenLo: v, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ).row,
-        {
-          dirty: () => optionFloatDiffers(current.oilEdgeAttenLo, br().oilEdgeAttenLo),
-          revert: () => patch({ oilEdgeAttenLo: br().oilEdgeAttenLo }),
-        },
-      ),
-      rowRegNpr(
-        'Atten hi',
-        makeFloatSlider(
-          0.05,
-          0.6,
-          0.01,
-          s.oilEdgeAttenHi,
-          2,
-          (v) => {
-            current = { ...current, oilEdgeAttenHi: v, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ).row,
-        {
-          dirty: () => optionFloatDiffers(current.oilEdgeAttenHi, br().oilEdgeAttenHi),
-          revert: () => patch({ oilEdgeAttenHi: br().oilEdgeAttenHi }),
-        },
-      ),
-      rowRegNpr(
-        'Cap lo',
-        makeFloatSlider(
-          0.02,
-          0.35,
-          0.01,
-          s.oilDeltaBandLo,
-          2,
-          (v) => {
-            current = { ...current, oilDeltaBandLo: v, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ).row,
-        {
-          dirty: () => optionFloatDiffers(current.oilDeltaBandLo, br().oilDeltaBandLo),
-          revert: () => patch({ oilDeltaBandLo: br().oilDeltaBandLo }),
-        },
-      ),
-      rowRegNpr(
-        'Cap hi',
-        makeFloatSlider(
-          0.12,
-          0.55,
-          0.01,
-          s.oilDeltaBandHi,
-          2,
-          (v) => {
-            current = { ...current, oilDeltaBandHi: v, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ).row,
-        {
-          dirty: () => optionFloatDiffers(current.oilDeltaBandHi, br().oilDeltaBandHi),
-          revert: () => patch({ oilDeltaBandHi: br().oilDeltaBandHi }),
-        },
-      ),
+      nprFloat('Luma pull', 'oilLumaEdgeSuppress', 0, 1, 0.02, 2),
+      nprFloat('Geom pull', 'oilGeomEdgeSuppress', 0, 1, 0.02, 2),
+      nprFloat('Dark+', 'oilDarkBoost', 0, 0.4, 0.01, 2),
+      nprFloat('Max blend', 'oilMaxBlend', 0.25, 3, 0.05, 2),
+      nprFloat('Delta cap', 'oilDeltaClamp', 0.05, 0.7, 0.01, 2),
+      nprFloat('Edge d x', 'oilDeltaClampEdgeMul', 0.05, 1, 0.025, 3),
+      nprFloat('Atten lo', 'oilEdgeAttenLo', 0.001, 0.25, 0.005, 3),
+      nprFloat('Atten hi', 'oilEdgeAttenHi', 0.05, 0.6, 0.01, 2),
+      nprFloat('Cap lo', 'oilDeltaBandLo', 0.02, 0.35, 0.01, 2),
+      nprFloat('Cap hi', 'oilDeltaBandHi', 0.12, 0.55, 0.01, 2),
     );
+    const oilBody = document.createElement('div');
     oilBody.append(
-      rowRegNpr('On', makeBoolToggle('Oil enabled', s.oilEnabled, (v) => patch({ oilEnabled: v })), {
-        dirty: () => current.oilEnabled !== br().oilEnabled,
-        revert: () => patch({ oilEnabled: br().oilEnabled }),
-      }),
-      rowRegNpr(
-        'Radius',
-        makeFloatSlider(
-          1,
-          8,
-          0.25,
-          s.oilRadiusPx,
-          2,
-          (v) => {
-            current = { ...current, oilRadiusPx: v, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ).row,
-        {
-          dirty: () => optionFloatDiffers(current.oilRadiusPx, br().oilRadiusPx),
-          revert: () => patch({ oilRadiusPx: br().oilRadiusPx }),
-        },
-      ),
-      rowRegNpr(
-        'Amount',
-        makeFloatSlider(
-          0,
-          3,
-          0.05,
-          s.oilIntensity,
-          2,
-          (v) => {
-            current = { ...current, oilIntensity: v, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ).row,
-        {
-          dirty: () => optionFloatDiffers(current.oilIntensity, br().oilIntensity),
-          revert: () => patch({ oilIntensity: br().oilIntensity }),
-        },
-      ),
+      nprBool('On', 'Oil enabled', 'oilEnabled'),
+      nprFloat('Radius', 'oilRadiusPx', 1, 8, 0.25, 2),
+      nprFloat('Amount', 'oilIntensity', 0, 3, 0.05, 2),
       makeDetails('Oil - edge / anti-halo', oilEdgeBody, 'npr-oil-edge'),
     );
 
     const mistBody = document.createElement('div');
     mistBody.append(
-      rowRegNpr('On', makeBoolToggle('Mist enabled', s.mistEnabled, (v) => patch({ mistEnabled: v })), {
-        dirty: () => current.mistEnabled !== br().mistEnabled,
-        revert: () => patch({ mistEnabled: br().mistEnabled }),
-      }),
-      rowRegNpr(
-        'Amount',
-        makeFloatSlider(
-          0,
-          2,
-          0.05,
-          s.mistIntensity,
-          2,
-          (v) => {
-            current = { ...current, mistIntensity: v, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ).row,
-        {
-          dirty: () => optionFloatDiffers(current.mistIntensity, br().mistIntensity),
-          revert: () => patch({ mistIntensity: br().mistIntensity }),
-        },
-      ),
-      rowRegNpr(
-        'Edge',
-        makeFloatSlider(
-          0.001,
-          0.25,
-          0.001,
-          s.mistDepthThreshold,
-          3,
-          (v) => {
-            current = { ...current, mistDepthThreshold: v, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ).row,
-        {
-          dirty: () => optionFloatDiffers(current.mistDepthThreshold, br().mistDepthThreshold),
-          revert: () => patch({ mistDepthThreshold: br().mistDepthThreshold }),
-        },
-      ),
-      rowRegNpr(
-        'Spread',
-        makeFloatSlider(
-          0,
-          32,
-          0.5,
-          s.mistSpreadPx,
-          1,
-          (v) => {
-            current = { ...current, mistSpreadPx: v, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ).row,
-        {
-          dirty: () => optionFloatDiffers(current.mistSpreadPx, br().mistSpreadPx),
-          revert: () => patch({ mistSpreadPx: br().mistSpreadPx }),
-        },
-      ),
-      rowRegNpr(
-        'Tint ×',
-        makeFloatSlider(
-          0,
-          1,
-          0.05,
-          s.mistTintStrength,
-          2,
-          (v) => {
-            current = { ...current, mistTintStrength: v, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ).row,
-        {
-          dirty: () => optionFloatDiffers(current.mistTintStrength, br().mistTintStrength),
-          revert: () => patch({ mistTintStrength: br().mistTintStrength }),
-        },
-      ),
-      rowRegNpr(
-        'Color',
-        makeColorPicker(
-          s.mistColor,
-          (c) => {
-            current = { ...current, mistColor: c, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ),
-        {
-          dirty: () =>
-            optionRgbDiffers(current.mistColor, br().mistColor),
-          revert: () =>
-            patch({
-              mistColor: [br().mistColor[0], br().mistColor[1], br().mistColor[2]],
-            }),
-        },
-      ),
-      rowRegNpr(
-        'Geom',
-        makeFloatSlider(
-          0,
-          2,
-          0.05,
-          s.mistGeomEdgeScale,
-          2,
-          (v) => {
-            current = { ...current, mistGeomEdgeScale: v, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ).row,
-        {
-          dirty: () => optionFloatDiffers(current.mistGeomEdgeScale, br().mistGeomEdgeScale),
-          revert: () => patch({ mistGeomEdgeScale: br().mistGeomEdgeScale }),
-        },
-      ),
+      nprBool('On', 'Mist enabled', 'mistEnabled'),
+      nprFloat('Amount', 'mistIntensity', 0, 2, 0.05, 2),
+      nprFloat('Edge', 'mistDepthThreshold', 0.001, 0.25, 0.001, 3),
+      nprFloat('Spread', 'mistSpreadPx', 0, 32, 0.5, 1),
+      nprFloat('Tint ×', 'mistTintStrength', 0, 1, 0.05, 2),
+      nprColor('Color', 'mistColor'),
+      nprFloat('Geom', 'mistGeomEdgeScale', 0, 2, 0.05, 2),
     );
 
     const wiggleBody = document.createElement('div');
     wiggleBody.append(
-      rowRegNpr('On', makeBoolToggle('Wiggle enabled', s.wiggleEnabled, (v) => patch({ wiggleEnabled: v })), {
-        dirty: () => current.wiggleEnabled !== br().wiggleEnabled,
-        revert: () => patch({ wiggleEnabled: br().wiggleEnabled }),
-      }),
-      rowRegNpr(
-        'Freq',
-        makeFloatSlider(
-          0.001,
-          0.3,
-          0.001,
-          s.wiggleFrequency,
-          3,
-          (v) => {
-            current = { ...current, wiggleFrequency: v, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ).row,
-        {
-          dirty: () => optionFloatDiffers(current.wiggleFrequency, br().wiggleFrequency),
-          revert: () => patch({ wiggleFrequency: br().wiggleFrequency }),
-        },
-      ),
-      rowRegNpr(
-        'Amp',
-        makeFloatSlider(
-          0,
-          6,
-          0.1,
-          s.wiggleAmplitudePx,
-          2,
-          (v) => {
-            current = { ...current, wiggleAmplitudePx: v, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ).row,
-        {
-          dirty: () => optionFloatDiffers(current.wiggleAmplitudePx, br().wiggleAmplitudePx),
-          revert: () => patch({ wiggleAmplitudePx: br().wiggleAmplitudePx }),
-        },
-      ),
-      rowRegNpr(
-        'Noise',
-        makeFloatSlider(
-          0,
-          1,
-          0.05,
-          s.wiggleIrregularity,
-          2,
-          (v) => {
-            current = { ...current, wiggleIrregularity: v, style: 'custom' };
-            stylePicker.value = 'custom';
-            hooks.emitLive(current);
-          },
-          () => hooks.emitCommit(current),
-        ).row,
-        {
-          dirty: () => optionFloatDiffers(current.wiggleIrregularity, br().wiggleIrregularity),
-          revert: () => patch({ wiggleIrregularity: br().wiggleIrregularity }),
-        },
-      ),
+      nprBool('On', 'Wiggle enabled', 'wiggleEnabled'),
+      nprFloat('Freq', 'wiggleFrequency', 0.001, 0.3, 0.001, 3),
+      nprFloat('Amp', 'wiggleAmplitudePx', 0, 6, 0.1, 2),
+      nprFloat('Noise', 'wiggleIrregularity', 0, 1, 0.05, 2),
     );
 
     body.append(

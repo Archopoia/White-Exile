@@ -11,20 +11,25 @@ export const ASH_DUNE_GROUND_BASE_Y = -2;
 /** Default prevailing wind on the XZ plane (matches shader `uWindDir`). */
 export const ASH_DUNE_DEFAULT_WIND_XZ = Object.freeze({ x: 0.91, z: 0.42 });
 
-/** Sphere center offset above the dune surface for the local player core (radius 0.75). */
-export const ASH_DUNE_PLAYER_CENTER_OFFSET = 0.75;
+/**
+ * Vertical offset of every world entity's authoritative origin above the local dune surface.
+ * One entry per kind — the sim (`world/sim.ts`) and the renderer (`scene.ts`) both look up
+ * placement here so adding a new entity is a single line plus a renderer mesh factory.
+ */
+export type WorldPlacementKind =
+  | 'player'
+  | 'otherPlayer'
+  | 'follower'
+  | 'ruin'
+  | 'relic';
 
-/** Other player cores (mesh radius ~0.55) — visual placement on clients. */
-export const ASH_DUNE_OTHER_PLAYER_CENTER_OFFSET = 0.55;
-
-/** Follower spheres (approximate mesh radius). */
-export const ASH_DUNE_FOLLOWER_CENTER_OFFSET = 0.32;
-
-/** Ruin column: server stores world Y of the box center (half of 6m column). */
-export const ASH_DUNE_RUIN_CENTER_OFFSET = 3;
-
-/** Relic octahedron resting above sand. */
-export const ASH_DUNE_RELIC_CENTER_OFFSET = 0.55;
+export const WORLD_PLACEMENT_OFFSET: Readonly<Record<WorldPlacementKind, number>> = Object.freeze({
+  player: 0.75,
+  otherPlayer: 0.55,
+  follower: 0.32,
+  ruin: 3,
+  relic: 0.55,
+});
 
 /** Used when no {@link WorldConfig.duneHeightScale} is in scope (must match Zod default on `WorldConfig`). */
 export const ASH_DUNE_DEFAULT_HEIGHT_SCALE = 1.45;
@@ -156,4 +161,18 @@ export function ashDuneSurfaceWorldY(
   opts?: AshDuneSampleOptions,
 ): number {
   return ASH_DUNE_GROUND_BASE_Y + ashDuneElevation(x, z, timeSeconds, opts);
+}
+
+/**
+ * Surface Y for an entity of the given placement kind — the canonical way the sim
+ * and renderer drop a player / follower / ruin / relic onto the dunes.
+ */
+export function placementSurfaceY(
+  kind: WorldPlacementKind,
+  x: number,
+  z: number,
+  timeSeconds: number,
+  opts?: AshDuneSampleOptions,
+): number {
+  return ashDuneSurfaceWorldY(x, z, timeSeconds, opts) + WORLD_PLACEMENT_OFFSET[kind];
 }

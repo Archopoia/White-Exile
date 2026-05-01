@@ -25,12 +25,12 @@ import * as THREE from 'three';
 import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import {
   ASH_DUNE_DEFAULT_HEIGHT_SCALE,
-  ASH_DUNE_FOLLOWER_CENTER_OFFSET,
-  ASH_DUNE_OTHER_PLAYER_CENTER_OFFSET,
-  ASH_DUNE_PLAYER_CENTER_OFFSET,
   RACE_PROFILES,
+  WORLD_PLACEMENT_OFFSET,
   ashDuneSurfaceWorldY,
+  placementSurfaceY,
   type FollowerSnapshot,
+  type PlayerSnapshot,
   type Race,
   type RelicSnapshot,
   type RoomSnapshot,
@@ -150,6 +150,96 @@ function applyAshRelicMaterial(mat: THREE.MeshStandardMaterial, claimed: boolean
   mat.opacity = claimed ? 0.3 : 1.0;
 }
 
+interface EntityPoolEntry {
+  mesh: THREE.Mesh;
+  label: CSS2DObject;
+}
+
+interface SceneSurfaceQuery {
+  surfaceYAt(x: number, z: number): number;
+}
+
+/**
+ * Per-entity-kind visual recipe used by {@link RoomScene.syncEntityPool}.
+ * Adding a new kind is one record + a Map field + a single call site.
+ *
+ *   - `geometry` / `makeMaterial`: factory called when a new id appears.
+ *   - `refreshMaterial`: called on every existing entity each tick.
+ *   - `placeAt`: where the mesh sits this tick (in world coords).
+ *   - `labelY`: local Y for the world-space CSS2D label.
+ *   - `afterUpdate`: optional bookkeeping (e.g. relic spin).
+ */
+interface EntityVisual<S extends { id: string; position: Vec3 }> {
+  readonly labelY: number;
+  readonly castShadow?: boolean;
+  readonly receiveShadow?: boolean;
+  geometry(): THREE.BufferGeometry;
+  makeMaterial(s: S): THREE.MeshStandardMaterial;
+  refreshMaterial(mat: THREE.MeshStandardMaterial, s: S): void;
+  placeAt(s: S, scene: SceneSurfaceQuery): Vec3;
+  afterUpdate?: (mesh: THREE.Mesh, s: S) => void;
+}
+
+const OTHER_PLAYER_VISUAL: EntityVisual<PlayerSnapshot> = {
+  labelY: 1.95,
+  geometry: () => new THREE.SphereGeometry(0.55, 24, 18),
+  makeMaterial: (p) => {
+    const mat = new THREE.MeshStandardMaterial({ color: 0x3c4450, roughness: 0.91, metalness: 0.05 });
+    applyAshCaravanCoreMaterial(mat, RACE_PROFILES[p.race].lightColor);
+    return mat;
+  },
+  refreshMaterial: (mat, p) => applyAshCaravanCoreMaterial(mat, RACE_PROFILES[p.race].lightColor),
+  placeAt: (p, scene) => ({
+    x: p.position.x,
+    y: scene.surfaceYAt(p.position.x, p.position.z) + WORLD_PLACEMENT_OFFSET.otherPlayer,
+    z: p.position.z,
+  }),
+};
+
+const FOLLOWER_VISUAL: EntityVisual<FollowerSnapshot> = {
+  labelY: 1.2,
+  geometry: () => new THREE.SphereGeometry(0.32, 12, 10),
+  makeMaterial: (f) => {
+    const mat = new THREE.MeshStandardMaterial({ color: 0x3c4450, roughness: 0.92, metalness: 0.045 });
+    applyAshFollowerMaterial(mat, f.ownerId === null);
+    return mat;
+  },
+  refreshMaterial: (mat, f) => applyAshFollowerMaterial(mat, f.ownerId === null),
+  placeAt: (f, scene) => ({
+    x: f.position.x,
+    y: scene.surfaceYAt(f.position.x, f.position.z) + WORLD_PLACEMENT_OFFSET.follower,
+    z: f.position.z,
+  }),
+  afterUpdate: (mesh, f) => mesh.scale.setScalar(0.85 + f.morale * 0.6),
+};
+
+const RUIN_VISUAL: EntityVisual<RuinSnapshot> = {
+  labelY: RUIN_HEIGHT / 2 + 1.25,
+  geometry: () => new THREE.BoxGeometry(2, RUIN_HEIGHT, 2),
+  makeMaterial: (r) => {
+    const mat = new THREE.MeshStandardMaterial({ color: 0x404a66, roughness: 0.88, metalness: 0.06 });
+    applyAshRuinMaterial(mat, r.activated);
+    return mat;
+  },
+  refreshMaterial: (mat, r) => applyAshRuinMaterial(mat, r.activated),
+  placeAt: (r) => ({ x: r.position.x, y: r.position.y, z: r.position.z }),
+};
+
+const RELIC_VISUAL: EntityVisual<RelicSnapshot> = {
+  labelY: 1.95,
+  geometry: () => new THREE.OctahedronGeometry(0.9, 0),
+  makeMaterial: (r) => {
+    const mat = new THREE.MeshStandardMaterial({ transparent: true, opacity: r.claimed ? 0.3 : 1.0 });
+    applyAshRelicMaterial(mat, r.claimed);
+    return mat;
+  },
+  refreshMaterial: (mat, r) => applyAshRelicMaterial(mat, r.claimed),
+  placeAt: (r) => ({ x: r.position.x, y: r.position.y, z: r.position.z }),
+  afterUpdate: (mesh) => {
+    mesh.rotation.y += 0.02;
+  },
+};
+
 export class RoomScene {
   private readonly canvas: HTMLCanvasElement;
   private readonly renderer: THREE.WebGLRenderer;
@@ -165,10 +255,10 @@ export class RoomScene {
   private readonly sky: DeadSky;
   private nprPost: NprPostHandle | null = null;
   private nprEnabled = false;
-  private readonly markers = new Map<string, { core: THREE.Mesh; label: CSS2DObject }>();
-  private readonly followerMeshes = new Map<string, { mesh: THREE.Mesh; label: CSS2DObject }>();
-  private readonly ruinMeshes = new Map<string, { mesh: THREE.Mesh; label: CSS2DObject }>();
-  private readonly relicMeshes = new Map<string, { mesh: THREE.Mesh; label: CSS2DObject }>();
+  private readonly markers = new Map<string, EntityPoolEntry>();
+  private readonly followerMeshes = new Map<string, EntityPoolEntry>();
+  private readonly ruinMeshes = new Map<string, EntityPoolEntry>();
+  private readonly relicMeshes = new Map<string, EntityPoolEntry>();
   private readonly localGroup = new THREE.Group();
   private readonly localCore: THREE.Mesh;
   private readonly localLabel: CSS2DObject;
@@ -428,80 +518,58 @@ export class RoomScene {
       }
     }
 
-    const othersOrdered = snap.players
-      .filter((p) => p.id !== this.playerId)
-      .map((p) => {
-        const wy = this.surfaceYAt(p.position.x, p.position.z) + ASH_DUNE_OTHER_PLAYER_CENTER_OFFSET;
-        return { p, distSq: this.distSqToLocal(p.position.x, wy, p.position.z) };
-      })
-      .sort((a, b) => a.distSq - b.distSq);
-    const othersShow = new Set(
-      othersOrdered.slice(0, MAX_NEARBY_WORLD_LABELS).map((o) => o.p.id),
-    );
-    for (const { p } of othersOrdered) {
-      const entry = this.markers.get(p.id);
-      if (!entry) continue;
-      const show = othersShow.has(p.id);
-      entry.label.visible = show;
-      if (show) setTooltipText(entry.label, labelOtherPlayer(p, mode));
-    }
+    type LabelDescriptor<S extends { id: string; position: Vec3 }, M extends { label: CSS2DObject }> = {
+      readonly items: ReadonlyArray<S>;
+      readonly pool: Map<string, M>;
+      /** Optional Y override (e.g. for entities whose stored Y is the dune projection). */
+      readonly surfaceY?: (s: S) => number;
+      readonly text: (s: S, prox: LabelProximity) => string;
+    };
 
-    const followersOrdered = snap.followers
-      .map((f) => ({
-        f,
-        distSq: this.distSqToLocal(
-          f.position.x,
-          this.surfaceYAt(f.position.x, f.position.z) + ASH_DUNE_FOLLOWER_CENTER_OFFSET,
-          f.position.z,
-        ),
-      }))
-      .sort((a, b) => a.distSq - b.distSq);
-    const followersShow = new Set(
-      followersOrdered.slice(0, MAX_NEARBY_WORLD_LABELS).map((o) => o.f.id),
-    );
-    for (const { f } of followersOrdered) {
-      const entry = this.followerMeshes.get(f.id);
-      if (!entry) continue;
-      const show = followersShow.has(f.id);
-      entry.label.visible = show;
-      if (show) {
-        const prox = this.labelProximity(f.position.x, f.position.y, f.position.z);
-        setTooltipText(entry.label, labelFollower(f, mode, prox));
+    const renderLabels = <S extends { id: string; position: Vec3 }, M extends { label: CSS2DObject }>(
+      d: LabelDescriptor<S, M>,
+    ): void => {
+      const ordered = d.items
+        .map((s) => {
+          const y = d.surfaceY ? d.surfaceY(s) : s.position.y;
+          return { s, distSq: this.distSqToLocal(s.position.x, y, s.position.z) };
+        })
+        .sort((a, b) => a.distSq - b.distSq);
+      const show = new Set(ordered.slice(0, MAX_NEARBY_WORLD_LABELS).map((o) => o.s.id));
+      for (const { s } of ordered) {
+        const entry = d.pool.get(s.id);
+        if (!entry) continue;
+        const visible = show.has(s.id);
+        entry.label.visible = visible;
+        if (!visible) continue;
+        const prox = this.labelProximity(s.position.x, s.position.y, s.position.z);
+        setTooltipText(entry.label, d.text(s, prox));
       }
-    }
+    };
 
-    const ruinsOrdered = snap.ruins
-      .map((r) => ({
-        r,
-        distSq: this.distSqToLocal(r.position.x, r.position.y, r.position.z),
-      }))
-      .sort((a, b) => a.distSq - b.distSq);
-    const ruinsShow = new Set(ruinsOrdered.slice(0, MAX_NEARBY_WORLD_LABELS).map((o) => o.r.id));
-    for (const { r } of ruinsOrdered) {
-      const entry = this.ruinMeshes.get(r.id);
-      if (!entry) continue;
-      const show = ruinsShow.has(r.id);
-      entry.label.visible = show;
-      if (show) {
-        const prox = this.labelProximity(r.position.x, r.position.y, r.position.z);
-        setTooltipText(entry.label, labelRuin(r, mode, prox));
-      }
-    }
-
-    const relicsOrdered = snap.relics
-      .map((r) => ({
-        r,
-        distSq: this.distSqToLocal(r.position.x, r.position.y, r.position.z),
-      }))
-      .sort((a, b) => a.distSq - b.distSq);
-    const relicsShow = new Set(relicsOrdered.slice(0, MAX_NEARBY_WORLD_LABELS).map((o) => o.r.id));
-    for (const { r } of relicsOrdered) {
-      const entry = this.relicMeshes.get(r.id);
-      if (!entry) continue;
-      const show = relicsShow.has(r.id);
-      entry.label.visible = show;
-      if (show) setTooltipText(entry.label, labelRelic(r, mode));
-    }
+    const otherPlayers = snap.players.filter((p) => p.id !== this.playerId);
+    renderLabels({
+      items: otherPlayers,
+      pool: this.markers,
+      surfaceY: (p) => this.surfaceYAt(p.position.x, p.position.z) + WORLD_PLACEMENT_OFFSET.otherPlayer,
+      text: (p) => labelOtherPlayer(p, mode),
+    });
+    renderLabels({
+      items: snap.followers,
+      pool: this.followerMeshes,
+      surfaceY: (f) => this.surfaceYAt(f.position.x, f.position.z) + WORLD_PLACEMENT_OFFSET.follower,
+      text: (f, prox) => labelFollower(f, mode, prox),
+    });
+    renderLabels({
+      items: snap.ruins,
+      pool: this.ruinMeshes,
+      text: (r, prox) => labelRuin(r, mode, prox),
+    });
+    renderLabels({
+      items: snap.relics,
+      pool: this.relicMeshes,
+      text: (r) => labelRelic(r, mode),
+    });
   }
 
   /** Keep terrain mesh and analytic `surfaceYAt` in sync with the server `WorldConfig`. */
@@ -524,10 +592,9 @@ export class RoomScene {
 
     // Players: core mesh + PointLight; `lightRadius` from server is fuel×followers×zone
     // (see `computeSoloLightRadius`); flame intensity tracks radius without a bright floor.
-    const seenPlayers = new Set<string>();
     const otherFlames: OtherFlame[] = [];
+    const otherPlayers: PlayerSnapshot[] = [];
     for (const p of snap.players) {
-      seenPlayers.add(p.id);
       if (p.id === this.playerId) {
         this.localLightRadius = p.lightRadius;
         this.lighting.setLocalRadius(p.lightRadius);
@@ -541,152 +608,69 @@ export class RoomScene {
         }
         continue;
       }
-      let entry = this.markers.get(p.id);
-      const profile = RACE_PROFILES[p.race];
-      if (!entry) {
-        const coreMat = new THREE.MeshStandardMaterial({ color: 0x3c4450, roughness: 0.91, metalness: 0.05 });
-        applyAshCaravanCoreMaterial(coreMat, profile.lightColor);
-        const core = new THREE.Mesh(new THREE.SphereGeometry(0.55, 24, 18), coreMat);
-        core.castShadow = true;
-        core.receiveShadow = true;
-        const label = makeTooltip('');
-        label.position.set(0, 1.95, 0);
-        core.add(label);
-        this.scene.add(core);
-        entry = { core, label };
-        this.markers.set(p.id, entry);
-      } else {
-        applyAshCaravanCoreMaterial(entry.core.material as THREE.MeshStandardMaterial, profile.lightColor);
-      }
-      entry.core.position.set(
-        p.position.x,
-        this.surfaceYAt(p.position.x, p.position.z) + ASH_DUNE_OTHER_PLAYER_CENTER_OFFSET,
-        p.position.z,
-      );
+      otherPlayers.push(p);
+    }
+    this.syncEntityPool(otherPlayers, this.markers, OTHER_PLAYER_VISUAL);
+    for (const p of otherPlayers) {
+      const entry = this.markers.get(p.id);
+      if (!entry) continue;
       otherFlames.push({
         id: p.id,
-        position: entry.core.position,
-        color: profile.lightColor,
+        position: entry.mesh.position,
+        color: RACE_PROFILES[p.race].lightColor,
         lightRadius: Math.max(0, p.lightRadius),
       });
     }
     this.lighting.setOtherFlames(otherFlames);
-    for (const [id, entry] of this.markers) {
-      if (seenPlayers.has(id)) continue;
-      entry.core.remove(entry.label);
-      this.scene.remove(entry.core);
-      entry.core.geometry.dispose();
-      (entry.core.material as THREE.Material).dispose();
-      this.markers.delete(id);
-    }
 
-    this.applyFollowers(snap.followers);
-    this.applyRuins(snap.ruins);
-    this.applyRelics(snap.relics);
+    this.syncEntityPool(snap.followers, this.followerMeshes, FOLLOWER_VISUAL);
+    this.syncEntityPool(snap.ruins, this.ruinMeshes, RUIN_VISUAL);
+    this.syncEntityPool(snap.relics, this.relicMeshes, RELIC_VISUAL);
     this.lastSnap = snap;
     this.refreshLabelTexts();
   }
 
-  private applyFollowers(followers: ReadonlyArray<FollowerSnapshot>): void {
+  /**
+   * One-helper-fits-all entity sync: spawn meshes for new ids, refresh
+   * material + transform for existing ones, and dispose missing ones. Each
+   * entity kind contributes its mesh factory + per-tick updater via a small
+   * {@link EntityVisual} record (defined module-side, near the materials they
+   * use). Adding a new entity = one new record + one call site.
+   */
+  private syncEntityPool<S extends { id: string; position: Vec3 }>(
+    items: ReadonlyArray<S>,
+    pool: Map<string, EntityPoolEntry>,
+    visual: EntityVisual<S>,
+  ): void {
     const seen = new Set<string>();
-    for (const f of followers) {
-      seen.add(f.id);
-      let entry = this.followerMeshes.get(f.id);
-      const stranded = f.ownerId === null;
+    for (const s of items) {
+      seen.add(s.id);
+      let entry = pool.get(s.id);
       if (!entry) {
-        const mat = new THREE.MeshStandardMaterial({ color: 0x3c4450, roughness: 0.92, metalness: 0.045 });
-        applyAshFollowerMaterial(mat, stranded);
-        const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.32, 12, 10), mat);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
+        const mat = visual.makeMaterial(s);
+        const mesh = new THREE.Mesh(visual.geometry(), mat);
+        mesh.castShadow = visual.castShadow ?? true;
+        mesh.receiveShadow = visual.receiveShadow ?? true;
         const label = makeTooltip('');
-        label.position.set(0, 1.2, 0);
+        label.position.set(0, visual.labelY, 0);
         mesh.add(label);
         this.scene.add(mesh);
         entry = { mesh, label };
-        this.followerMeshes.set(f.id, entry);
+        pool.set(s.id, entry);
       } else {
-        applyAshFollowerMaterial(entry.mesh.material as THREE.MeshStandardMaterial, stranded);
+        visual.refreshMaterial(entry.mesh.material as THREE.MeshStandardMaterial, s);
       }
-      entry.mesh.position.set(
-        f.position.x,
-        this.surfaceYAt(f.position.x, f.position.z) + ASH_DUNE_FOLLOWER_CENTER_OFFSET,
-        f.position.z,
-      );
-      entry.mesh.scale.setScalar(0.85 + f.morale * 0.6);
+      const pos = visual.placeAt(s, this);
+      entry.mesh.position.set(pos.x, pos.y, pos.z);
+      visual.afterUpdate?.(entry.mesh, s);
     }
-    for (const [id, entry] of this.followerMeshes) {
+    for (const [id, entry] of pool) {
       if (seen.has(id)) continue;
       entry.mesh.remove(entry.label);
       this.scene.remove(entry.mesh);
       entry.mesh.geometry.dispose();
       (entry.mesh.material as THREE.Material).dispose();
-      this.followerMeshes.delete(id);
-    }
-  }
-
-  private applyRuins(ruins: ReadonlyArray<RuinSnapshot>): void {
-    const seen = new Set<string>();
-    for (const r of ruins) {
-      seen.add(r.id);
-      let entry = this.ruinMeshes.get(r.id);
-      if (!entry) {
-        const mat = new THREE.MeshStandardMaterial({ color: 0x404a66, roughness: 0.88, metalness: 0.06 });
-        applyAshRuinMaterial(mat, r.activated);
-        const mesh = new THREE.Mesh(new THREE.BoxGeometry(2, RUIN_HEIGHT, 2), mat);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-        const label = makeTooltip('');
-        label.position.set(0, RUIN_HEIGHT / 2 + 1.25, 0);
-        mesh.add(label);
-        this.scene.add(mesh);
-        entry = { mesh, label };
-        this.ruinMeshes.set(r.id, entry);
-      } else {
-        applyAshRuinMaterial(entry.mesh.material as THREE.MeshStandardMaterial, r.activated);
-      }
-      entry.mesh.position.set(r.position.x, r.position.y, r.position.z);
-    }
-    for (const [id, entry] of this.ruinMeshes) {
-      if (seen.has(id)) continue;
-      entry.mesh.remove(entry.label);
-      this.scene.remove(entry.mesh);
-      entry.mesh.geometry.dispose();
-      (entry.mesh.material as THREE.Material).dispose();
-      this.ruinMeshes.delete(id);
-    }
-  }
-
-  private applyRelics(relics: ReadonlyArray<RelicSnapshot>): void {
-    const seen = new Set<string>();
-    for (const r of relics) {
-      seen.add(r.id);
-      let entry = this.relicMeshes.get(r.id);
-      if (!entry) {
-        const mat = new THREE.MeshStandardMaterial({ transparent: true, opacity: r.claimed ? 0.3 : 1.0 });
-        applyAshRelicMaterial(mat, r.claimed);
-        const mesh = new THREE.Mesh(new THREE.OctahedronGeometry(0.9, 0), mat);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-        const label = makeTooltip('');
-        label.position.set(0, 1.95, 0);
-        mesh.add(label);
-        this.scene.add(mesh);
-        entry = { mesh, label };
-        this.relicMeshes.set(r.id, entry);
-      } else {
-        applyAshRelicMaterial(entry.mesh.material as THREE.MeshStandardMaterial, r.claimed);
-      }
-      entry.mesh.position.set(r.position.x, r.position.y, r.position.z);
-      entry.mesh.rotation.y += 0.02;
-    }
-    for (const [id, entry] of this.relicMeshes) {
-      if (seen.has(id)) continue;
-      entry.mesh.remove(entry.label);
-      this.scene.remove(entry.mesh);
-      entry.mesh.geometry.dispose();
-      (entry.mesh.material as THREE.Material).dispose();
-      this.relicMeshes.delete(id);
+      pool.delete(id);
     }
   }
 
@@ -769,13 +753,20 @@ export class RoomScene {
     return getAshDuneTerrainUniforms(this.groundMat)?.uTime.value ?? 0;
   }
 
-  private surfaceYAt(x: number, z: number): number {
-    return ashDuneSurfaceWorldY(x, z, this.dunePhaseSeconds(), { heightScale: this.duneHeightScale });
+  surfaceYAt(x: number, z: number): number {
+    return ashDuneSurfaceWorldY(x, z, this.dunePhaseSeconds(), {
+      heightScale: this.duneHeightScale,
+    });
   }
 
   private snapLocalYToDune(): void {
-    this.localPos.y =
-      this.surfaceYAt(this.localPos.x, this.localPos.z) + ASH_DUNE_PLAYER_CENTER_OFFSET;
+    this.localPos.y = placementSurfaceY(
+      'player',
+      this.localPos.x,
+      this.localPos.z,
+      this.dunePhaseSeconds(),
+      { heightScale: this.duneHeightScale },
+    );
   }
 
   private findNearestRuin(): RuinSnapshot | null {
@@ -875,34 +866,15 @@ export class RoomScene {
     if (document.pointerLockElement === this.canvas) {
       document.exitPointerLock();
     }
-    for (const entry of this.markers.values()) {
-      entry.core.remove(entry.label);
-      this.scene.remove(entry.core);
-      entry.core.geometry.dispose();
-      (entry.core.material as THREE.Material).dispose();
+    for (const pool of [this.markers, this.followerMeshes, this.ruinMeshes, this.relicMeshes]) {
+      for (const entry of pool.values()) {
+        entry.mesh.remove(entry.label);
+        this.scene.remove(entry.mesh);
+        entry.mesh.geometry.dispose();
+        (entry.mesh.material as THREE.Material).dispose();
+      }
+      pool.clear();
     }
-    this.markers.clear();
-    for (const e of this.followerMeshes.values()) {
-      e.mesh.remove(e.label);
-      this.scene.remove(e.mesh);
-      e.mesh.geometry.dispose();
-      (e.mesh.material as THREE.Material).dispose();
-    }
-    this.followerMeshes.clear();
-    for (const e of this.ruinMeshes.values()) {
-      e.mesh.remove(e.label);
-      this.scene.remove(e.mesh);
-      e.mesh.geometry.dispose();
-      (e.mesh.material as THREE.Material).dispose();
-    }
-    this.ruinMeshes.clear();
-    for (const e of this.relicMeshes.values()) {
-      e.mesh.remove(e.label);
-      this.scene.remove(e.mesh);
-      e.mesh.geometry.dispose();
-      (e.mesh.material as THREE.Material).dispose();
-    }
-    this.relicMeshes.clear();
     this.ground.remove(this.groundTip);
     this.labelRenderer.domElement.remove();
     this.localCore.remove(this.localLabel);

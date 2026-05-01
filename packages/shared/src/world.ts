@@ -107,12 +107,33 @@ export const FOLLOWER_KINDS = ['wanderer', 'lantern-bearer', 'beast'] as const;
 export const FollowerKindSchema = z.enum(FOLLOWER_KINDS);
 export type FollowerKind = z.infer<typeof FollowerKindSchema>;
 
-/** Follower kind names for tooltips (avoid single-letter codes in player-facing copy). */
-export const FOLLOWER_KIND_DISPLAY: Readonly<Record<FollowerKind, string>> = {
-  wanderer: 'Wanderer',
-  'lantern-bearer': 'Lantern bearer',
-  beast: 'Beast',
-} as const;
+/**
+ * Single source of truth for everything a follower kind contributes:
+ *   - `displayName`   — UI / tooltips.
+ *   - `glyph`         — leading shape used in CSS2D world labels.
+ *   - `lightGain`     — caravan light radius bonus per attached follower (server sim).
+ *   - `spawnWeight`   — seeded RNG pick weight in `generateInitialWorld`.
+ * Adding a new follower kind = one entry here, plus the literal in `FOLLOWER_KINDS`.
+ */
+export interface FollowerKindDef {
+  readonly id: FollowerKind;
+  readonly displayName: string;
+  readonly glyph: string;
+  readonly lightGain: number;
+  readonly spawnWeight: number;
+}
+
+export const FOLLOWER_KIND_DEFS: Readonly<Record<FollowerKind, FollowerKindDef>> = Object.freeze({
+  wanderer: { id: 'wanderer', displayName: 'Wanderer', glyph: '∿', lightGain: 0.6, spawnWeight: 6 },
+  'lantern-bearer': {
+    id: 'lantern-bearer',
+    displayName: 'Lantern bearer',
+    glyph: '✧',
+    lightGain: 1.6,
+    spawnWeight: 2,
+  },
+  beast: { id: 'beast', displayName: 'Beast', glyph: '▶', lightGain: 0.25, spawnWeight: 1 },
+});
 
 /** Wire shape for a single follower, free or attached. */
 export const FollowerSnapshotSchema = z.object({

@@ -7,6 +7,7 @@ import { DEFAULT_WORLD_CONFIG } from '@realtime-room/shared';
 import type { FxTier } from './flameLighting.js';
 import type { SceneVisualSettings } from './scene.js';
 import { mergeNprFromPartialBlob, NPR_DEFAULTS, type NprSettings } from './nprSettings.js';
+import { NPR_FIELDS, NPR_FIELD_KEYS } from './nprSchema.js';
 import type { WorldLabelMode } from './tooltips.js';
 
 /** Matches prior `scene.ts` `DEFAULT_SCENE_VISUAL` (single source). */
@@ -51,13 +52,16 @@ export interface RoomOptionsSnapshot {
   npr: NprSettings;
 }
 
+/** Deep clone, with per-field shape awareness (color3 tuples need a fresh array). */
 export function cloneNprSettings(s: NprSettings): NprSettings {
-  return {
-    ...s,
-    outlineColor: [s.outlineColor[0], s.outlineColor[1], s.outlineColor[2]],
-    celShadowTint: [s.celShadowTint[0], s.celShadowTint[1], s.celShadowTint[2]],
-    mistColor: [s.mistColor[0], s.mistColor[1], s.mistColor[2]],
-  };
+  const out: Record<string, unknown> = { ...(s as unknown as Record<string, unknown>) };
+  for (const k of NPR_FIELD_KEYS) {
+    if (NPR_FIELDS[k].kind === 'color3') {
+      const t = s[k] as readonly [number, number, number];
+      out[k] = [t[0], t[1], t[2]];
+    }
+  }
+  return out as unknown as NprSettings;
 }
 
 function tuple3Close(
@@ -97,43 +101,43 @@ export function optionRgbDiffers(
  */
 export function snapNprNearCodeDefaults(s: NprSettings, eps = OPTION_FLOAT_EPS): NprSettings {
   const d = NPR_DEFAULTS;
-  const o = cloneNprSettings(s);
-  const keys = Object.keys(d) as (keyof NprSettings)[];
-  for (const k of keys) {
-    const ov = o[k];
-    const dv = d[k];
-    if (typeof ov === 'number' && typeof dv === 'number') {
-      if (Math.abs(ov - dv) <= eps) {
-        (o as unknown as Record<string, unknown>)[k as string] = dv;
-      }
-      continue;
-    }
-    if (Array.isArray(ov) && Array.isArray(dv) && ov.length === 3 && dv.length === 3) {
-      const oa = ov as readonly [number, number, number];
-      const da = dv as readonly [number, number, number];
-      const nx = Math.abs(oa[0] - da[0]) <= eps ? da[0] : oa[0];
-      const ny = Math.abs(oa[1] - da[1]) <= eps ? da[1] : oa[1];
-      const nz = Math.abs(oa[2] - da[2]) <= eps ? da[2] : oa[2];
-      (o as unknown as Record<string, unknown>)[k as string] = [nx, ny, nz];
+  const o = cloneNprSettings(s) as unknown as Record<string, unknown>;
+  for (const k of NPR_FIELD_KEYS) {
+    const f = NPR_FIELDS[k];
+    if (f.kind === 'float' || f.kind === 'int') {
+      const ov = o[k] as number;
+      const dv = d[k] as number;
+      if (Math.abs(ov - dv) <= eps) o[k] = dv;
+    } else if (f.kind === 'color3') {
+      const oa = o[k] as readonly [number, number, number];
+      const da = d[k] as readonly [number, number, number];
+      o[k] = [
+        Math.abs(oa[0] - da[0]) <= eps ? da[0] : oa[0],
+        Math.abs(oa[1] - da[1]) <= eps ? da[1] : oa[1],
+        Math.abs(oa[2] - da[2]) <= eps ? da[2] : oa[2],
+      ];
     }
   }
-  return o;
+  return o as unknown as NprSettings;
 }
 
 export function nprSettingsEqual(a: NprSettings, b: NprSettings, eps = 1e-4): boolean {
-  const keys = Object.keys(NPR_DEFAULTS) as (keyof NprSettings)[];
-  for (const k of keys) {
-    const va = a[k];
-    const vb = b[k];
-    if (typeof va === 'boolean' && typeof vb === 'boolean' && va === vb) continue;
-    if (typeof va === 'string' && typeof vb === 'string' && va === vb) continue;
-    if (typeof va === 'number' && typeof vb === 'number' && numClose(va, vb, eps)) continue;
-    if (Array.isArray(va) && Array.isArray(vb) && va.length === 3 && vb.length === 3) {
-      if (!tuple3Close(va as readonly [number, number, number], vb as readonly [number, number, number], eps))
+  for (const k of NPR_FIELD_KEYS) {
+    const f = NPR_FIELDS[k];
+    if (f.kind === 'bool' || f.kind === 'enum') {
+      if (a[k] !== b[k]) return false;
+    } else if (f.kind === 'float' || f.kind === 'int') {
+      if (!numClose(a[k] as number, b[k] as number, eps)) return false;
+    } else {
+      if (
+        !tuple3Close(
+          a[k] as readonly [number, number, number],
+          b[k] as readonly [number, number, number],
+          eps,
+        )
+      )
         return false;
-      continue;
     }
-    return false;
   }
   return true;
 }

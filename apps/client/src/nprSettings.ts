@@ -8,19 +8,24 @@
  * order: cel quantise → Kuwahara oil → edge mist → depth+normal Sobel
  * outline → hatching → final tint.
  *
- * One source of truth lives here; `nprPost.ts` consumes it, `options.ts`
- * mutates it, and `localStorage` persists the last "custom" tweak.
+ * One source of truth lives in `nprSchema.ts` (per-field default + clamp);
+ * `nprPost.ts` consumes the settings shape, `options.ts` mutates it, and
+ * `localStorage` persists the last "custom" tweak.
  */
-export type NprStyle = 'off' | 'toon' | 'moebius' | 'rembrandt' | 'painterly_toon' | 'custom';
+import {
+  NPR_FIELDS,
+  NPR_FIELD_KEYS,
+  clampFloat,
+  readBool,
+  readColor3,
+  readEnum,
+  type Color3Field,
+  type HatchPattern,
+  type NprStyle,
+} from './nprSchema.js';
 
-export const NPR_STYLES: ReadonlyArray<NprStyle> = [
-  'off',
-  'toon',
-  'moebius',
-  'rembrandt',
-  'painterly_toon',
-  'custom',
-];
+export type { HatchPattern, NprStyle } from './nprSchema.js';
+export { HATCH_PATTERNS, NPR_STYLES } from './nprSchema.js';
 
 export const NPR_STYLE_LABEL: Readonly<Record<NprStyle, string>> = Object.freeze({
   off: 'Off',
@@ -32,10 +37,6 @@ export const NPR_STYLE_LABEL: Readonly<Record<NprStyle, string>> = Object.freeze
 });
 
 /** Hatching cadence: more directions stack on top of each other for darker bands. */
-export type HatchPattern = 'tonal' | 'crosshatch' | 'raster';
-
-export const HATCH_PATTERNS: ReadonlyArray<HatchPattern> = ['tonal', 'crosshatch', 'raster'];
-
 export const HATCH_PATTERN_LABEL: Readonly<Record<HatchPattern, string>> = Object.freeze({
   tonal: 'Tonal',
   crosshatch: 'Crosshatch',
@@ -127,64 +128,25 @@ export interface NprSettings {
   mistGeomEdgeScale: number;
 }
 
-export const NPR_DEFAULTS: NprSettings = Object.freeze({
-  enabled: false,
-  style: 'off',
+/**
+ * Code defaults derived from {@link NPR_FIELDS}. Don't edit per-field defaults
+ * here — change them in `nprSchema.ts` so parsing / cloning / equality stay in
+ * sync automatically.
+ */
+function buildNprDefaults(): NprSettings {
+  const out: Record<string, unknown> = {};
+  for (const k of NPR_FIELD_KEYS) {
+    const f = NPR_FIELDS[k];
+    if (f.kind === 'color3') {
+      out[k] = [f.default[0], f.default[1], f.default[2]];
+    } else {
+      out[k] = f.default;
+    }
+  }
+  return out as unknown as NprSettings;
+}
 
-  outlineEnabled: true,
-  outlineThicknessPx: 1.5,
-  outlineColor: [0.0, 0.0, 0.0] as const,
-  outlineDepthWeight: 25.0,
-  outlineMinFeaturePx: 2.5,
-  outlineNearThinRelax: 0.62,
-  outlineNearDepthMax: 0.26,
-
-  wiggleEnabled: true,
-  wiggleFrequency: 0.08,
-  wiggleAmplitudePx: 2.0,
-  wiggleIrregularity: 0.0,
-
-  celEnabled: false,
-  celSteps: 4,
-  celStepSmoothness: 0.22,
-  celShadowTint: [0.55, 0.62, 0.85] as const,
-  celShadowTintAmount: 0.0,
-  celMinLight: 0.06,
-  celMix: 1.0,
-
-  hatchEnabled: true,
-  hatchPattern: 'crosshatch',
-  hatchModPx: 8.0,
-  hatchLumaDark: 0.35,
-  hatchLumaMid: 0.55,
-  hatchLumaLight: 0.8,
-  hatchCrossSteps: 6,
-  tonalShadowLift: 0.55,
-  rasterCellPx: 14.0,
-
-  oilEnabled: false,
-  oilRadiusPx: 3.0,
-  oilIntensity: 0.8,
-  oilLumaEdgeSuppress: 0.94,
-  oilGeomEdgeSuppress: 0.45,
-  oilDarkBoost: 0.18,
-  oilMaxBlend: 1.65,
-  oilDeltaClamp: 0.32,
-  oilDeltaClampEdgeMul: 0.375,
-  oilEdgeAttenLo: 0.03,
-  oilEdgeAttenHi: 0.22,
-  oilDeltaBandLo: 0.05,
-  oilDeltaBandHi: 0.28,
-
-  mistEnabled: false,
-  mistIntensity: 0.6,
-  mistDepthThreshold: 0.035,
-  mistSpreadPx: 12.0,
-  mistColor: [0.03, 0.025, 0.02] as const,
-  mistTintStrength: 0.2,
-  mistGlobal: 0.0,
-  mistGeomEdgeScale: 0.38,
-});
+export const NPR_DEFAULTS: NprSettings = Object.freeze(buildNprDefaults());
 
 /**
  * Style presets — each mirrors the behaviour you described:
@@ -300,127 +262,59 @@ export function applyPreset(base: NprSettings, style: NprStyle): NprSettings {
 
 const KEY_NPR = 'rtRoom.npr';
 
-interface PartialNprBlob {
-  [k: string]: unknown;
-}
-
-function isFinitePositive(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value);
-}
-
-function readColor3(value: unknown, fallback: readonly [number, number, number]): [number, number, number] {
-  if (Array.isArray(value) && value.length === 3 && value.every(isFinitePositive)) {
-    return [
-      Math.max(0, Math.min(1, value[0] as number)),
-      Math.max(0, Math.min(1, value[1] as number)),
-      Math.max(0, Math.min(1, value[2] as number)),
-    ];
-  }
-  return [fallback[0], fallback[1], fallback[2]];
-}
-
-function readBool(value: unknown, fallback: boolean): boolean {
-  return typeof value === 'boolean' ? value : fallback;
-}
-
-function readNumber(value: unknown, fallback: number, min: number, max: number): number {
-  if (!isFinitePositive(value)) return fallback;
-  return Math.max(min, Math.min(max, value));
-}
-
-function isNprStyle(value: unknown): value is NprStyle {
-  return typeof value === 'string' && (NPR_STYLES as ReadonlyArray<string>).includes(value);
-}
-
-function isHatchPattern(value: unknown): value is HatchPattern {
-  return typeof value === 'string' && (HATCH_PATTERNS as ReadonlyArray<string>).includes(value);
-}
+/**
+ * Pairs that are read independently but logically share an ordering invariant
+ * (low <= high). Swapped after parsing rather than re-derived in the schema —
+ * the GLSL composite gracefully handles either order, but the UI is friendlier
+ * when stored values stay sorted.
+ */
+const ORDERED_PAIRS: ReadonlyArray<readonly [keyof NprSettings, keyof NprSettings]> = [
+  ['oilEdgeAttenLo', 'oilEdgeAttenHi'],
+  ['oilDeltaBandLo', 'oilDeltaBandHi'],
+];
 
 /**
  * Merge a partial NPR blob (e.g. from `localStorage` or a saved session baseline)
- * into a full `NprSettings` using the same clamps as `getNprSettings`.
+ * into a full `NprSettings` using the per-field clamps from `nprSchema.ts`.
  */
 export function mergeNprFromPartialBlob(parsed: unknown): NprSettings {
-  if (!parsed || typeof parsed !== 'object') {
-    return { ...NPR_DEFAULTS };
+  const out: Record<string, unknown> = {};
+  const p = (parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null);
+  for (const k of NPR_FIELD_KEYS) {
+    const f = NPR_FIELDS[k];
+    const raw = p ? p[k] : undefined;
+    switch (f.kind) {
+      case 'bool':
+        out[k] = readBool(raw, f);
+        break;
+      case 'float':
+      case 'int':
+        out[k] = clampFloat(raw, f);
+        break;
+      case 'color3':
+        out[k] = readColor3(raw, f as Color3Field);
+        break;
+      case 'enum':
+        out[k] = readEnum(raw, f);
+        break;
+    }
   }
-  const p = parsed as PartialNprBlob;
-  const d = NPR_DEFAULTS;
-  return {
-    enabled: readBool(p.enabled, d.enabled),
-    style: isNprStyle(p.style) ? p.style : d.style,
-
-    outlineEnabled: readBool(p.outlineEnabled, d.outlineEnabled),
-    outlineThicknessPx: readNumber(p.outlineThicknessPx, d.outlineThicknessPx, 0.25, 8),
-    outlineColor: readColor3(p.outlineColor, d.outlineColor),
-    outlineDepthWeight: readNumber(p.outlineDepthWeight, d.outlineDepthWeight, 0, 100),
-    outlineMinFeaturePx: readNumber(p.outlineMinFeaturePx, d.outlineMinFeaturePx, 0, 16),
-    outlineNearThinRelax: readNumber(p.outlineNearThinRelax, d.outlineNearThinRelax, 0, 1),
-    outlineNearDepthMax: readNumber(p.outlineNearDepthMax, d.outlineNearDepthMax, 0.02, 0.6),
-
-    wiggleEnabled: readBool(p.wiggleEnabled, d.wiggleEnabled),
-    wiggleFrequency: readNumber(p.wiggleFrequency, d.wiggleFrequency, 0.001, 0.5),
-    wiggleAmplitudePx: readNumber(p.wiggleAmplitudePx, d.wiggleAmplitudePx, 0, 8),
-    wiggleIrregularity: readNumber(p.wiggleIrregularity, d.wiggleIrregularity, 0, 1),
-
-    celEnabled: readBool(p.celEnabled, d.celEnabled),
-    celSteps: readNumber(p.celSteps, d.celSteps, 2, 12),
-    celStepSmoothness: readNumber(p.celStepSmoothness, d.celStepSmoothness, 0, 1),
-    celShadowTint: readColor3(p.celShadowTint, d.celShadowTint),
-    celShadowTintAmount: readNumber(p.celShadowTintAmount, d.celShadowTintAmount, 0, 1),
-    celMinLight: readNumber(p.celMinLight, d.celMinLight, 0, 0.5),
-    celMix: readNumber(p.celMix, d.celMix, 0, 1),
-
-    hatchEnabled: readBool(p.hatchEnabled, d.hatchEnabled),
-    hatchPattern: isHatchPattern(p.hatchPattern) ? p.hatchPattern : d.hatchPattern,
-    hatchModPx: readNumber(p.hatchModPx, d.hatchModPx, 2, 32),
-    hatchLumaDark: readNumber(p.hatchLumaDark, d.hatchLumaDark, 0, 1),
-    hatchLumaMid: readNumber(p.hatchLumaMid, d.hatchLumaMid, 0, 1),
-    hatchLumaLight: readNumber(p.hatchLumaLight, d.hatchLumaLight, 0, 1),
-    hatchCrossSteps: Math.round(readNumber(p.hatchCrossSteps, d.hatchCrossSteps, 3, 16)),
-    tonalShadowLift: readNumber(p.tonalShadowLift, d.tonalShadowLift, 0, 1),
-    rasterCellPx: readNumber(p.rasterCellPx, d.rasterCellPx, 4, 64),
-    oilEnabled: readBool(p.oilEnabled, d.oilEnabled),
-    oilRadiusPx: readNumber(p.oilRadiusPx, d.oilRadiusPx, 1, 10),
-    oilIntensity: readNumber(p.oilIntensity, d.oilIntensity, 0, 3),
-    oilLumaEdgeSuppress: readNumber(p.oilLumaEdgeSuppress, d.oilLumaEdgeSuppress, 0, 1),
-    oilGeomEdgeSuppress: readNumber(p.oilGeomEdgeSuppress, d.oilGeomEdgeSuppress, 0, 1),
-    oilDarkBoost: readNumber(p.oilDarkBoost, d.oilDarkBoost, 0, 0.4),
-    oilMaxBlend: readNumber(p.oilMaxBlend, d.oilMaxBlend, 0.25, 3),
-    oilDeltaClamp: readNumber(p.oilDeltaClamp, d.oilDeltaClamp, 0.05, 0.7),
-    oilDeltaClampEdgeMul: readNumber(p.oilDeltaClampEdgeMul, d.oilDeltaClampEdgeMul, 0.05, 1),
-    ...(() => {
-      let lo = readNumber(p.oilEdgeAttenLo, d.oilEdgeAttenLo, 0.001, 0.25);
-      let hi = readNumber(p.oilEdgeAttenHi, d.oilEdgeAttenHi, 0.05, 0.6);
-      if (lo > hi) [lo, hi] = [hi, lo];
-      return { oilEdgeAttenLo: lo, oilEdgeAttenHi: hi };
-    })(),
-    ...(() => {
-      let lo = readNumber(p.oilDeltaBandLo, d.oilDeltaBandLo, 0.02, 0.35);
-      let hi = readNumber(p.oilDeltaBandHi, d.oilDeltaBandHi, 0.12, 0.55);
-      if (lo > hi) [lo, hi] = [hi, lo];
-      return { oilDeltaBandLo: lo, oilDeltaBandHi: hi };
-    })(),
-
-    mistEnabled: readBool(p.mistEnabled, d.mistEnabled),
-    mistIntensity: readNumber(p.mistIntensity, d.mistIntensity, 0, 2),
-    mistDepthThreshold: readNumber(p.mistDepthThreshold, d.mistDepthThreshold, 0.0005, 0.25),
-    mistSpreadPx: readNumber(p.mistSpreadPx, d.mistSpreadPx, 0, 32),
-    mistColor: readColor3(p.mistColor, d.mistColor),
-    mistTintStrength: readNumber(p.mistTintStrength, d.mistTintStrength, 0, 1),
-    mistGlobal: readNumber(p.mistGlobal, d.mistGlobal, 0, 1),
-    mistGeomEdgeScale: readNumber(p.mistGeomEdgeScale, d.mistGeomEdgeScale, 0, 2),
-  };
+  for (const [loK, hiK] of ORDERED_PAIRS) {
+    const lo = out[loK as string] as number;
+    const hi = out[hiK as string] as number;
+    if (lo > hi) {
+      out[loK as string] = hi;
+      out[hiK as string] = lo;
+    }
+  }
+  return out as unknown as NprSettings;
 }
 
 export function getNprSettings(): NprSettings {
-  let parsed: PartialNprBlob | null = null;
+  let parsed: unknown = null;
   try {
     const raw = window.localStorage.getItem(KEY_NPR);
-    if (raw) {
-      const j = JSON.parse(raw) as unknown;
-      if (j && typeof j === 'object') parsed = j as PartialNprBlob;
-    }
+    if (raw) parsed = JSON.parse(raw) as unknown;
   } catch {
     parsed = null;
   }

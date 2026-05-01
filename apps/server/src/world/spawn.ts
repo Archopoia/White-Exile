@@ -5,16 +5,16 @@
  * layer carries the seed forward); spawn caps live in `WorldConfig`.
  */
 import {
-  ASH_DUNE_FOLLOWER_CENTER_OFFSET,
-  ASH_DUNE_RELIC_CENTER_OFFSET,
-  ASH_DUNE_RUIN_CENTER_OFFSET,
-  ashDuneSurfaceWorldY,
+  FOLLOWER_KIND_DEFS,
+  FOLLOWER_KINDS,
+  placementSurfaceY,
   ZONE_BANDS,
   type FollowerKind,
   type FollowerSnapshot,
   type RelicSnapshot,
   type RuinSnapshot,
   type WorldConfig,
+  type WorldPlacementKind,
   type Zone,
 } from '@realtime-room/shared';
 import type { Rng } from './rng.js';
@@ -25,18 +25,16 @@ interface SpawnEntities {
   relics: RelicSnapshot[];
 }
 
-const FOLLOWER_KINDS_WEIGHTED: ReadonlyArray<{ kind: FollowerKind; weight: number }> = [
-  { kind: 'wanderer', weight: 6 },
-  { kind: 'lantern-bearer', weight: 2 },
-  { kind: 'beast', weight: 1 },
-];
+const FOLLOWER_SPAWN_TOTAL_WEIGHT = FOLLOWER_KINDS.reduce(
+  (acc, k) => acc + FOLLOWER_KIND_DEFS[k].spawnWeight,
+  0,
+);
 
 function pickKind(rng: Rng): FollowerKind {
-  const total = FOLLOWER_KINDS_WEIGHTED.reduce((acc, k) => acc + k.weight, 0);
-  let pick = rng() * total;
-  for (const entry of FOLLOWER_KINDS_WEIGHTED) {
-    pick -= entry.weight;
-    if (pick <= 0) return entry.kind;
+  let pick = rng() * FOLLOWER_SPAWN_TOTAL_WEIGHT;
+  for (const k of FOLLOWER_KINDS) {
+    pick -= FOLLOWER_KIND_DEFS[k].spawnWeight;
+    if (pick <= 0) return k;
   }
   return 'wanderer';
 }
@@ -44,7 +42,7 @@ function pickKind(rng: Rng): FollowerKind {
 function pickPositionInZone(
   rng: Rng,
   zone: Zone,
-  yOffset: number,
+  placement: WorldPlacementKind,
   config: WorldConfig,
 ): { x: number; y: number; z: number } {
   let inner = 0;
@@ -63,8 +61,7 @@ function pickPositionInZone(
   const theta = rng() * Math.PI * 2;
   const x = Math.cos(theta) * radius;
   const z = Math.sin(theta) * radius;
-  const y = ashDuneSurfaceWorldY(x, z, 0, { heightScale: config.duneHeightScale }) + yOffset;
-  return { x, y, z };
+  return { x, y: placementSurfaceY(placement, x, z, 0, { heightScale: config.duneHeightScale }), z };
 }
 
 /** Initial world layout. Followers cluster in grey/deep zones; relics in deep/dead. */
@@ -87,7 +84,7 @@ export function generateInitialWorld(seed: number, config: WorldConfig): SpawnEn
     followers.push({
       id: `f-${seed.toString(16)}-${i}`,
       kind: pickKind(rng),
-      position: pickPositionInZone(rng, zone, ASH_DUNE_FOLLOWER_CENTER_OFFSET, config),
+      position: pickPositionInZone(rng, zone, 'follower', config),
       ownerId: null,
       morale: 0.55 + rng() * 0.3,
     });
@@ -99,7 +96,7 @@ export function generateInitialWorld(seed: number, config: WorldConfig): SpawnEn
     const zone = ruinZones[i % ruinZones.length]!;
     ruins.push({
       id: `r-${seed.toString(16)}-${i}`,
-      position: pickPositionInZone(rng, zone, ASH_DUNE_RUIN_CENTER_OFFSET, config),
+      position: pickPositionInZone(rng, zone, 'ruin', config),
       followerCharge: 2 + Math.floor(rng() * 4),
       activated: false,
     });
@@ -111,7 +108,7 @@ export function generateInitialWorld(seed: number, config: WorldConfig): SpawnEn
     const zone = relicZones[i % relicZones.length]!;
     relics.push({
       id: `relic-${seed.toString(16)}-${i}`,
-      position: pickPositionInZone(rng, zone, ASH_DUNE_RELIC_CENTER_OFFSET, config),
+      position: pickPositionInZone(rng, zone, 'relic', config),
       radiusBonus: 2 + rng() * 4,
       claimed: false,
       claimedBy: null,

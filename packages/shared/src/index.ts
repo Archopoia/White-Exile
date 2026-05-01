@@ -1,4 +1,5 @@
 export * from './vec3.js';
+export * from './vec3Math.js';
 export * from './world.js';
 export * from './protocol.js';
 export * from './math.js';

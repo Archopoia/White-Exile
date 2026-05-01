@@ -2,38 +2,38 @@
  * White Exile world simulation tick.
  *
  * Authoritative loop:
- *   1. step fuel for every player (decay alone, recover when sheltered)
- *   2. recompute solo light radius from race/followers/relic bonuses
+ *   1. snap every player to the dune surface (one pass, used by every later step)
+ *   2. compute pre-fuel solo light radius (without caravan combine yet)
  *   3. cluster players into caravans by light overlap
- *   4. move attached followers toward their owner
- *   5. resolve combat absorption (stronger caravan absorbs lone bot followers)
- *   6. handle rescue intents queued since last tick
- *   7. handle ruin activations queued since last tick
+ *   4. claim relics intersected by a fuelled player
+ *   5. step fuel + finalise derived state (post-fuel light radius reuses the
+ *      base from step 2, just rescaled by the new fuel multiplier)
+ *   6. move attached followers toward their owner + panic if dim
+ *   7. drain rescue / ruin-activation queues (intents from clients this tick)
+ *   8. combat absorption between bright vs dim caravans
+ *   9. final Y-resnap of every entity in one pass (one helper, all kinds)
  *
  * The result is a per-player and per-entity dictionary the network layer
  * snapshots and broadcasts. Pure functions where possible so the test suite
  * exercises the math without spinning up sockets.
  */
 import {
-  ASH_DUNE_FOLLOWER_CENTER_OFFSET,
-  ASH_DUNE_PLAYER_CENTER_OFFSET,
-  ASH_DUNE_RELIC_CENTER_OFFSET,
-  ASH_DUNE_RUIN_CENTER_OFFSET,
-  ashDuneSurfaceWorldY,
   classifyZone,
   computeSoloLightRadius,
   distanceSquared3,
+  placementSurfaceY,
   RACE_PROFILES,
   stepFuel,
+  type AshDuneSampleOptions,
   type CaravanSnapshot,
   type FollowerKind,
   type FollowerSnapshot,
   type Race,
   type RelicSnapshot,
   type RuinSnapshot,
-  type AshDuneSampleOptions,
   type Vec3,
   type WorldConfig,
+  type WorldPlacementKind,
   type Zone,
 } from '@realtime-room/shared';
 import type { Logger } from 'pino';
@@ -84,6 +84,8 @@ export interface SimResult {
 const FOLLOW_LERP = 4.0;
 const RESCUE_RANGE_SCALE = 1.0;
 const RUIN_RANGE = 6;
+const RUIN_RANGE_SQ = RUIN_RANGE * RUIN_RANGE;
+const RELIC_CLAIM_RANGE_SQ = 4 * 4;
 
 export function newSimQueues(): SimQueues {
   return { rescues: [], ruinActivations: [] };
@@ -97,8 +99,37 @@ function lerp3(a: Vec3, b: Vec3, t: number): Vec3 {
   };
 }
 
-function distance(a: Vec3, b: Vec3): number {
-  return Math.sqrt(distanceSquared3(a.x, a.y, a.z, b.x, b.y, b.z));
+function distSq(a: Vec3, b: Vec3): number {
+  return distanceSquared3(a.x, a.y, a.z, b.x, b.y, b.z);
+}
+
+/** Resnap an entity's Y to the live dune surface for its placement kind. */
+function snapY(
+  e: { position: Vec3 },
+  kind: WorldPlacementKind,
+  simT: number,
+  opts: AshDuneSampleOptions,
+): void {
+  e.position.y = placementSurfaceY(kind, e.position.x, e.position.z, simT, opts);
+}
+
+interface SoloCache {
+  /** Pre-fuel-step solo radius (used for caravan clustering + rescue range + combat). */
+  preFuel: number;
+  distFromOrigin: number;
+  zone: Zone;
+}
+
+function buildSoloCache(p: SimPlayer): SoloCache {
+  const distFromOrigin = Math.hypot(p.position.x, p.position.y, p.position.z);
+  const preFuel = computeSoloLightRadius({
+    race: p.race,
+    followers: p.followers,
+    relicBonus: p.relicBonus,
+    fuel: p.fuel,
+    distanceFromOrigin: distFromOrigin,
+  });
+  return { preFuel, distFromOrigin, zone: classifyZone(distFromOrigin) };
 }
 
 export function tickWorld(
@@ -109,89 +140,68 @@ export function tickWorld(
   simulationTimeSec: number,
 ): SimResult {
   const derived = new Map<string, SimDerivedPlayer>();
-  const clusterMembers: ClusterMember[] = [];
-  const duneOpts = { heightScale: world.config.duneHeightScale } as const;
-
+  const duneOpts: AshDuneSampleOptions = { heightScale: world.config.duneHeightScale };
   const playerArr = [...world.players.values()];
-  for (const p of playerArr) {
-    p.position.y =
-      ashDuneSurfaceWorldY(p.position.x, p.position.z, simulationTimeSec, duneOpts) +
-      ASH_DUNE_PLAYER_CENTER_OFFSET;
-  }
 
-  // Pass 1: solo light radius (without caravan combine yet).
-  const tempSolo = new Map<string, number>();
-  for (const p of playerArr) {
-    const distOrigin = Math.sqrt(p.position.x ** 2 + p.position.y ** 2 + p.position.z ** 2);
-    const solo = computeSoloLightRadius({
-      race: p.race,
-      followers: p.followers,
-      relicBonus: p.relicBonus,
-      fuel: p.fuel,
-      distanceFromOrigin: distOrigin,
-    });
-    tempSolo.set(p.id, solo);
-  }
+  // Pass 1: snap every player's Y to the live dune surface so all later
+  // distance / overlap math uses consistent coordinates.
+  for (const p of playerArr) snapY(p, 'player', simulationTimeSec, duneOpts);
 
-  // Pass 2: build caravans.
-  for (const p of playerArr) {
-    clusterMembers.push({
+  // Pass 2: pre-fuel solo light radius + zone (cached for the whole tick).
+  const solo = new Map<string, SoloCache>();
+  const clusterMembers: ClusterMember[] = new Array(playerArr.length);
+  for (let i = 0; i < playerArr.length; i++) {
+    const p = playerArr[i]!;
+    const c = buildSoloCache(p);
+    solo.set(p.id, c);
+    clusterMembers[i] = {
       playerId: p.id,
       race: p.race,
       position: p.position,
-      soloRadius: tempSolo.get(p.id) ?? 0,
+      soloRadius: c.preFuel,
       followerCount: p.followers.length,
-    });
+    };
   }
-  const { caravanByPlayer, caravans } = buildCaravans(clusterMembers);
 
-  // Pass 3: claim relics intersected by player while they have fuel.
+  const { caravanByPlayer, caravans } = buildCaravans(clusterMembers);
+  const caravanById = new Map<string, CaravanSnapshot>();
+  for (const c of caravans) caravanById.set(c.id, c);
+
+  // Pass 3: claim relics intersected by a player while they have fuel.
   for (const p of playerArr) {
     if (p.fuel < 0.05) continue;
     for (const relic of world.relics.values()) {
       if (relic.claimed) continue;
-      const dist = distance(p.position, relic.position);
-      if (dist <= 4) {
-        relic.claimed = true;
-        relic.claimedBy = p.id;
-        p.relicBonus += relic.radiusBonus;
-        logger.info(
-          { evt: 'relic.claimed', playerId: p.id, relicId: relic.id, bonus: relic.radiusBonus },
-          'relic claimed',
-        );
-      }
+      if (distSq(p.position, relic.position) > RELIC_CLAIM_RANGE_SQ) continue;
+      relic.claimed = true;
+      relic.claimedBy = p.id;
+      p.relicBonus += relic.radiusBonus;
+      logger.info(
+        { evt: 'relic.claimed', playerId: p.id, relicId: relic.id, bonus: relic.radiusBonus },
+        'relic claimed',
+      );
     }
   }
 
-  // Pass 4: step fuel, classify zone, finalise derived state.
+  // Pass 4: step fuel + finalise derived state. Reuses the cached
+  // `distFromOrigin` and `zone`; relic claims in pass 3 may have raised
+  // `p.relicBonus`, so we recompute solo light here with the post-step fuel
+  // and post-claim bonus.
   for (const p of playerArr) {
-    const distOrigin = Math.sqrt(p.position.x ** 2 + p.position.y ** 2 + p.position.z ** 2);
+    const c = solo.get(p.id)!;
     const cid = caravanByPlayer.get(p.id) ?? `c-${p.id}`;
-    const caravan = caravans.find((c) => c.id === cid);
+    const caravan = caravanById.get(cid);
     const inRuin = isInsideAnyActiveRuin(p.position, world.ruins);
-    const sheltered = caravan ? caravan.lightRadius : 0;
-    p.fuel = stepFuel({
-      fuel: p.fuel,
-      race: p.race,
-      dt,
-      shelteredBy: caravan && caravan.memberIds.length > 1 ? sheltered : 0,
-      inRuin,
-    });
-    const distFromOriginAfter = distOrigin;
-    const zone = classifyZone(distFromOriginAfter);
-    const soloPostFuel = computeSoloLightRadius({
+    const sheltered = caravan && caravan.memberIds.length > 1 ? caravan.lightRadius : 0;
+    p.fuel = stepFuel({ fuel: p.fuel, race: p.race, dt, shelteredBy: sheltered, inRuin });
+    const post = computeSoloLightRadius({
       race: p.race,
       followers: p.followers,
       relicBonus: p.relicBonus,
       fuel: p.fuel,
-      distanceFromOrigin: distFromOriginAfter,
+      distanceFromOrigin: c.distFromOrigin,
     });
-    derived.set(p.id, {
-      id: p.id,
-      lightRadius: soloPostFuel,
-      caravanId: cid,
-      zone,
-    });
+    derived.set(p.id, { id: p.id, lightRadius: post, caravanId: cid, zone: c.zone });
   }
 
   // Pass 5: move attached followers toward their owners + panic if dim.
@@ -202,11 +212,9 @@ export function tickWorld(
       f.ownerId = null;
       continue;
     }
-    const target = jitterAround(owner.position, owner.id, f.id, world, simulationTimeSec, duneOpts);
+    const target = jitterAround(owner.position, owner.id, f.id, simulationTimeSec, duneOpts);
     f.position = lerp3(f.position, target, Math.min(1, dt * FOLLOW_LERP));
-    f.position.y =
-      ashDuneSurfaceWorldY(f.position.x, f.position.z, simulationTimeSec, duneOpts) +
-      ASH_DUNE_FOLLOWER_CENTER_OFFSET;
+    snapY(f, 'follower', simulationTimeSec, duneOpts);
     if (owner.fuel < 0.15) f.morale = Math.max(0, f.morale - dt * 0.3);
     else f.morale = Math.min(1, f.morale + dt * 0.05);
     if (f.morale < 0.05) {
@@ -218,12 +226,12 @@ export function tickWorld(
     }
   }
 
-  // Pass 6: rescue intents - attach the nearest stranded follower inside light.
+  // Pass 6: rescue intents — attach the nearest stranded follower inside light.
   let rescuesGranted = 0;
   for (const intent of queues.rescues) {
     const player = world.players.get(intent.playerId);
     if (!player) continue;
-    const playerLight = tempSolo.get(player.id) ?? 0;
+    const playerLight = solo.get(player.id)?.preFuel ?? 0;
     let target: FollowerSnapshot | undefined;
     if (intent.followerId) {
       target = world.followers.get(intent.followerId);
@@ -232,14 +240,7 @@ export function tickWorld(
       let bestSq = Infinity;
       for (const f of world.followers.values()) {
         if (f.ownerId !== null) continue;
-        const sq = distanceSquared3(
-          player.position.x,
-          player.position.y,
-          player.position.z,
-          f.position.x,
-          f.position.y,
-          f.position.z,
-        );
+        const sq = distSq(player.position, f.position);
         if (sq < bestSq) {
           bestSq = sq;
           target = f;
@@ -247,8 +248,8 @@ export function tickWorld(
       }
     }
     if (!target) continue;
-    const dist = distance(player.position, target.position);
-    if (dist > playerLight * RESCUE_RANGE_SCALE) continue;
+    const reach = playerLight * RESCUE_RANGE_SCALE;
+    if (distSq(player.position, target.position) > reach * reach) continue;
     target.ownerId = player.id;
     target.morale = Math.min(1, target.morale + 0.2);
     player.followers.push({
@@ -271,13 +272,13 @@ export function tickWorld(
   }
   queues.rescues.length = 0;
 
-  // Pass 7: ruin activations - flip ruin and spill its follower charge.
+  // Pass 7: ruin activations — flip ruin and spill its follower charge.
   let ruinsActivated = 0;
   for (const intent of queues.ruinActivations) {
     const player = world.players.get(intent.playerId);
     const ruin = world.ruins.get(intent.ruinId);
     if (!player || !ruin || ruin.activated) continue;
-    if (distance(player.position, ruin.position) > RUIN_RANGE) continue;
+    if (distSq(player.position, ruin.position) > RUIN_RANGE_SQ) continue;
     ruin.activated = true;
     ruinsActivated++;
     for (let i = 0; i < ruin.followerCharge; i++) {
@@ -289,8 +290,7 @@ export function tickWorld(
         kind: i % 4 === 0 ? 'lantern-bearer' : 'wanderer',
         position: {
           x: sx,
-          y:
-            ashDuneSurfaceWorldY(sx, sz, simulationTimeSec, duneOpts) + ASH_DUNE_FOLLOWER_CENTER_OFFSET,
+          y: placementSurfaceY('follower', sx, sz, simulationTimeSec, duneOpts),
           z: sz,
         },
         ownerId: null,
@@ -310,7 +310,7 @@ export function tickWorld(
   queues.ruinActivations.length = 0;
 
   // Pass 8: combat absorption. Iterate player pairs (regardless of caravan
-  // assignment) - if light fields overlap and one is significantly brighter,
+  // assignment) — if light fields overlap and one is significantly brighter,
   // followers drift toward the stronger light. Same-caravan merge is a feature,
   // not protection from a much-brighter neighbour.
   let combatAbsorptions = 0;
@@ -318,10 +318,10 @@ export function tickWorld(
     for (let j = i + 1; j < playerArr.length; j++) {
       const pa = playerArr[i]!;
       const pb = playerArr[j]!;
-      const ra = tempSolo.get(pa.id) ?? 0;
-      const rb = tempSolo.get(pb.id) ?? 0;
-      const dist = distance(pa.position, pb.position);
-      if (dist > ra + rb) continue;
+      const ra = solo.get(pa.id)?.preFuel ?? 0;
+      const rb = solo.get(pb.id)?.preFuel ?? 0;
+      const reach = ra + rb;
+      if (distSq(pa.position, pb.position) > reach * reach) continue;
       const ratio = Math.max(ra, rb) / Math.max(1, Math.min(ra, rb));
       if (ratio < 1.25) continue;
       const stronger = ra >= rb ? pa : pb;
@@ -353,34 +353,20 @@ export function tickWorld(
 
   // Reflect race-aware caravan radius into derived (overrides solo).
   for (const cv of caravans) {
+    if (cv.memberIds.length <= 1) continue;
     for (const id of cv.memberIds) {
       const d = derived.get(id);
-      if (d) d.lightRadius = cv.memberIds.length > 1 ? cv.lightRadius : d.lightRadius;
+      if (d) d.lightRadius = cv.lightRadius;
     }
   }
 
+  // Pass 9: final Y-resnap of every world entity on a single live pass.
   for (const p of playerArr) {
-    for (const f of p.followers) {
-      f.position.y =
-        ashDuneSurfaceWorldY(f.position.x, f.position.z, simulationTimeSec, duneOpts) +
-        ASH_DUNE_FOLLOWER_CENTER_OFFSET;
-    }
+    for (const f of p.followers) snapY(f, 'follower', simulationTimeSec, duneOpts);
   }
-  for (const f of world.followers.values()) {
-    f.position.y =
-      ashDuneSurfaceWorldY(f.position.x, f.position.z, simulationTimeSec, duneOpts) +
-      ASH_DUNE_FOLLOWER_CENTER_OFFSET;
-  }
-  for (const r of world.ruins.values()) {
-    r.position.y =
-      ashDuneSurfaceWorldY(r.position.x, r.position.z, simulationTimeSec, duneOpts) +
-      ASH_DUNE_RUIN_CENTER_OFFSET;
-  }
-  for (const r of world.relics.values()) {
-    r.position.y =
-      ashDuneSurfaceWorldY(r.position.x, r.position.z, simulationTimeSec, duneOpts) +
-      ASH_DUNE_RELIC_CENTER_OFFSET;
-  }
+  for (const f of world.followers.values()) snapY(f, 'follower', simulationTimeSec, duneOpts);
+  for (const r of world.ruins.values()) snapY(r, 'ruin', simulationTimeSec, duneOpts);
+  for (const r of world.relics.values()) snapY(r, 'relic', simulationTimeSec, duneOpts);
 
   return { derived, caravans, combatAbsorptions, rescuesGranted, ruinsActivated };
 }
@@ -389,21 +375,19 @@ function jitterAround(
   center: Vec3,
   ownerId: string,
   followerId: string,
-  world: SimWorld,
   simulationTimeSec: number,
   duneOpts: AshDuneSampleOptions,
 ): Vec3 {
-  void world;
   let h = 2166136261;
   for (const ch of ownerId) h = (h ^ ch.charCodeAt(0)) * 16777619;
   for (const ch of followerId) h = (h ^ ch.charCodeAt(0)) * 16777619;
-  const ang = (h >>> 0) / 4294967296 * Math.PI * 2;
+  const ang = ((h >>> 0) / 4294967296) * Math.PI * 2;
   const r = 1.6 + (((h >>> 8) & 0xff) / 255) * 1.4;
   const tx = center.x + Math.cos(ang) * r;
   const tz = center.z + Math.sin(ang) * r;
   return {
     x: tx,
-    y: ashDuneSurfaceWorldY(tx, tz, simulationTimeSec, duneOpts) + ASH_DUNE_FOLLOWER_CENTER_OFFSET,
+    y: placementSurfaceY('follower', tx, tz, simulationTimeSec, duneOpts),
     z: tz,
   };
 }
@@ -411,13 +395,16 @@ function jitterAround(
 function isInsideAnyActiveRuin(pos: Vec3, ruins: Map<string, RuinSnapshot>): boolean {
   for (const r of ruins.values()) {
     if (!r.activated) continue;
-    if (distance(pos, r.position) <= RUIN_RANGE) return true;
+    if (distSq(pos, r.position) <= RUIN_RANGE_SQ) return true;
   }
   return false;
 }
 
 /** Diagnostic dump for periodic info logs (every ~10s). */
-export function summarize(world: SimWorld, caravans: ReadonlyArray<CaravanSnapshot>): {
+export function summarize(
+  world: SimWorld,
+  caravans: ReadonlyArray<CaravanSnapshot>,
+): {
   players: number;
   caravans: number;
   attachedFollowers: number;

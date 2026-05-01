@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  ASH_DUNE_PLAYER_CENTER_OFFSET,
-  ashDuneSurfaceWorldY,
-} from './ashDuneTerrain.js';
+import { placementSurfaceY } from './ashDuneTerrain.js';
 import {
   clamp,
   clampPlayerPosition,
@@ -49,8 +46,7 @@ describe('clampPlayerPosition', () => {
   it('snaps Y to the dune surface and stays inside the play sphere', () => {
     const p = clampPlayerPosition({ x: 5000, y: 99, z: 0 }, t);
     const vol = clampToPlayVolume({ x: 5000, y: 99, z: 0 });
-    const wantY = ashDuneSurfaceWorldY(vol.x, vol.z, t) + ASH_DUNE_PLAYER_CENTER_OFFSET;
-    expect(p.y).toBeCloseTo(wantY, 5);
+    expect(p.y).toBeCloseTo(placementSurfaceY('player', vol.x, vol.z, t), 5);
     expect(Math.hypot(p.x, p.y, p.z)).toBeLessThanOrEqual(PLAY_VOLUME_RADIUS + 1e-6);
   });
 
@@ -58,6 +54,6 @@ describe('clampPlayerPosition', () => {
     const p = clampPlayerPosition({ x: 3, y: 0, z: 4 }, t);
     expect(p.x).toBe(3);
     expect(p.z).toBe(4);
-    expect(p.y).toBeCloseTo(ashDuneSurfaceWorldY(3, 4, t) + ASH_DUNE_PLAYER_CENTER_OFFSET, 5);
+    expect(p.y).toBeCloseTo(placementSurfaceY('player', 3, 4, t), 5);
   });
 });

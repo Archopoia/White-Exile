@@ -2,14 +2,14 @@
  * CSS2D world label strings for `off` | `keywords` | `full`. Mode `off` returns empty
  * strings; the renderer layer is hidden in `scene.ts`.
  *
- * Lines are prefixed with Unicode shapes / a few emoji (race, role, ruin, relic) for
- * quick visual scan; prose still carries meaning. Session (**Esc**) holds controls.
- *
- * Keyboard hints (R / F) are only appended when the player is close enough; see
- * {@link LabelProximity}.
+ * One pair (keywords, full) per entity kind drives every label. Add a new kind by
+ * extending the small lookup tables — no parallel `labelXxxFull` / `labelXxxKeywords`
+ * boilerplate. Lines are prefixed with Unicode shapes for quick visual scan; prose
+ * still carries meaning. Keyboard hints (R / F) only appear when the player is close
+ * enough; see {@link LabelProximity}.
  */
 import {
-  FOLLOWER_KIND_DISPLAY,
+  FOLLOWER_KIND_DEFS,
   RACE_PROFILES,
   ZONE_DISPLAY_LABEL,
   type FollowerKind,
@@ -31,17 +31,14 @@ export interface LabelProximity {
 
 const NAME_MAX = 22;
 
-/** Line-leading shapes / emoji for scan memory; text stays the source of truth. */
-function raceGlyph(race: Race): string {
-  if (race === 'emberfolk') return '◉';
-  if (race === 'ashborn') return '◈';
-  return '⋄';
-}
+const RACE_GLYPH: Readonly<Record<Race, string>> = Object.freeze({
+  emberfolk: '◉',
+  ashborn: '◈',
+  'lumen-kin': '⋄',
+});
 
 function followerKindGlyph(kind: FollowerKind): string {
-  if (kind === 'wanderer') return '∿';
-  if (kind === 'lantern-bearer') return '✧';
-  return '▶';
+  return FOLLOWER_KIND_DEFS[kind].glyph;
 }
 
 function moraleGlyph(morale: number): string {
@@ -49,8 +46,7 @@ function moraleGlyph(morale: number): string {
 }
 
 function truncateName(name: string): string {
-  if (name.length <= NAME_MAX) return name;
-  return `${name.slice(0, NAME_MAX - 1)}…`;
+  return name.length <= NAME_MAX ? name : `${name.slice(0, NAME_MAX - 1)}…`;
 }
 
 function inRescueLight(prox: LabelProximity | undefined): boolean {
@@ -65,200 +61,222 @@ function inRuinHintRange(prox: LabelProximity | undefined): boolean {
   return prox.distSqToLocal <= r * r;
 }
 
-function appendIfMissing(base: string, line: string): string {
-  if (base.includes(line)) return base;
-  return `${base}\n${line}`;
-}
-
-function labelGroundFull(): string {
-  return [
-    '≋ Ash dune terrain',
-    'Walking surface of the exile world. The origin sits in gentler fog; walking outward pushes you into harsher zones and faster fuel drain unless you merge light with other caravans.',
-  ].join('\n');
-}
-
-function labelYouFull(p: PlayerSnapshot): string {
-  const race = RACE_PROFILES[p.race].displayName;
-  const zone = ZONE_DISPLAY_LABEL[p.zone];
-  const r = Math.round(p.lightRadius);
-  return [
-    '◎ You (your caravan)',
-    `${raceGlyph(p.race)} Race: ${race}.`,
-    `⬡ Zone: ${zone} — rings farther from the origin are darker, riskier, and burn fuel faster unless you shelter in merged light or an active ruin.`,
-    `✦ Your light radius is about ${r} units: stranded followers and rescue checks use this bubble.`,
-  ].join('\n');
-}
-
-function labelYouKeywords(p: PlayerSnapshot): string {
-  const race = RACE_PROFILES[p.race].displayName;
-  const zone = ZONE_DISPLAY_LABEL[p.zone];
-  const r = Math.round(p.lightRadius);
-  return [
-    '◎ You',
-    `${raceGlyph(p.race)} Race: ${race}`,
-    `⬡ Zone: ${zone}`,
-    `✦ Light radius ~${r}`,
-  ].join('\n');
-}
-
-function labelOtherPlayerFull(p: PlayerSnapshot): string {
-  const name = truncateName(p.name);
-  const race = RACE_PROFILES[p.race].displayName;
-  const r = Math.round(p.lightRadius);
-  const sim = p.id.startsWith('ghost-');
-  const bot = p.isBot && !sim;
-  const lines: string[] = [
-    `◇ “${name}” — other player`,
-    `${raceGlyph(p.race)} Race: ${race}. Their light radius is about ${r}.`,
-  ];
-  if (sim) {
-    lines.push(
-      '👻 Simulated caravan: the server spawns these “ghost” players so the world feels populated when few humans are online. They are not a real person at a keyboard.',
-    );
-  } else if (bot) {
-    lines.push(
-      '🤖 Automated bot client: a test or filler process connected over the network, not a human player.',
-    );
-  }
+function joinLines(lines: ReadonlyArray<string>): string {
   return lines.join('\n');
 }
 
-function labelOtherPlayerKeywords(p: PlayerSnapshot): string {
-  const name = truncateName(p.name);
-  const race = RACE_PROFILES[p.race].displayName;
-  const r = Math.round(p.lightRadius);
-  const sim = p.id.startsWith('ghost-');
-  const bot = p.isBot && !sim;
-  const role = sim ? '👻 Simulated caravan (not a human)' : bot ? '🤖 Network bot' : '○ Human player';
-  return [
-    `◇ ${name}`,
-    `${raceGlyph(p.race)} Race: ${race}`,
-    `✦ Light radius ~${r}`,
-    role,
-  ].join('\n');
+function withHint(body: string, line: string | null): string {
+  if (!line || body.includes(line)) return body;
+  return `${body}\n${line}`;
 }
 
-function labelFollowerFull(f: FollowerSnapshot, prox?: LabelProximity): string {
-  const kind = FOLLOWER_KIND_DISPLAY[f.kind];
-  const moraleLine =
-    f.morale < 0.42
-      ? 'Morale is low — they are panicking and may flee back into the fog if their owner stays dim too long.'
-      : 'Morale is stable while their owner keeps fuel up.';
-  if (f.ownerId === null) {
-    let body = [
-      `⚠ ${followerKindGlyph(f.kind)} ${kind} follower (stranded)`,
-      'No caravan owns them yet. Move your light bubble over them to recruit them into your caravan.',
-    ].join('\n');
-    if (inRescueLight(prox)) body = appendIfMissing(body, '▸ In your light: press R to rescue');
-    return body;
-  }
-  return [
-    `${followerKindGlyph(f.kind)} ${kind} follower (with a caravan)`,
-    'Already rescued: they trail the player who owns them. If that player’s fuel collapses for long enough, morale drops and they can desert.',
-    `${moraleGlyph(f.morale)} ${moraleLine}`,
-  ].join('\n');
-}
+/**
+ * Per-mode renderer for one entity kind. Each call returns the full label text
+ * for one snapshot (or ground placeholder); `off` is handled centrally.
+ */
+type LabelRenderer<TIn> = {
+  readonly keywords: (input: TIn) => string;
+  readonly full: (input: TIn) => string;
+};
 
-function labelFollowerKeywords(f: FollowerSnapshot, prox?: LabelProximity): string {
-  const kind = FOLLOWER_KIND_DISPLAY[f.kind];
-  const pct = Math.round(f.morale * 100);
-  if (f.ownerId === null) {
-    let body = [
-      `⚠ ${followerKindGlyph(f.kind)} ${kind} · Stranded (no owner yet)`,
-      `${moraleGlyph(f.morale)} Morale ${pct}%`,
-    ].join('\n');
-    if (inRescueLight(prox)) body = appendIfMissing(body, '▸ In your light: press R to rescue');
-    return body;
-  }
-  return [
-    `${followerKindGlyph(f.kind)} ${kind} · With a caravan`,
-    `${moraleGlyph(f.morale)} Morale ${pct}%`,
-  ].join('\n');
-}
-
-function labelRuinFull(r: RuinSnapshot, prox?: LabelProximity): string {
-  if (r.activated) {
-    return [
-      '✓ ⌂ Ancient ruin (activated)',
-      'This ruin has already been opened. Its follower charge was released into the world when it was activated from nearby.',
-    ].join('\n');
-  }
-  const charge =
-    r.followerCharge === 1
-      ? '1 stranded follower is tied to it.'
-      : `${r.followerCharge} stranded followers are tied to it.`;
-  let body = [
-    '⌂ Ancient ruin (inactive pillar)',
-    `Standing near this pillar activates the ruin. ${charge} Activating also widens usable light in the immediate area.`,
-  ].join('\n');
-  if (inRuinHintRange(prox)) body = appendIfMissing(body, '▸ Close enough: press F to activate');
-  return body;
-}
-
-function labelRuinKeywords(r: RuinSnapshot, prox?: LabelProximity): string {
-  const head = r.activated ? '✓ ⌂ Ruin · Already activated' : '⌂ Ruin · Not activated yet';
-  let body = [head, `⊕ Stranded followers tied here: ${r.followerCharge}`].join('\n');
-  if (!r.activated && inRuinHintRange(prox)) body = appendIfMissing(body, '▸ Close enough: press F to activate');
-  return body;
-}
-
-function labelRelicFull(r: RelicSnapshot): string {
-  const bonus = r.radiusBonus;
-  if (r.claimed) {
-    return [
-      '✓ ◆ Relic orb (claimed)',
-      'Another caravan already claimed this relic. The light-radius bonus follows whoever holds the claim.',
-    ].join('\n');
-  }
-  return [
-    '◆ Relic orb (available)',
-    `Move your caravan through it with enough fuel to pick it up. Claiming adds +${bonus} to your solo light radius until the run ends or rules change it.`,
-  ].join('\n');
-}
-
-function labelRelicKeywords(r: RelicSnapshot): string {
-  const head = r.claimed ? '✓ ◆ Relic · Already claimed' : '◆ Relic · Available';
-  return [head, `✦ Light radius bonus +${r.radiusBonus}`, '➤ Pass through with fuel to claim'].join('\n');
-}
-
-export function labelGround(mode: WorldLabelMode): string {
-  if (mode === 'off') return '';
-  if (mode === 'keywords') {
-    return [
+const groundLabel: LabelRenderer<void> = {
+  keywords: () =>
+    joinLines([
       '≋ Walkable ash dunes',
       '▒ Farther from the center: heavier fog',
       '✦ Fuel drains faster unless you share light or use a ruin',
-    ].join('\n');
-  }
-  return labelGroundFull();
+    ]),
+  full: () =>
+    joinLines([
+      '≋ Ash dune terrain',
+      'Walking surface of the exile world. The origin sits in gentler fog; walking outward pushes you into harsher zones and faster fuel drain unless you merge light with other caravans.',
+    ]),
+};
+
+const youLabel: LabelRenderer<PlayerSnapshot> = {
+  keywords: (p) =>
+    joinLines([
+      '◎ You',
+      `${RACE_GLYPH[p.race]} Race: ${RACE_PROFILES[p.race].displayName}`,
+      `⬡ Zone: ${ZONE_DISPLAY_LABEL[p.zone]}`,
+      `✦ Light radius ~${Math.round(p.lightRadius)}`,
+    ]),
+  full: (p) =>
+    joinLines([
+      '◎ You (your caravan)',
+      `${RACE_GLYPH[p.race]} Race: ${RACE_PROFILES[p.race].displayName}.`,
+      `⬡ Zone: ${ZONE_DISPLAY_LABEL[p.zone]} — rings farther from the origin are darker, riskier, and burn fuel faster unless you shelter in merged light or an active ruin.`,
+      `✦ Your light radius is about ${Math.round(p.lightRadius)} units: stranded followers and rescue checks use this bubble.`,
+    ]),
+};
+
+interface PlayerRole {
+  readonly sim: boolean;
+  readonly bot: boolean;
+}
+
+function classifyPlayer(p: PlayerSnapshot): PlayerRole {
+  const sim = p.id.startsWith('ghost-');
+  return { sim, bot: p.isBot && !sim };
+}
+
+const otherPlayerLabel: LabelRenderer<PlayerSnapshot> = {
+  keywords: (p) => {
+    const { sim, bot } = classifyPlayer(p);
+    const role = sim
+      ? '👻 Simulated caravan (not a human)'
+      : bot
+        ? '🤖 Network bot'
+        : '○ Human player';
+    return joinLines([
+      `◇ ${truncateName(p.name)}`,
+      `${RACE_GLYPH[p.race]} Race: ${RACE_PROFILES[p.race].displayName}`,
+      `✦ Light radius ~${Math.round(p.lightRadius)}`,
+      role,
+    ]);
+  },
+  full: (p) => {
+    const { sim, bot } = classifyPlayer(p);
+    const lines: string[] = [
+      `◇ "${truncateName(p.name)}" — other player`,
+      `${RACE_GLYPH[p.race]} Race: ${RACE_PROFILES[p.race].displayName}. Their light radius is about ${Math.round(p.lightRadius)}.`,
+    ];
+    if (sim) {
+      lines.push(
+        '👻 Simulated caravan: the server spawns these "ghost" players so the world feels populated when few humans are online. They are not a real person at a keyboard.',
+      );
+    } else if (bot) {
+      lines.push(
+        '🤖 Automated bot client: a test or filler process connected over the network, not a human player.',
+      );
+    }
+    return joinLines(lines);
+  },
+};
+
+interface FollowerInput {
+  readonly f: FollowerSnapshot;
+  readonly prox?: LabelProximity;
+}
+
+const followerLabel: LabelRenderer<FollowerInput> = {
+  keywords: ({ f, prox }) => {
+    const kindName = FOLLOWER_KIND_DEFS[f.kind].displayName;
+    const pct = Math.round(f.morale * 100);
+    if (f.ownerId === null) {
+      const body = joinLines([
+        `⚠ ${followerKindGlyph(f.kind)} ${kindName} · Stranded (no owner yet)`,
+        `${moraleGlyph(f.morale)} Morale ${pct}%`,
+      ]);
+      return withHint(body, inRescueLight(prox) ? '▸ In your light: press R to rescue' : null);
+    }
+    return joinLines([
+      `${followerKindGlyph(f.kind)} ${kindName} · With a caravan`,
+      `${moraleGlyph(f.morale)} Morale ${pct}%`,
+    ]);
+  },
+  full: ({ f, prox }) => {
+    const kindName = FOLLOWER_KIND_DEFS[f.kind].displayName;
+    if (f.ownerId === null) {
+      const body = joinLines([
+        `⚠ ${followerKindGlyph(f.kind)} ${kindName} follower (stranded)`,
+        'No caravan owns them yet. Move your light bubble over them to recruit them into your caravan.',
+      ]);
+      return withHint(body, inRescueLight(prox) ? '▸ In your light: press R to rescue' : null);
+    }
+    const moraleLine =
+      f.morale < 0.42
+        ? 'Morale is low — they are panicking and may flee back into the fog if their owner stays dim too long.'
+        : 'Morale is stable while their owner keeps fuel up.';
+    return joinLines([
+      `${followerKindGlyph(f.kind)} ${kindName} follower (with a caravan)`,
+      'Already rescued: they trail the player who owns them. If that player\u2019s fuel collapses for long enough, morale drops and they can desert.',
+      `${moraleGlyph(f.morale)} ${moraleLine}`,
+    ]);
+  },
+};
+
+interface RuinInput {
+  readonly r: RuinSnapshot;
+  readonly prox?: LabelProximity;
+}
+
+const ruinLabel: LabelRenderer<RuinInput> = {
+  keywords: ({ r, prox }) => {
+    const head = r.activated ? '✓ ⌂ Ruin · Already activated' : '⌂ Ruin · Not activated yet';
+    const body = joinLines([head, `⊕ Stranded followers tied here: ${r.followerCharge}`]);
+    return withHint(
+      body,
+      !r.activated && inRuinHintRange(prox) ? '▸ Close enough: press F to activate' : null,
+    );
+  },
+  full: ({ r, prox }) => {
+    if (r.activated) {
+      return joinLines([
+        '✓ ⌂ Ancient ruin (activated)',
+        'This ruin has already been opened. Its follower charge was released into the world when it was activated from nearby.',
+      ]);
+    }
+    const charge =
+      r.followerCharge === 1
+        ? '1 stranded follower is tied to it.'
+        : `${r.followerCharge} stranded followers are tied to it.`;
+    const body = joinLines([
+      '⌂ Ancient ruin (inactive pillar)',
+      `Standing near this pillar activates the ruin. ${charge} Activating also widens usable light in the immediate area.`,
+    ]);
+    return withHint(body, inRuinHintRange(prox) ? '▸ Close enough: press F to activate' : null);
+  },
+};
+
+const relicLabel: LabelRenderer<RelicSnapshot> = {
+  keywords: (r) =>
+    joinLines([
+      r.claimed ? '✓ ◆ Relic · Already claimed' : '◆ Relic · Available',
+      `✦ Light radius bonus +${r.radiusBonus}`,
+      '➤ Pass through with fuel to claim',
+    ]),
+  full: (r) =>
+    r.claimed
+      ? joinLines([
+          '✓ ◆ Relic orb (claimed)',
+          'Another caravan already claimed this relic. The light-radius bonus follows whoever holds the claim.',
+        ])
+      : joinLines([
+          '◆ Relic orb (available)',
+          `Move your caravan through it with enough fuel to pick it up. Claiming adds +${r.radiusBonus} to your solo light radius until the run ends or rules change it.`,
+        ]),
+};
+
+function render<TIn>(renderer: LabelRenderer<TIn>, mode: WorldLabelMode, input: TIn): string {
+  if (mode === 'off') return '';
+  return mode === 'keywords' ? renderer.keywords(input) : renderer.full(input);
+}
+
+export function labelGround(mode: WorldLabelMode): string {
+  return render(groundLabel, mode, undefined);
 }
 
 export function labelYou(p: PlayerSnapshot, mode: WorldLabelMode): string {
-  if (mode === 'off') return '';
-  if (mode === 'keywords') return labelYouKeywords(p);
-  return labelYouFull(p);
+  return render(youLabel, mode, p);
 }
 
 export function labelOtherPlayer(p: PlayerSnapshot, mode: WorldLabelMode): string {
-  if (mode === 'off') return '';
-  if (mode === 'keywords') return labelOtherPlayerKeywords(p);
-  return labelOtherPlayerFull(p);
+  return render(otherPlayerLabel, mode, p);
 }
 
-export function labelFollower(f: FollowerSnapshot, mode: WorldLabelMode, prox?: LabelProximity): string {
-  if (mode === 'off') return '';
-  if (mode === 'keywords') return labelFollowerKeywords(f, prox);
-  return labelFollowerFull(f, prox);
+export function labelFollower(
+  f: FollowerSnapshot,
+  mode: WorldLabelMode,
+  prox?: LabelProximity,
+): string {
+  return render(followerLabel, mode, { f, prox });
 }
 
 export function labelRuin(r: RuinSnapshot, mode: WorldLabelMode, prox?: LabelProximity): string {
-  if (mode === 'off') return '';
-  if (mode === 'keywords') return labelRuinKeywords(r, prox);
-  return labelRuinFull(r, prox);
+  return render(ruinLabel, mode, { r, prox });
 }
 
 export function labelRelic(r: RelicSnapshot, mode: WorldLabelMode): string {
-  if (mode === 'off') return '';
-  if (mode === 'keywords') return labelRelicKeywords(r);
-  return labelRelicFull(r);
+  return render(relicLabel, mode, r);
 }

@@ -25,6 +25,7 @@
 import * as THREE from 'three';
 
 import type { NprSettings } from './nprSettings.js';
+import { NPR_FIELDS, NPR_FIELD_KEYS, type NprFieldKey } from './nprSchema.js';
 
 const VERT = /* glsl */ `
   varying vec2 vUv;
@@ -576,7 +577,34 @@ const FRAG = /* glsl */ `
   }
 `;
 
-interface NprUniforms {
+/**
+ * Uniform name override for fields that don't map to `'u' + Capitalized(key)`.
+ * Anything not listed here is auto-derived from the field key — keeps adding
+ * a new tunable to one line in `nprSchema.ts` plus one GLSL `uniform` line.
+ */
+const UNIFORM_NAME_OVERRIDE: Partial<Record<NprFieldKey, string>> = Object.freeze({
+  outlineDepthWeight: 'uDepthGradientWeight',
+  oilRadiusPx: 'uOilRadius',
+  hatchPattern: 'uShadowPattern',
+});
+
+/** Fields the shader doesn't read (purely a UI / serialization marker). */
+const UNIFORM_SKIP: ReadonlySet<NprFieldKey> = new Set<NprFieldKey>(['enabled', 'style']);
+
+const HATCH_PATTERN_INDEX: Readonly<Record<NprSettings['hatchPattern'], number>> = Object.freeze({
+  tonal: 0,
+  crosshatch: 1,
+  raster: 2,
+});
+
+function uniformNameFor(key: NprFieldKey): string {
+  return UNIFORM_NAME_OVERRIDE[key] ?? `u${key.charAt(0).toUpperCase()}${key.slice(1)}`;
+}
+
+type SimpleUniform = THREE.IUniform<number | THREE.Vector2 | THREE.Vector3 | THREE.Texture | null>;
+type UniformBag = Record<string, SimpleUniform>;
+
+interface FixedUniforms {
   readonly tDiffuse: THREE.IUniform<THREE.Texture | null>;
   readonly tDepth: THREE.IUniform<THREE.Texture | null>;
   readonly tNormal: THREE.IUniform<THREE.Texture | null>;
@@ -585,60 +613,6 @@ interface NprUniforms {
   readonly uCameraFar: THREE.IUniform<number>;
   readonly uTime: THREE.IUniform<number>;
   readonly uHasNormal: THREE.IUniform<number>;
-  readonly uOutlineEnabled: THREE.IUniform<number>;
-  readonly uOutlineThicknessPx: THREE.IUniform<number>;
-  readonly uOutlineColor: THREE.IUniform<THREE.Vector3>;
-  readonly uDepthGradientWeight: THREE.IUniform<number>;
-  readonly uOutlineMinFeaturePx: THREE.IUniform<number>;
-  readonly uOutlineNearThinRelax: THREE.IUniform<number>;
-  readonly uOutlineNearDepthMax: THREE.IUniform<number>;
-  readonly uWiggleEnabled: THREE.IUniform<number>;
-  readonly uWiggleFrequency: THREE.IUniform<number>;
-  readonly uWiggleAmplitudePx: THREE.IUniform<number>;
-  readonly uWiggleIrregularity: THREE.IUniform<number>;
-  readonly uCelEnabled: THREE.IUniform<number>;
-  readonly uCelSteps: THREE.IUniform<number>;
-  readonly uCelStepSmoothness: THREE.IUniform<number>;
-  readonly uCelShadowTint: THREE.IUniform<THREE.Vector3>;
-  readonly uCelShadowTintAmount: THREE.IUniform<number>;
-  readonly uCelMinLight: THREE.IUniform<number>;
-  readonly uCelMix: THREE.IUniform<number>;
-  readonly uHatchEnabled: THREE.IUniform<number>;
-  readonly uShadowPattern: THREE.IUniform<number>;
-  readonly uHatchModPx: THREE.IUniform<number>;
-  readonly uHatchLumaDark: THREE.IUniform<number>;
-  readonly uHatchLumaMid: THREE.IUniform<number>;
-  readonly uHatchLumaLight: THREE.IUniform<number>;
-  readonly uHatchCrossSteps: THREE.IUniform<number>;
-  readonly uTonalShadowLift: THREE.IUniform<number>;
-  readonly uRasterCellPx: THREE.IUniform<number>;
-  readonly uOilEnabled: THREE.IUniform<number>;
-  readonly uOilRadius: THREE.IUniform<number>;
-  readonly uOilIntensity: THREE.IUniform<number>;
-  readonly uOilLumaEdgeSuppress: THREE.IUniform<number>;
-  readonly uOilGeomEdgeSuppress: THREE.IUniform<number>;
-  readonly uOilDarkBoost: THREE.IUniform<number>;
-  readonly uOilMaxBlend: THREE.IUniform<number>;
-  readonly uOilDeltaClamp: THREE.IUniform<number>;
-  readonly uOilDeltaClampEdgeMul: THREE.IUniform<number>;
-  readonly uOilEdgeAttenLo: THREE.IUniform<number>;
-  readonly uOilEdgeAttenHi: THREE.IUniform<number>;
-  readonly uOilDeltaBandLo: THREE.IUniform<number>;
-  readonly uOilDeltaBandHi: THREE.IUniform<number>;
-  readonly uMistEnabled: THREE.IUniform<number>;
-  readonly uMistIntensity: THREE.IUniform<number>;
-  readonly uMistDepthThreshold: THREE.IUniform<number>;
-  readonly uMistSpreadPx: THREE.IUniform<number>;
-  readonly uMistColor: THREE.IUniform<THREE.Vector3>;
-  readonly uMistTintStrength: THREE.IUniform<number>;
-  readonly uMistGlobal: THREE.IUniform<number>;
-  readonly uMistGeomEdgeScale: THREE.IUniform<number>;
-}
-
-function shadowPatternIndex(p: NprSettings['hatchPattern']): number {
-  if (p === 'tonal') return 0;
-  if (p === 'crosshatch') return 1;
-  return 2;
 }
 
 export interface NprPostHandle {
@@ -681,7 +655,7 @@ export function createNprPost(renderer: THREE.WebGLRenderer, initial: NprSetting
   const fsScene = new THREE.Scene();
   const fsCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
-  const uniforms: NprUniforms = {
+  const fixed: FixedUniforms = {
     tDiffuse: { value: rtScene.texture },
     tDepth: { value: rtScene.depthTexture },
     tNormal: { value: rtNormal.texture },
@@ -690,55 +664,25 @@ export function createNprPost(renderer: THREE.WebGLRenderer, initial: NprSetting
     uCameraFar: { value: 4000 },
     uTime: { value: 0 },
     uHasNormal: { value: 1 },
-    uOutlineEnabled: { value: 1 },
-    uOutlineThicknessPx: { value: 1.5 },
-    uOutlineColor: { value: new THREE.Vector3(0, 0, 0) },
-    uDepthGradientWeight: { value: 25 },
-    uOutlineMinFeaturePx: { value: 2.5 },
-    uOutlineNearThinRelax: { value: 0.62 },
-    uOutlineNearDepthMax: { value: 0.26 },
-    uWiggleEnabled: { value: 1 },
-    uWiggleFrequency: { value: 0.08 },
-    uWiggleAmplitudePx: { value: 2 },
-    uWiggleIrregularity: { value: 0 },
-    uCelEnabled: { value: 0 },
-    uCelSteps: { value: 4 },
-    uCelStepSmoothness: { value: 0.22 },
-    uCelShadowTint: { value: new THREE.Vector3(0.55, 0.62, 0.85) },
-    uCelShadowTintAmount: { value: 0 },
-    uCelMinLight: { value: 0.06 },
-    uCelMix: { value: 1 },
-    uHatchEnabled: { value: 1 },
-    uShadowPattern: { value: 1 },
-    uHatchModPx: { value: 8 },
-    uHatchLumaDark: { value: 0.35 },
-    uHatchLumaMid: { value: 0.55 },
-    uHatchLumaLight: { value: 0.8 },
-    uHatchCrossSteps: { value: 6 },
-    uTonalShadowLift: { value: 0.55 },
-    uRasterCellPx: { value: 14 },
-    uOilEnabled: { value: 0 },
-    uOilRadius: { value: 3 },
-    uOilIntensity: { value: 0.8 },
-    uOilLumaEdgeSuppress: { value: 0.94 },
-    uOilGeomEdgeSuppress: { value: 0.45 },
-    uOilDarkBoost: { value: 0.18 },
-    uOilMaxBlend: { value: 1.65 },
-    uOilDeltaClamp: { value: 0.32 },
-    uOilDeltaClampEdgeMul: { value: 0.375 },
-    uOilEdgeAttenLo: { value: 0.03 },
-    uOilEdgeAttenHi: { value: 0.22 },
-    uOilDeltaBandLo: { value: 0.05 },
-    uOilDeltaBandHi: { value: 0.28 },
-    uMistEnabled: { value: 0 },
-    uMistIntensity: { value: 0.6 },
-    uMistDepthThreshold: { value: 0.035 },
-    uMistSpreadPx: { value: 12 },
-    uMistColor: { value: new THREE.Vector3(0.03, 0.025, 0.02) },
-    uMistTintStrength: { value: 0.2 },
-    uMistGlobal: { value: 0 },
-    uMistGeomEdgeScale: { value: 0.38 },
   };
+
+  // Build dynamic uniforms straight from the schema. One slot per settings
+  // field that the shader reads (skip `enabled` / `style` — those gate the
+  // pass at the call site).
+  const uniforms: UniformBag = { ...(fixed as unknown as UniformBag) };
+  for (const k of NPR_FIELD_KEYS) {
+    if (UNIFORM_SKIP.has(k)) continue;
+    const f = NPR_FIELDS[k];
+    const name = uniformNameFor(k);
+    if (f.kind === 'color3') {
+      const c = f.default;
+      uniforms[name] = { value: new THREE.Vector3(c[0], c[1], c[2]) };
+    } else if (f.kind === 'bool') {
+      uniforms[name] = { value: f.default ? 1 : 0 };
+    } else {
+      uniforms[name] = { value: f.default as number };
+    }
+  }
 
   const compositeMat = new THREE.ShaderMaterial({
     uniforms: uniforms as unknown as { [k: string]: THREE.IUniform },
@@ -755,60 +699,40 @@ export function createNprPost(renderer: THREE.WebGLRenderer, initial: NprSetting
   fsQuad.frustumCulled = false;
   fsScene.add(fsQuad);
 
+  /**
+   * Push every settings field that the shader reads into its matching uniform.
+   * `hatchPattern` is the only enum that has a discrete int mapping; everything
+   * else is a direct cast of the schema-typed value.
+   */
   const applySettings = (s: NprSettings): void => {
-    uniforms.uOutlineEnabled.value = s.outlineEnabled ? 1 : 0;
-    uniforms.uOutlineThicknessPx.value = s.outlineThicknessPx;
-    uniforms.uOutlineColor.value.set(s.outlineColor[0], s.outlineColor[1], s.outlineColor[2]);
-    uniforms.uDepthGradientWeight.value = s.outlineDepthWeight;
-    uniforms.uOutlineMinFeaturePx.value = s.outlineMinFeaturePx;
-    uniforms.uOutlineNearThinRelax.value = s.outlineNearThinRelax;
-    uniforms.uOutlineNearDepthMax.value = s.outlineNearDepthMax;
-
-    uniforms.uWiggleEnabled.value = s.wiggleEnabled ? 1 : 0;
-    uniforms.uWiggleFrequency.value = s.wiggleFrequency;
-    uniforms.uWiggleAmplitudePx.value = s.wiggleAmplitudePx;
-    uniforms.uWiggleIrregularity.value = s.wiggleIrregularity;
-
-    uniforms.uCelEnabled.value = s.celEnabled ? 1 : 0;
-    uniforms.uCelSteps.value = s.celSteps;
-    uniforms.uCelStepSmoothness.value = s.celStepSmoothness;
-    uniforms.uCelShadowTint.value.set(s.celShadowTint[0], s.celShadowTint[1], s.celShadowTint[2]);
-    uniforms.uCelShadowTintAmount.value = s.celShadowTintAmount;
-    uniforms.uCelMinLight.value = s.celMinLight;
-    uniforms.uCelMix.value = s.celMix;
-
-    uniforms.uHatchEnabled.value = s.hatchEnabled ? 1 : 0;
-    uniforms.uShadowPattern.value = shadowPatternIndex(s.hatchPattern);
-    uniforms.uHatchModPx.value = s.hatchModPx;
-    uniforms.uHatchLumaDark.value = s.hatchLumaDark;
-    uniforms.uHatchLumaMid.value = s.hatchLumaMid;
-    uniforms.uHatchLumaLight.value = s.hatchLumaLight;
-    uniforms.uHatchCrossSteps.value = Math.max(3, Math.min(16, Math.round(s.hatchCrossSteps)));
-    uniforms.uTonalShadowLift.value = s.tonalShadowLift;
-    uniforms.uRasterCellPx.value = s.rasterCellPx;
-
-    uniforms.uOilEnabled.value = s.oilEnabled ? 1 : 0;
-    uniforms.uOilRadius.value = s.oilRadiusPx;
-    uniforms.uOilIntensity.value = s.oilIntensity;
-    uniforms.uOilLumaEdgeSuppress.value = s.oilLumaEdgeSuppress;
-    uniforms.uOilGeomEdgeSuppress.value = s.oilGeomEdgeSuppress;
-    uniforms.uOilDarkBoost.value = s.oilDarkBoost;
-    uniforms.uOilMaxBlend.value = s.oilMaxBlend;
-    uniforms.uOilDeltaClamp.value = s.oilDeltaClamp;
-    uniforms.uOilDeltaClampEdgeMul.value = s.oilDeltaClampEdgeMul;
-    uniforms.uOilEdgeAttenLo.value = s.oilEdgeAttenLo;
-    uniforms.uOilEdgeAttenHi.value = s.oilEdgeAttenHi;
-    uniforms.uOilDeltaBandLo.value = s.oilDeltaBandLo;
-    uniforms.uOilDeltaBandHi.value = s.oilDeltaBandHi;
-
-    uniforms.uMistEnabled.value = s.mistEnabled ? 1 : 0;
-    uniforms.uMistIntensity.value = s.mistIntensity;
-    uniforms.uMistDepthThreshold.value = s.mistDepthThreshold;
-    uniforms.uMistSpreadPx.value = s.mistSpreadPx;
-    uniforms.uMistColor.value.set(s.mistColor[0], s.mistColor[1], s.mistColor[2]);
-    uniforms.uMistTintStrength.value = s.mistTintStrength;
-    uniforms.uMistGlobal.value = s.mistGlobal;
-    uniforms.uMistGeomEdgeScale.value = s.mistGeomEdgeScale;
+    for (const k of NPR_FIELD_KEYS) {
+      if (UNIFORM_SKIP.has(k)) continue;
+      const f = NPR_FIELDS[k];
+      const u = uniforms[uniformNameFor(k)]!;
+      const v = s[k];
+      switch (f.kind) {
+        case 'bool':
+          (u as THREE.IUniform<number>).value = v ? 1 : 0;
+          break;
+        case 'float':
+          (u as THREE.IUniform<number>).value = v as number;
+          break;
+        case 'int':
+          (u as THREE.IUniform<number>).value = Math.max(f.min, Math.min(f.max, Math.round(v as number)));
+          break;
+        case 'color3': {
+          const c = v as readonly [number, number, number];
+          (u as THREE.IUniform<THREE.Vector3>).value.set(c[0], c[1], c[2]);
+          break;
+        }
+        case 'enum':
+          // Currently only `hatchPattern` is sent to the shader (as a discrete int).
+          if (k === 'hatchPattern') {
+            (u as THREE.IUniform<number>).value = HATCH_PATTERN_INDEX[v as NprSettings['hatchPattern']];
+          }
+          break;
+      }
+    }
   };
 
   applySettings(initial);
@@ -819,7 +743,7 @@ export function createNprPost(renderer: THREE.WebGLRenderer, initial: NprSetting
     const hh = Math.max(2, Math.floor(height * px));
     rtScene.setSize(ww, hh);
     rtNormal.setSize(ww, hh);
-    uniforms.uResolution.value.set(ww, hh);
+    fixed.uResolution.value.set(ww, hh);
   };
 
   const render = (
@@ -828,8 +752,8 @@ export function createNprPost(renderer: THREE.WebGLRenderer, initial: NprSetting
     hideDuringNormalPass: ReadonlyArray<THREE.Object3D>,
   ): void => {
     if (camera instanceof THREE.PerspectiveCamera) {
-      uniforms.uCameraNear.value = camera.near;
-      uniforms.uCameraFar.value = camera.far;
+      fixed.uCameraNear.value = camera.near;
+      fixed.uCameraFar.value = camera.far;
     }
 
     const prevTarget = renderer.getRenderTarget();

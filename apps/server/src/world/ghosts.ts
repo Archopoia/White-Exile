@@ -8,7 +8,7 @@
  * reach a configurable headcount (so they never block real cluster
  * gameplay).
  */
-import { RACES, type Race, type Vec3 } from '@realtime-room/shared';
+import { RACES, randomRingXZ, seekTowardXZ, type Race, type Vec3 } from '@realtime-room/shared';
 import type { Logger } from 'pino';
 import { mulberry32, type Rng } from './rng.js';
 import type { SimQueues, SimWorld } from './sim.js';
@@ -59,13 +59,7 @@ export class GhostManager {
     for (let i = 0; i < this.opts.count; i++) {
       const id = `ghost-${i.toString().padStart(2, '0')}`;
       const race = RACES[Math.floor(baseRng() * RACES.length)] as Race;
-      const angle = baseRng() * Math.PI * 2;
-      const radius = 60 + baseRng() * 200;
-      const position: Vec3 = {
-        x: Math.cos(angle) * radius,
-        y: 0,
-        z: Math.sin(angle) * radius,
-      };
+      const position = randomRingXZ(baseRng, 60, 260);
       host.addGhost({ id, name: `GHOST_${id.slice(-2)}`, race, position });
       this.ghosts.set(id, {
         id,
@@ -99,15 +93,7 @@ export class GhostManager {
         g.retargetIn = 2 + g.rng() * 4;
       }
 
-      const dx = g.target.x - player.position.x;
-      const dz = g.target.z - player.position.z;
-      const len = Math.hypot(dx, dz) || 1;
-      const speed = 8;
-      const next: Vec3 = {
-        x: player.position.x + (dx / len) * speed * dt,
-        y: 0,
-        z: player.position.z + (dz / len) * speed * dt,
-      };
+      const next = seekTowardXZ(player.position, g.target, 8, dt);
       player.position = next;
       host.moveGhost(g.id, next);
 
@@ -125,9 +111,7 @@ export class GhostManager {
   }
 
   private pickTarget(rng: Rng): Vec3 {
-    const angle = rng() * Math.PI * 2;
-    const radius = 30 + rng() * 320;
-    return { x: Math.cos(angle) * radius, y: 0, z: Math.sin(angle) * radius };
+    return randomRingXZ(rng, 30, 350);
   }
 
   private despawnAll(host: GhostHostRoom): void {

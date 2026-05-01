@@ -9,10 +9,6 @@
  * grace window expires. Broadcasting lives in net.ts.
  */
 import {
-  ASH_DUNE_FOLLOWER_CENTER_OFFSET,
-  ASH_DUNE_RELIC_CENTER_OFFSET,
-  ASH_DUNE_RUIN_CENTER_OFFSET,
-  ashDuneSurfaceWorldY,
   DEFAULT_ROOM_SETTINGS,
   DEFAULT_WORLD_CONFIG,
   RACE_PROFILES,
@@ -20,6 +16,7 @@ import {
   WorldConfigSchema,
   classifyZone,
   clampPlayerPosition,
+  placementSurfaceY,
   type CaravanSnapshot,
   type ClientRoomSettingsPatch,
   type FollowerKind,
@@ -31,6 +28,7 @@ import {
   type RuinSnapshot,
   type Vec3,
   type WorldConfig,
+  type WorldPlacementKind,
 } from '@realtime-room/shared';
 import type { Logger } from 'pino';
 import { GhostManager, type GhostHostRoom } from './world/ghosts.js';
@@ -188,28 +186,24 @@ export class Room {
   /** After `duneHeightScale` changes: re-seat everyone on the new surface (XZ unchanged). */
   private snapEntitiesToDuneSurface(): void {
     const simT = this.simulationTimeSec;
-    const scale = this.worldConfig.duneHeightScale;
+    const opts = { heightScale: this.worldConfig.duneHeightScale } as const;
     for (const pl of this.players.values()) {
-      pl.position = clampPlayerPosition(pl.position, simT, scale);
+      pl.position = clampPlayerPosition(pl.position, simT, opts.heightScale);
     }
-    for (const f of this.followers.values()) {
-      const y =
-        ashDuneSurfaceWorldY(f.position.x, f.position.z, simT, { heightScale: scale }) +
-        ASH_DUNE_FOLLOWER_CENTER_OFFSET;
-      f.position = { ...f.position, y };
-    }
-    for (const r of this.ruins.values()) {
-      const y =
-        ashDuneSurfaceWorldY(r.position.x, r.position.z, simT, { heightScale: scale }) +
-        ASH_DUNE_RUIN_CENTER_OFFSET;
-      r.position = { ...r.position, y };
-    }
-    for (const rel of this.relics.values()) {
-      const y =
-        ashDuneSurfaceWorldY(rel.position.x, rel.position.z, simT, { heightScale: scale }) +
-        ASH_DUNE_RELIC_CENTER_OFFSET;
-      rel.position = { ...rel.position, y };
-    }
+    const snap = (
+      bag: Iterable<{ position: Vec3 }>,
+      kind: WorldPlacementKind,
+    ): void => {
+      for (const e of bag) {
+        e.position = {
+          ...e.position,
+          y: placementSurfaceY(kind, e.position.x, e.position.z, simT, opts),
+        };
+      }
+    };
+    snap(this.followers.values(), 'follower');
+    snap(this.ruins.values(), 'ruin');
+    snap(this.relics.values(), 'relic');
   }
 
   size(): number {

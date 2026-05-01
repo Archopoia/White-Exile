@@ -6,14 +6,7 @@
  */
 import { distanceSquared3 } from './math.js';
 import type { FollowerKind, Race } from './world.js';
-import { RACE_PROFILES, ZONE_BANDS, type Zone } from './world.js';
-
-/** Per-follower contribution to the caravan's effective light radius. */
-const FOLLOWER_RADIUS_GAIN: Readonly<Record<FollowerKind, number>> = Object.freeze({
-  wanderer: 0.6,
-  'lantern-bearer': 1.6,
-  beast: 0.25,
-});
+import { FOLLOWER_KIND_DEFS, RACE_PROFILES, ZONE_BANDS, type Zone } from './world.js';
 
 /** Diminishing-returns curve. tuned so 10 followers ≈ +6 radius, not +6×N. */
 function withDiminishingReturns(sum: number): number {
@@ -38,7 +31,7 @@ export function computeSoloLightRadius(inputs: LightInputs): number {
   const profile = RACE_PROFILES[inputs.race];
   let followerSum = 0;
   for (const f of inputs.followers) {
-    followerSum += FOLLOWER_RADIUS_GAIN[f.kind] ?? 0;
+    followerSum += FOLLOWER_KIND_DEFS[f.kind]?.lightGain ?? 0;
   }
   const followerBonus = withDiminishingReturns(followerSum);
   const fuelMul = Math.min(1, Math.max(0, inputs.fuel));
