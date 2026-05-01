@@ -26,7 +26,7 @@ import {
   distanceSquared3,
   pickFollowerKind,
   placementSurfaceY,
-  RACE_PROFILES,
+  RACES,
   stepFuel,
   type AshDuneSampleOptions,
   type CaravanSnapshot,
@@ -396,19 +396,28 @@ function isInsideAnyActiveRuin(pos: Vec3, ruins: Map<string, RuinSnapshot>): boo
   return false;
 }
 
+/** Periodic diagnostic dump shape (server logs + `Room.diagnostics()`). */
+export interface RoomDiagnostics {
+  readonly players: number;
+  readonly caravans: number;
+  readonly attachedFollowers: number;
+  readonly strandedFollowers: number;
+  readonly activatedRuins: number;
+  readonly claimedRelics: number;
+  readonly raceMix: Record<Race, number>;
+}
+
+function emptyRaceMix(): Record<Race, number> {
+  const mix = {} as Record<Race, number>;
+  for (const r of RACES) mix[r] = 0;
+  return mix;
+}
+
 /** Diagnostic dump for periodic info logs (every ~10s). */
 export function summarize(
   world: SimWorld,
   caravans: ReadonlyArray<CaravanSnapshot>,
-): {
-  players: number;
-  caravans: number;
-  attachedFollowers: number;
-  strandedFollowers: number;
-  activatedRuins: number;
-  claimedRelics: number;
-  raceMix: Record<Race, number>;
-} {
+): RoomDiagnostics {
   let attached = 0;
   let stranded = 0;
   for (const f of world.followers.values()) {
@@ -419,9 +428,8 @@ export function summarize(
   for (const r of world.ruins.values()) if (r.activated) activatedRuins++;
   let claimedRelics = 0;
   for (const r of world.relics.values()) if (r.claimed) claimedRelics++;
-  const raceMix: Record<Race, number> = { emberfolk: 0, ashborn: 0, 'lumen-kin': 0 };
+  const raceMix = emptyRaceMix();
   for (const p of world.players.values()) raceMix[p.race]++;
-  void RACE_PROFILES;
   return {
     players: world.players.size,
     caravans: caravans.length,

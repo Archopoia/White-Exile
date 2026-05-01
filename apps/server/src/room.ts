@@ -37,6 +37,7 @@ import {
   newSimQueues,
   summarize,
   tickWorld,
+  type RoomDiagnostics,
   type SimDerivedPlayer,
   type SimPlayer,
   type SimQueues,
@@ -111,7 +112,7 @@ export class Room {
           name,
           isBot: true,
           race,
-          position: clampPlayerPosition(position, this.simulationTimeSec, this.worldConfig.duneHeightScale),
+          position: this.clampPos(position),
           fuel: 0.85,
           followers: [],
           relicBonus: 0,
@@ -130,9 +131,7 @@ export class Room {
       },
       moveGhost: (ghostId, position) => {
         const pl = this.players.get(ghostId);
-        if (pl) {
-          pl.position = clampPlayerPosition(position, this.simulationTimeSec, this.worldConfig.duneHeightScale);
-        }
+        if (pl) pl.position = this.clampPos(position);
       },
       hasGhost: (ghostId) => this.ghostIds.has(ghostId),
       realPlayerCount: () => {
@@ -183,17 +182,17 @@ export class Room {
     }
   }
 
+  /** Clamp + dune-snap a position using the room's current sim time + dune scale. */
+  private clampPos(position: Vec3): Vec3 {
+    return clampPlayerPosition(position, this.simulationTimeSec, this.worldConfig.duneHeightScale);
+  }
+
   /** After `duneHeightScale` changes: re-seat everyone on the new surface (XZ unchanged). */
   private snapEntitiesToDuneSurface(): void {
     const simT = this.simulationTimeSec;
     const opts = { heightScale: this.worldConfig.duneHeightScale } as const;
-    for (const pl of this.players.values()) {
-      pl.position = clampPlayerPosition(pl.position, simT, opts.heightScale);
-    }
-    const snap = (
-      bag: Iterable<{ position: Vec3 }>,
-      kind: WorldPlacementKind,
-    ): void => {
+    for (const pl of this.players.values()) pl.position = this.clampPos(pl.position);
+    const snap = (bag: Iterable<{ position: Vec3 }>, kind: WorldPlacementKind): void => {
       for (const e of bag) {
         e.position = {
           ...e.position,
@@ -233,7 +232,7 @@ export class Room {
   }): PlayerState {
     const state: PlayerState = {
       ...p,
-      position: clampPlayerPosition(p.position, this.simulationTimeSec, this.worldConfig.duneHeightScale),
+      position: this.clampPos(p.position),
       fuel: 0.9,
       followers: [],
       relicBonus: 0,
@@ -291,7 +290,7 @@ export class Room {
   setPosition(playerId: string, position: Vec3): boolean {
     const pl = this.players.get(playerId);
     if (!pl || pl.disconnected) return false;
-    pl.position = clampPlayerPosition(position, this.simulationTimeSec, this.worldConfig.duneHeightScale);
+    pl.position = this.clampPos(position);
     return true;
   }
 
@@ -365,15 +364,7 @@ export class Room {
     };
   }
 
-  diagnostics(): {
-    players: number;
-    caravans: number;
-    attachedFollowers: number;
-    strandedFollowers: number;
-    activatedRuins: number;
-    claimedRelics: number;
-    raceMix: Record<Race, number>;
-  } {
+  diagnostics(): RoomDiagnostics {
     return summarize(this.toSimWorld(), this.caravansCache);
   }
 
