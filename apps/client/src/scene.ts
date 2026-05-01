@@ -28,6 +28,8 @@ import {
   RACE_PROFILES,
   WORLD_PLACEMENT_OFFSET,
   ashDuneSurfaceWorldY,
+  fogDensityForZone,
+  nearestBy,
   placementSurfaceY,
   type FollowerSnapshot,
   type PlayerSnapshot,
@@ -37,7 +39,6 @@ import {
   type RuinSnapshot,
   type Vec3,
   type Zone,
-  fogDensityForZone,
 } from '@realtime-room/shared';
 import { getLabelMode, setLabelMode as persistLabelMode } from './clientSettings.js';
 import {
@@ -99,7 +100,29 @@ const ORBIT_DIST_MIN = 10;
 const ORBIT_DIST_MAX = 52;
 
 const RUIN_HEIGHT = 6;
+/** Matches server `RUIN_RANGE` in `sim.ts`; keep `RUIN_LABEL_HINT_RADIUS` in sync. */
 const RUIN_RANGE = 6;
+
+/**
+ * Per-zone visual presets the renderer applies on zone change. One row per zone
+ * keeps clear-color, ground emissive, and lighting fill scale together; adding
+ * a new zone band = one row here + one entry in {@link ZONE_BANDS}.
+ */
+interface ZoneVisualPreset {
+  /** WebGL clear color (only visible if the sky shader fails). */
+  readonly clearColor: number;
+  /** Ground material emissive baseline so fully shadowed terrain isn't pitch black. */
+  readonly groundEmissive: number;
+  /** Multiplier on hemisphere + sun (`flameLighting.setZoneIntensity`). */
+  readonly lightingScale: number;
+}
+
+const ZONE_VISUAL: Readonly<Record<Zone, ZoneVisualPreset>> = Object.freeze({
+  safe: { clearColor: 0x231b26, groundEmissive: 0x141018, lightingScale: 1.0 },
+  grey: { clearColor: 0x1a141e, groundEmissive: 0x100c14, lightingScale: 0.78 },
+  deep: { clearColor: 0x110d18, groundEmissive: 0x0a070f, lightingScale: 0.55 },
+  dead: { clearColor: 0x09060c, groundEmissive: 0x050308, lightingScale: 0.35 },
+});
 
 /** Max CSS2D tooltips per category (others / followers / ruins / relics); nearest to local player win. */
 const MAX_NEARBY_WORLD_LABELS = 5;
@@ -600,11 +623,12 @@ export class RoomScene {
         this.lighting.setLocalRadius(p.lightRadius);
         if (p.zone !== this.currentZone) {
           this.currentZone = p.zone;
+          const preset = ZONE_VISUAL[p.zone];
           this.applyExpFogForCurrentZone();
-          this.renderer.setClearColor(zoneClearColor(p.zone), 1);
-          this.groundMat.emissive.setHex(zoneGroundColor(p.zone));
+          this.renderer.setClearColor(preset.clearColor, 1);
+          this.groundMat.emissive.setHex(preset.groundEmissive);
           this.sky.setZoneTone(p.zone);
-          this.lighting.setZoneIntensity(zoneIntensityScale(p.zone));
+          this.lighting.setZoneIntensity(preset.lightingScale);
         }
         continue;
       }
@@ -666,12 +690,17 @@ export class RoomScene {
     }
     for (const [id, entry] of pool) {
       if (seen.has(id)) continue;
-      entry.mesh.remove(entry.label);
-      this.scene.remove(entry.mesh);
-      entry.mesh.geometry.dispose();
-      (entry.mesh.material as THREE.Material).dispose();
+      this.disposeEntityEntry(entry);
       pool.delete(id);
     }
+  }
+
+  /** Detach mesh + label from scene and free GPU resources for one pool entry. */
+  private disposeEntityEntry(entry: EntityPoolEntry): void {
+    entry.mesh.remove(entry.label);
+    this.scene.remove(entry.mesh);
+    entry.mesh.geometry.dispose();
+    (entry.mesh.material as THREE.Material).dispose();
   }
 
   private onKeyDown = (e: KeyboardEvent) => {
@@ -770,19 +799,12 @@ export class RoomScene {
   }
 
   private findNearestRuin(): RuinSnapshot | null {
-    let best: RuinSnapshot | null = null;
-    let bestSq = RUIN_RANGE * RUIN_RANGE;
-    for (const r of this.knownRuins) {
-      const dx = r.position.x - this.localPos.x;
-      const dy = r.position.y - this.localPos.y;
-      const dz = r.position.z - this.localPos.z;
-      const sq = dx * dx + dy * dy + dz * dz;
-      if (sq < bestSq) {
-        bestSq = sq;
-        best = r;
-      }
-    }
-    return best;
+    return nearestBy(
+      this.knownRuins,
+      { x: this.localPos.x, y: this.localPos.y, z: this.localPos.z },
+      undefined,
+      RUIN_RANGE,
+    );
   }
 
   private loop = () => {
@@ -867,12 +889,7 @@ export class RoomScene {
       document.exitPointerLock();
     }
     for (const pool of [this.markers, this.followerMeshes, this.ruinMeshes, this.relicMeshes]) {
-      for (const entry of pool.values()) {
-        entry.mesh.remove(entry.label);
-        this.scene.remove(entry.mesh);
-        entry.mesh.geometry.dispose();
-        (entry.mesh.material as THREE.Material).dispose();
-      }
+      for (const entry of pool.values()) this.disposeEntityEntry(entry);
       pool.clear();
     }
     this.ground.remove(this.groundTip);
@@ -899,47 +916,3 @@ export class RoomScene {
   }
 }
 
-function zoneIntensityScale(zone: Zone): number {
-  switch (zone) {
-    case 'safe':
-      return 1;
-    case 'grey':
-      return 0.78;
-    case 'deep':
-      return 0.55;
-    case 'dead':
-      return 0.35;
-  }
-}
-
-function zoneClearColor(zone: Zone): number {
-  // Used as the WebGL clear color, only visible if the sky shader fails. We
-  // match the sky's horizon tone so even in that fallback case we don't get
-  // a pitch-black abyss.
-  switch (zone) {
-    case 'safe':
-      return 0x231b26;
-    case 'grey':
-      return 0x1a141e;
-    case 'deep':
-      return 0x110d18;
-    case 'dead':
-      return 0x09060c;
-  }
-}
-
-function zoneGroundColor(zone: Zone): number {
-  // Emissive baseline added to the dune material so even fully shadowed
-  // areas keep a tiny bit of detail. Kept very dim — the lighting carries
-  // the look.
-  switch (zone) {
-    case 'safe':
-      return 0x141018;
-    case 'grey':
-      return 0x100c14;
-    case 'deep':
-      return 0x0a070f;
-    case 'dead':
-      return 0x050308;
-  }
-}

@@ -871,14 +871,93 @@ export function createRoomOptionsOverlay(cb: RoomOptionsCallbacks): RoomOptionsO
   panelGraphics.id = 'session-tab-graphics';
   panelGraphics.style.display = 'none';
 
-  const fxKnob = makeDiscreteKnob(FX_TIERS, FX_KNOB_LABEL, live.fxTier, (next) => {
-    live.fxTier = next;
-    cb.onFxTierChange(next);
-  }, recordHistory);
-  const labelKnob = makeDiscreteKnob(LABEL_MODES, LABEL_MODE_LABEL, live.labelMode, (next) => {
-    live.labelMode = next;
-    cb.onLabelModeChange(next);
-  }, recordHistory);
+  /** Numeric scalar fields on the snapshot driven by a {@link makeFloatSlider}. */
+  type GfxFloatKey =
+    | 'fogDensityMul'
+    | 'fillLightMul'
+    | 'toneExposure'
+    | 'skyHazeMul'
+    | 'torchReachMul';
+
+  /** Discrete knob fields (string enum) — unified to share the same revert path. */
+  type GfxKnobKey = 'fxTier' | 'labelMode';
+
+  interface GfxFloatHandle {
+    readonly row: HTMLElement;
+    readonly setValueSilent: (v: number) => void;
+    readonly input: HTMLInputElement;
+  }
+
+  const gfxFloatSyncs: Array<(snap: RoomOptionsSnapshot) => void> = [];
+  const gfxKnobSyncs: Array<(snap: RoomOptionsSnapshot) => void> = [];
+
+  /**
+   * One graphics float row: builds the slider, registers a revert button + dirty
+   * indicator, and records its `setValueSilent` for {@link applySnapshot}.
+   */
+  const gfxFloat = (
+    key: GfxFloatKey,
+    label: string,
+    apply: (v: number) => void,
+    range: { min: number; max: number; step: number; decimals?: number },
+  ): GfxFloatHandle => {
+    const slider = makeFloatSlider(
+      range.min,
+      range.max,
+      range.step,
+      live[key],
+      range.decimals ?? 2,
+      (v) => {
+        live[key] = v;
+        apply(v);
+        refreshRevertIndicators();
+      },
+      recordHistory,
+    );
+    gfxFloatSyncs.push((snap) => slider.setValueSilent(snap[key]));
+    const row = rowReg(label, slider.row, {
+      dirty: () => optionFloatDiffers(live[key], rb()[key]),
+      revert: () => {
+        const v = rb()[key];
+        live[key] = v;
+        slider.setValueSilent(v);
+        apply(v);
+        recordHistory();
+        refreshRevertIndicators();
+      },
+    });
+    return { row, setValueSilent: slider.setValueSilent, input: slider.input };
+  };
+
+  /** Generic knob row helper for `fxTier` / `labelMode`. */
+  const gfxKnob = <T extends string>(
+    key: GfxKnobKey,
+    label: string,
+    values: ReadonlyArray<T>,
+    valueLabels: Readonly<Record<T, string>>,
+    apply: (v: T) => void,
+  ): { row: HTMLElement; setValueSilent: (v: T) => void } => {
+    const knob = makeDiscreteKnob(values, valueLabels, live[key] as T, (next) => {
+      (live[key] as T) = next;
+      apply(next);
+    }, recordHistory);
+    gfxKnobSyncs.push((snap) => knob.setValueSilent(snap[key] as T));
+    const row = rowReg(label, knob.el, {
+      dirty: () => live[key] !== rb()[key],
+      revert: () => {
+        const v = rb()[key] as T;
+        (live[key] as T) = v;
+        knob.setValueSilent(v);
+        apply(v);
+        recordHistory();
+        refreshRevertIndicators();
+      },
+    });
+    return { row, setValueSilent: knob.setValueSilent };
+  };
+
+  const fxKnob = gfxKnob('fxTier', 'Quality', FX_TIERS, FX_KNOB_LABEL, cb.onFxTierChange);
+  const labelKnob = gfxKnob('labelMode', 'Labels', LABEL_MODES, LABEL_MODE_LABEL, cb.onLabelModeChange);
 
   const duneKnob = makeDuneScaleKnob(
     live.duneHeightScale,
@@ -894,6 +973,8 @@ export function createRoomOptionsOverlay(cb: RoomOptionsCallbacks): RoomOptionsO
     recordHistory,
   );
 
+  // Fog enable + dependent density slider keep their own glue (the slider's
+  // `disabled` state mirrors the toggle).
   const fogWrap = document.createElement('div');
   fogWrap.style.cssText = 'display:flex;align-items:center;gap:8px;flex:1;min-width:0';
   const fogCheck = document.createElement('input');
@@ -904,163 +985,60 @@ export function createRoomOptionsOverlay(cb: RoomOptionsCallbacks): RoomOptionsO
   fogCheck.style.cssText = 'width:16px;height:16px;accent-color:#5b7cff;cursor:pointer;flex-shrink:0';
   fogWrap.appendChild(fogCheck);
 
-  const fogDensitySlider = makeFloatSlider(
-    0,
-    2.5,
-    0.05,
-    live.fogDensityMul,
-    2,
-    (v) => {
-      live.fogDensityMul = v;
-      cb.onFogDensityMulChange(v);
-      refreshRevertIndicators();
-    },
-    recordHistory,
-  );
-  fogDensitySlider.input.disabled = !live.fogEnabled;
+  const fogDensityRow = gfxFloat('fogDensityMul', 'Fog ×', cb.onFogDensityMulChange, {
+    min: 0,
+    max: 2.5,
+    step: 0.05,
+  });
+  fogDensityRow.input.disabled = !live.fogEnabled;
   fogCheck.addEventListener('change', () => {
     live.fogEnabled = fogCheck.checked;
     cb.onFogChange(live.fogEnabled);
-    fogDensitySlider.input.disabled = !live.fogEnabled;
+    fogDensityRow.input.disabled = !live.fogEnabled;
     recordHistory();
     refreshRevertIndicators();
   });
 
-  const fillSlider = makeFloatSlider(
-    0.15,
-    2.75,
-    0.05,
-    live.fillLightMul,
-    2,
-    (v) => {
-      live.fillLightMul = v;
-      cb.onFillLightMulChange(v);
-      refreshRevertIndicators();
-    },
-    recordHistory,
-  );
-  const exposureSlider = makeFloatSlider(
-    0.35,
-    2.75,
-    0.05,
-    live.toneExposure,
-    2,
-    (v) => {
-      live.toneExposure = v;
-      cb.onToneExposureChange(v);
-      refreshRevertIndicators();
-    },
-    recordHistory,
-  );
-  const skyHazeSlider = makeFloatSlider(
-    0,
-    1.5,
-    0.05,
-    live.skyHazeMul,
-    2,
-    (v) => {
-      live.skyHazeMul = v;
-      cb.onSkyHazeMulChange(v);
-      refreshRevertIndicators();
-    },
-    recordHistory,
-  );
-  const torchReachSlider = makeFloatSlider(
-    0.25,
-    80,
-    0.05,
-    live.torchReachMul,
-    2,
-    (v) => {
-      live.torchReachMul = v;
-      cb.onTorchReachMulChange(v);
-      refreshRevertIndicators();
-    },
-    recordHistory,
-  );
+  const fillRow = gfxFloat('fillLightMul', 'Fill', cb.onFillLightMulChange, {
+    min: 0.15,
+    max: 2.75,
+    step: 0.05,
+  });
+  const exposureRow = gfxFloat('toneExposure', 'Exposure', cb.onToneExposureChange, {
+    min: 0.35,
+    max: 2.75,
+    step: 0.05,
+  });
+  const skyHazeRow = gfxFloat('skyHazeMul', 'Sky', cb.onSkyHazeMulChange, {
+    min: 0,
+    max: 1.5,
+    step: 0.05,
+  });
+  const torchReachRow = gfxFloat('torchReachMul', 'Torches ×', cb.onTorchReachMulChange, {
+    min: 0.25,
+    max: 80,
+    step: 0.05,
+  });
 
   panelGraphics.append(
-    rowReg('Quality', fxKnob.el, {
-      dirty: () => live.fxTier !== rb().fxTier,
-      revert: () => {
-        live.fxTier = rb().fxTier;
-        fxKnob.setValueSilent(rb().fxTier);
-        cb.onFxTierChange(live.fxTier);
-        recordHistory();
-        refreshRevertIndicators();
-      },
-    }),
-    rowReg('Labels', labelKnob.el, {
-      dirty: () => live.labelMode !== rb().labelMode,
-      revert: () => {
-        live.labelMode = rb().labelMode;
-        labelKnob.setValueSilent(rb().labelMode);
-        cb.onLabelModeChange(live.labelMode);
-        recordHistory();
-        refreshRevertIndicators();
-      },
-    }),
+    fxKnob.row,
+    labelKnob.row,
     rowReg('Fog', fogWrap, {
       dirty: () => live.fogEnabled !== rb().fogEnabled,
       revert: () => {
         live.fogEnabled = rb().fogEnabled;
         fogCheck.checked = live.fogEnabled;
         cb.onFogChange(live.fogEnabled);
-        fogDensitySlider.input.disabled = !live.fogEnabled;
+        fogDensityRow.input.disabled = !live.fogEnabled;
         recordHistory();
         refreshRevertIndicators();
       },
     }),
-    rowReg('Fog ×', fogDensitySlider.row, {
-      dirty: () => optionFloatDiffers(live.fogDensityMul, rb().fogDensityMul),
-      revert: () => {
-        live.fogDensityMul = rb().fogDensityMul;
-        fogDensitySlider.setValueSilent(live.fogDensityMul);
-        cb.onFogDensityMulChange(live.fogDensityMul);
-        recordHistory();
-        refreshRevertIndicators();
-      },
-    }),
-    rowReg('Fill', fillSlider.row, {
-      dirty: () => optionFloatDiffers(live.fillLightMul, rb().fillLightMul),
-      revert: () => {
-        live.fillLightMul = rb().fillLightMul;
-        fillSlider.setValueSilent(live.fillLightMul);
-        cb.onFillLightMulChange(live.fillLightMul);
-        recordHistory();
-        refreshRevertIndicators();
-      },
-    }),
-    rowReg('Exposure', exposureSlider.row, {
-      dirty: () => optionFloatDiffers(live.toneExposure, rb().toneExposure),
-      revert: () => {
-        live.toneExposure = rb().toneExposure;
-        exposureSlider.setValueSilent(live.toneExposure);
-        cb.onToneExposureChange(live.toneExposure);
-        recordHistory();
-        refreshRevertIndicators();
-      },
-    }),
-    rowReg('Sky', skyHazeSlider.row, {
-      dirty: () => optionFloatDiffers(live.skyHazeMul, rb().skyHazeMul),
-      revert: () => {
-        live.skyHazeMul = rb().skyHazeMul;
-        skyHazeSlider.setValueSilent(live.skyHazeMul);
-        cb.onSkyHazeMulChange(live.skyHazeMul);
-        recordHistory();
-        refreshRevertIndicators();
-      },
-    }),
-    rowReg('Torches ×', torchReachSlider.row, {
-      dirty: () => optionFloatDiffers(live.torchReachMul, rb().torchReachMul),
-      revert: () => {
-        live.torchReachMul = rb().torchReachMul;
-        torchReachSlider.setValueSilent(live.torchReachMul);
-        cb.onTorchReachMulChange(live.torchReachMul);
-        recordHistory();
-        refreshRevertIndicators();
-      },
-    }),
+    fogDensityRow.row,
+    fillRow.row,
+    exposureRow.row,
+    skyHazeRow.row,
+    torchReachRow.row,
     rowReg('Dunes', duneKnob.row, {
       dirty: () => optionFloatDiffers(live.duneHeightScale, rb().duneHeightScale),
       revert: () => {
@@ -1120,15 +1098,10 @@ export function createRoomOptionsOverlay(cb: RoomOptionsCallbacks): RoomOptionsO
     try {
       live = cloneRoomOptionsSnapshot(snap);
       nameInput.value = live.displayName;
-      fxKnob.setValueSilent(live.fxTier);
-      labelKnob.setValueSilent(live.labelMode);
+      for (const sync of gfxKnobSyncs) sync(live);
+      for (const sync of gfxFloatSyncs) sync(live);
       fogCheck.checked = live.fogEnabled;
-      fogDensitySlider.setValueSilent(live.fogDensityMul);
-      fogDensitySlider.input.disabled = !live.fogEnabled;
-      fillSlider.setValueSilent(live.fillLightMul);
-      exposureSlider.setValueSilent(live.toneExposure);
-      skyHazeSlider.setValueSilent(live.skyHazeMul);
-      torchReachSlider.setValueSilent(live.torchReachMul);
+      fogDensityRow.input.disabled = !live.fogEnabled;
       duneKnob.sync(live.duneHeightScale);
       nprPanel.sync(live.npr);
       pushToScene(live);

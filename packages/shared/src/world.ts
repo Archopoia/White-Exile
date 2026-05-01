@@ -135,6 +135,25 @@ export const FOLLOWER_KIND_DEFS: Readonly<Record<FollowerKind, FollowerKindDef>>
   beast: { id: 'beast', displayName: 'Beast', glyph: '▶', lightGain: 0.25, spawnWeight: 1 },
 });
 
+/**
+ * Cached spawn-weight total + decreasing-prefix list. Reused by spawn (seeded RNG)
+ * and ruin activation (Math.random) so the kind distribution stays in lockstep.
+ */
+const FOLLOWER_SPAWN_TOTAL_WEIGHT = FOLLOWER_KINDS.reduce(
+  (acc, k) => acc + FOLLOWER_KIND_DEFS[k].spawnWeight,
+  0,
+);
+
+/** Weighted pick over `FOLLOWER_KIND_DEFS[*].spawnWeight`. `rng` returns [0, 1). */
+export function pickFollowerKind(rng: () => number): FollowerKind {
+  let pick = rng() * FOLLOWER_SPAWN_TOTAL_WEIGHT;
+  for (const k of FOLLOWER_KINDS) {
+    pick -= FOLLOWER_KIND_DEFS[k].spawnWeight;
+    if (pick <= 0) return k;
+  }
+  return FOLLOWER_KINDS[0]!;
+}
+
 /** Wire shape for a single follower, free or attached. */
 export const FollowerSnapshotSchema = z.object({
   id: z.string(),

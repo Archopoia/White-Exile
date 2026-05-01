@@ -90,12 +90,23 @@ export function classifyZone(distanceFromOrigin: number): Zone {
   return 'dead';
 }
 
-/** Per-zone fog density from the band table. */
+/**
+ * Per-zone fog density (precomputed once from `ZONE_BANDS`). The fall-through
+ * default mirrors the deepest band so a future zone added without a band entry
+ * still degrades gracefully.
+ */
+const FOG_DENSITY_BY_ZONE: Readonly<Record<Zone, number>> = Object.freeze(
+  ZONE_BANDS.reduce<Record<Zone, number>>(
+    (acc, band) => {
+      acc[band.zone] = band.fogDensity;
+      return acc;
+    },
+    { safe: 0.05, grey: 0.05, deep: 0.05, dead: 0.05 },
+  ),
+);
+
 export function fogDensityForZone(zone: Zone): number {
-  for (const band of ZONE_BANDS) {
-    if (band.zone === zone) return band.fogDensity;
-  }
-  return 0.05;
+  return FOG_DENSITY_BY_ZONE[zone];
 }
 
 export interface FuelStepInput {

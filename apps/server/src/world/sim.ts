@@ -6,21 +6,25 @@
  *   2. compute pre-fuel solo light radius (without caravan combine yet)
  *   3. cluster players into caravans by light overlap
  *   4. claim relics intersected by a fuelled player
- *   5. step fuel + finalise derived state (post-fuel light radius reuses the
- *      base from step 2, just rescaled by the new fuel multiplier)
- *   6. move attached followers toward their owner + panic if dim
+ *   5. step fuel + finalise derived state (post-step solo light reuses the
+ *      cached origin distance + zone, then post-claim relicBonus)
+ *   6. move attached followers toward their owner + panic if dim (also resnaps Y)
  *   7. drain rescue / ruin-activation queues (intents from clients this tick)
- *   8. combat absorption between bright vs dim caravans
- *   9. final Y-resnap of every entity in one pass (one helper, all kinds)
+ *   8. combat absorption between bright vs dim players (any pair, not just cross-caravan)
+ *   9. apply caravan light radius to derived for multi-member groups
  *
- * The result is a per-player and per-entity dictionary the network layer
- * snapshots and broadcasts. Pure functions where possible so the test suite
- * exercises the math without spinning up sockets.
+ * Static entities (ruins / relics) are snapped once at world generation and at
+ * `duneHeightScale` change, so the loop only resnaps the things that actually
+ * move (players in pass 1, attached followers in pass 6).
+ *
+ * Result is a per-player + per-entity dictionary the network layer broadcasts.
+ * Pure functions where possible so tests exercise math without sockets.
  */
 import {
   classifyZone,
   computeSoloLightRadius,
   distanceSquared3,
+  pickFollowerKind,
   placementSurfaceY,
   RACE_PROFILES,
   stepFuel,
@@ -82,10 +86,11 @@ export interface SimResult {
 }
 
 const FOLLOW_LERP = 4.0;
-const RESCUE_RANGE_SCALE = 1.0;
 const RUIN_RANGE = 6;
 const RUIN_RANGE_SQ = RUIN_RANGE * RUIN_RANGE;
 const RELIC_CLAIM_RANGE_SQ = 4 * 4;
+/** XZ jitter (m) around an activated ruin when spilling its follower charge. */
+const RUIN_SPAWN_JITTER = 6;
 
 export function newSimQueues(): SimQueues {
   return { rescues: [], ruinActivations: [] };
@@ -248,8 +253,7 @@ export function tickWorld(
       }
     }
     if (!target) continue;
-    const reach = playerLight * RESCUE_RANGE_SCALE;
-    if (distSq(player.position, target.position) > reach * reach) continue;
+    if (distSq(player.position, target.position) > playerLight * playerLight) continue;
     target.ownerId = player.id;
     target.morale = Math.min(1, target.morale + 0.2);
     player.followers.push({
@@ -283,11 +287,11 @@ export function tickWorld(
     ruinsActivated++;
     for (let i = 0; i < ruin.followerCharge; i++) {
       const id = `f-ruin-${ruin.id}-${i}`;
-      const sx = ruin.position.x + (Math.random() - 0.5) * 6;
-      const sz = ruin.position.z + (Math.random() - 0.5) * 6;
+      const sx = ruin.position.x + (Math.random() - 0.5) * RUIN_SPAWN_JITTER;
+      const sz = ruin.position.z + (Math.random() - 0.5) * RUIN_SPAWN_JITTER;
       world.followers.set(id, {
         id,
-        kind: i % 4 === 0 ? 'lantern-bearer' : 'wanderer',
+        kind: pickFollowerKind(Math.random),
         position: {
           x: sx,
           y: placementSurfaceY('follower', sx, sz, simulationTimeSec, duneOpts),
@@ -309,7 +313,7 @@ export function tickWorld(
   }
   queues.ruinActivations.length = 0;
 
-  // Pass 8: combat absorption. Iterate player pairs (regardless of caravan
+  // Pass 8: combat absorption. Iterate every player pair (regardless of caravan
   // assignment) — if light fields overlap and one is significantly brighter,
   // followers drift toward the stronger light. Same-caravan merge is a feature,
   // not protection from a much-brighter neighbour.
@@ -351,7 +355,7 @@ export function tickWorld(
     }
   }
 
-  // Reflect race-aware caravan radius into derived (overrides solo).
+  // Pass 9: reflect race-aware caravan radius into derived (overrides solo).
   for (const cv of caravans) {
     if (cv.memberIds.length <= 1) continue;
     for (const id of cv.memberIds) {
@@ -359,14 +363,6 @@ export function tickWorld(
       if (d) d.lightRadius = cv.lightRadius;
     }
   }
-
-  // Pass 9: final Y-resnap of every world entity on a single live pass.
-  for (const p of playerArr) {
-    for (const f of p.followers) snapY(f, 'follower', simulationTimeSec, duneOpts);
-  }
-  for (const f of world.followers.values()) snapY(f, 'follower', simulationTimeSec, duneOpts);
-  for (const r of world.ruins.values()) snapY(r, 'ruin', simulationTimeSec, duneOpts);
-  for (const r of world.relics.values()) snapY(r, 'relic', simulationTimeSec, duneOpts);
 
   return { derived, caravans, combatAbsorptions, rescuesGranted, ruinsActivated };
 }

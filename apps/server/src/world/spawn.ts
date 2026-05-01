@@ -5,11 +5,9 @@
  * layer carries the seed forward); spawn caps live in `WorldConfig`.
  */
 import {
-  FOLLOWER_KIND_DEFS,
-  FOLLOWER_KINDS,
+  pickFollowerKind,
   placementSurfaceY,
   ZONE_BANDS,
-  type FollowerKind,
   type FollowerSnapshot,
   type RelicSnapshot,
   type RuinSnapshot,
@@ -23,20 +21,6 @@ interface SpawnEntities {
   followers: FollowerSnapshot[];
   ruins: RuinSnapshot[];
   relics: RelicSnapshot[];
-}
-
-const FOLLOWER_SPAWN_TOTAL_WEIGHT = FOLLOWER_KINDS.reduce(
-  (acc, k) => acc + FOLLOWER_KIND_DEFS[k].spawnWeight,
-  0,
-);
-
-function pickKind(rng: Rng): FollowerKind {
-  let pick = rng() * FOLLOWER_SPAWN_TOTAL_WEIGHT;
-  for (const k of FOLLOWER_KINDS) {
-    pick -= FOLLOWER_KIND_DEFS[k].spawnWeight;
-    if (pick <= 0) return k;
-  }
-  return 'wanderer';
 }
 
 function pickPositionInZone(
@@ -83,7 +67,7 @@ export function generateInitialWorld(seed: number, config: WorldConfig): SpawnEn
     const zone = followerZones[i % followerZones.length]!;
     followers.push({
       id: `f-${seed.toString(16)}-${i}`,
-      kind: pickKind(rng),
+      kind: pickFollowerKind(rng),
       position: pickPositionInZone(rng, zone, 'follower', config),
       ownerId: null,
       morale: 0.55 + rng() * 0.3,

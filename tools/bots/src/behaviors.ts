@@ -3,6 +3,11 @@
  *
  * Each tick returns the next intended position **and** any optional intents
  * (rescue, activate ruin) to be sent up. The bot wrapper handles transport.
+ *
+ * Most behaviors are "lerp toward a goal" with a different goal source and
+ * cadence; they share {@link makeSeek}. Adding a new lerp-style brain is one
+ * entry in {@link SEEK_SPECS}. Parametric brains (e.g. orbits) implement
+ * {@link Behavior} directly.
  */
 import {
   lerpVec3,
@@ -38,9 +43,8 @@ export interface Behavior {
 const PLAY_RADIUS = 320;
 
 /**
- * Wandering bots want a soft sphere distribution (slight Y bias) so they
- * don't pile up on the ground plane. The Y term is a 10% squash of the ring
- * radius — kept in callers because it's a pure aesthetic, not a physics need.
+ * Soft sphere distribution with mild Y jitter so wandering bots don't pile up
+ * on the ground plane. Pure aesthetic, not a physics need.
  */
 function spherePoint(rng: Rng, radius: number): Vec3 {
   const p = randomRingXZ(rng, radius, radius);
@@ -73,22 +77,161 @@ function nearestUnactivatedRuin(
     : null;
 }
 
-class WandererBehavior implements Behavior {
-  readonly name = 'wanderer';
-  private current: Vec3 = { x: PLAY_RADIUS, y: 0, z: 0 };
-  private target: Vec3 = this.current;
-  private timeToRetarget = 0;
-
-  tick(dt: number, ctx: BehaviorContext): BehaviorTick {
-    this.timeToRetarget -= dt;
-    if (this.timeToRetarget <= 0) {
-      this.target = spherePoint(ctx.rng, 60 + ctx.rng() * 220);
-      this.timeToRetarget = 1.5 + ctx.rng() * 2.5;
-    }
-    this.current = lerpVec3(this.current, this.target, Math.min(1, dt * 2.4));
-    return { position: this.current };
-  }
+function wanderingFallback(ctx: BehaviorContext, min = 50, span = 220): Vec3 {
+  return spherePoint(ctx.rng, min + ctx.rng() * span);
 }
+
+/**
+ * Per-behavior recipe for the shared lerp-toward-goal loop.
+ *   - `lerpRate`        — exponential approach speed (`min(1, dt * lerpRate)`).
+ *   - `retargetEvery`   — seconds between goal repicks; omit to retarget every tick.
+ *   - `initial`         — starting position (default origin).
+ *   - `pickGoal`        — chooses the next goal (snapshot-aware, RNG-aware).
+ *   - `intent`          — optional per-tick intent (rescue / activate-ruin) with
+ *                         its own cooldown (sec).
+ */
+interface SeekSpec {
+  readonly name: BehaviorName;
+  readonly lerpRate: number;
+  readonly retargetEvery?: (rng: Rng) => number;
+  readonly initial?: (rng: Rng) => Vec3;
+  readonly pickGoal: (ctx: BehaviorContext, current: Vec3) => Vec3;
+  readonly intent?: {
+    readonly cooldown: number;
+    readonly emit: (ctx: BehaviorContext, current: Vec3) => Partial<BehaviorTick> | null;
+  };
+}
+
+function makeSeek(spec: SeekSpec, rng: Rng): Behavior {
+  let current: Vec3 = spec.initial ? spec.initial(rng) : { x: 0, y: 0, z: 0 };
+  let target: Vec3 = current;
+  let retargetIn = 0;
+  let intentCooldown = 0;
+  return {
+    name: spec.name,
+    tick(dt: number, ctx: BehaviorContext): BehaviorTick {
+      retargetIn -= dt;
+      intentCooldown -= dt;
+      if (retargetIn <= 0) {
+        target = spec.pickGoal(ctx, current);
+        retargetIn = spec.retargetEvery ? spec.retargetEvery(ctx.rng) : 0;
+      }
+      current = lerpVec3(current, target, Math.min(1, dt * spec.lerpRate));
+      const out: BehaviorTick = { position: current };
+      if (spec.intent && intentCooldown <= 0) {
+        const extra = spec.intent.emit(ctx, current);
+        if (extra) {
+          if (extra.rescueFollowerId !== undefined) out.rescueFollowerId = extra.rescueFollowerId;
+          if (extra.activateRuinId !== undefined) out.activateRuinId = extra.activateRuinId;
+          intentCooldown = spec.intent.cooldown;
+        }
+      }
+      return out;
+    },
+  };
+}
+
+/** Single source of truth for every lerp-style brain. */
+const SEEK_SPECS: Readonly<Record<SeekBehaviorName, SeekSpec>> = Object.freeze({
+  wanderer: {
+    name: 'wanderer',
+    lerpRate: 2.4,
+    retargetEvery: (rng) => 1.5 + rng() * 2.5,
+    initial: () => ({ x: PLAY_RADIUS, y: 0, z: 0 }),
+    pickGoal: (ctx) => spherePoint(ctx.rng, 60 + ctx.rng() * 220),
+  },
+  drifter: {
+    name: 'drifter',
+    lerpRate: 10,
+    retargetEvery: (rng) => 0.25 + rng() * 0.4,
+    initial: () => ({ x: PLAY_RADIUS, y: 0, z: 0 }),
+    pickGoal: (ctx) => wanderingFallback(ctx),
+  },
+  afk: {
+    name: 'afk',
+    lerpRate: 0,
+    initial: (rng) => spherePoint(rng, 30 + rng() * 60),
+    pickGoal: (_ctx, current) => current,
+  },
+  chaser: {
+    name: 'chaser',
+    lerpRate: 2.8,
+    initial: () => ({ x: PLAY_RADIUS, y: 0, z: 0 }),
+    pickGoal: (ctx, current) => {
+      const snap = ctx.snapshot;
+      if (snap && snap.players.length > 1) {
+        const other = nearestBy(
+          snap.players,
+          current,
+          (p) => p.id !== ctx.selfPlayerId && vec3DistSq(p.position, current) > 0.01,
+        );
+        if (other) return other.position;
+      }
+      return wanderingFallback(ctx);
+    },
+  },
+  rescuer: {
+    name: 'rescuer',
+    lerpRate: 2.0,
+    initial: () => ({ x: 40, y: 0, z: 0 }),
+    pickGoal: (ctx, current) => {
+      const me = self(ctx);
+      const target = nearestStrandedFollower(ctx, me?.position ?? current);
+      return target ? target.position : spherePoint(ctx.rng, 40 + ctx.rng() * 120);
+    },
+    intent: {
+      cooldown: 1.0,
+      emit: (ctx) => {
+        const me = self(ctx);
+        if (!me) return null;
+        const target = nearestStrandedFollower(ctx, me.position);
+        if (!target) return null;
+        const myLight =
+          ctx.snapshot?.players.find((p) => p.id === ctx.selfPlayerId)?.lightRadius ?? 0;
+        if (vec3DistSq(me.position, target.position) > myLight * myLight) return null;
+        return { rescueFollowerId: target.id };
+      },
+    },
+  },
+  'caravan-seeker': {
+    name: 'caravan-seeker',
+    lerpRate: 1.6,
+    initial: () => ({ x: 0, y: 0, z: 0 }),
+    pickGoal: (ctx) => {
+      const snap = ctx.snapshot;
+      if (snap && snap.caravans.length > 0) {
+        let largest = snap.caravans[0]!;
+        for (const c of snap.caravans) if (c.lightRadius > largest.lightRadius) largest = c;
+        const leader = snap.players.find((p) => p.id === largest.leaderId);
+        if (leader) return leader.position;
+      }
+      return spherePoint(ctx.rng, 80);
+    },
+  },
+  'deep-diver': {
+    name: 'deep-diver',
+    lerpRate: 1.4,
+    retargetEvery: (rng) => 4 + rng() * 3,
+    initial: () => ({ x: 0, y: 0, z: 0 }),
+    pickGoal: (ctx, current) => {
+      const me = self(ctx);
+      const ruin = nearestUnactivatedRuin(ctx, me?.position ?? current, 600);
+      if (ruin) return ruin.position;
+      const angle = ctx.rng() * Math.PI * 2;
+      const r = 220 + ctx.rng() * 240;
+      return { x: Math.cos(angle) * r, y: 0, z: Math.sin(angle) * r };
+    },
+    intent: {
+      cooldown: 2.0,
+      emit: (ctx) => {
+        const me = self(ctx);
+        if (!me) return null;
+        const ruin = nearestUnactivatedRuin(ctx, me.position, 6);
+        return ruin ? { activateRuinId: ruin.id } : null;
+      },
+    },
+  },
+});
 
 class OrbiterBehavior implements Behavior {
   readonly name = 'orbiter';
@@ -119,154 +262,16 @@ class OrbiterBehavior implements Behavior {
   }
 }
 
-class DrifterBehavior implements Behavior {
-  readonly name = 'drifter';
-  private cooldown = 0;
-  private current: Vec3 = { x: PLAY_RADIUS, y: 0, z: 0 };
-  private desired: Vec3 = { x: PLAY_RADIUS, y: 0, z: 0 };
-
-  tick(dt: number, ctx: BehaviorContext): BehaviorTick {
-    this.cooldown -= dt;
-    if (this.cooldown <= 0) {
-      this.desired = spherePoint(ctx.rng, 50 + ctx.rng() * 220);
-      this.cooldown = 0.25 + ctx.rng() * 0.4;
-    }
-    this.current = lerpVec3(this.current, this.desired, Math.min(1, dt * 10));
-    return { position: this.current };
-  }
-}
-
-class AfkBehavior implements Behavior {
-  readonly name = 'afk';
-  private readonly anchor: Vec3;
-
-  constructor(rng: Rng) {
-    this.anchor = spherePoint(rng, 30 + rng() * 60);
-  }
-
-  tick(): BehaviorTick {
-    return { position: this.anchor };
-  }
-}
-
-class ChaserBehavior implements Behavior {
-  readonly name = 'chaser';
-  private current: Vec3 = { x: PLAY_RADIUS, y: 0, z: 0 };
-
-  tick(dt: number, ctx: BehaviorContext): BehaviorTick {
-    const snap = ctx.snapshot;
-    const other =
-      snap && snap.players.length > 1
-        ? nearestBy(
-            snap.players,
-            this.current,
-            (p) => p.id !== ctx.selfPlayerId && vec3DistSq(p.position, this.current) > 0.01,
-          )
-        : null;
-    const target = other?.position ?? spherePoint(ctx.rng, 50 + ctx.rng() * 220);
-    this.current = lerpVec3(this.current, target, Math.min(1, dt * 2.8));
-    return { position: this.current };
-  }
-}
-
-/** Walks toward stranded followers and emits a rescue intent when in range. */
-class RescuerBehavior implements Behavior {
-  readonly name = 'rescuer';
-  private current: Vec3 = { x: 40, y: 0, z: 0 };
-  private rescueCooldown = 0;
-
-  tick(dt: number, ctx: BehaviorContext): BehaviorTick {
-    this.rescueCooldown -= dt;
-    const me = self(ctx);
-    const origin = me?.position ?? this.current;
-    const target = nearestStrandedFollower(ctx, origin);
-    let goal: Vec3;
-    if (target) {
-      goal = target.position;
-    } else {
-      goal = spherePoint(ctx.rng, 40 + ctx.rng() * 120);
-    }
-    this.current = lerpVec3(this.current, goal, Math.min(1, dt * 2.0));
-    const out: BehaviorTick = { position: this.current };
-    if (target && me && this.rescueCooldown <= 0) {
-      const myLight =
-        ctx.snapshot?.players.find((p) => p.id === ctx.selfPlayerId)?.lightRadius ?? 0;
-      if (vec3DistSq(me.position, target.position) <= myLight * myLight) {
-        out.rescueFollowerId = target.id;
-        this.rescueCooldown = 1.0;
-      }
-    }
-    return out;
-  }
-}
-
-/** Walks toward the largest visible caravan to merge light fields. */
-class CaravanSeekerBehavior implements Behavior {
-  readonly name = 'caravan-seeker';
-  private current: Vec3 = { x: 0, y: 0, z: 0 };
-
-  tick(dt: number, ctx: BehaviorContext): BehaviorTick {
-    let goal: Vec3 = spherePoint(ctx.rng, 80);
-    const snap = ctx.snapshot;
-    if (snap && snap.caravans.length > 0) {
-      let largest = snap.caravans[0]!;
-      for (const c of snap.caravans) {
-        if (c.lightRadius > largest.lightRadius) largest = c;
-      }
-      const leader = snap.players.find((p) => p.id === largest.leaderId);
-      if (leader) goal = leader.position;
-    }
-    this.current = lerpVec3(this.current, goal, Math.min(1, dt * 1.6));
-    return { position: this.current };
-  }
-}
-
-/** Pushes deeper into the world; activates ruins it lands near. */
-class DeepDiverBehavior implements Behavior {
-  readonly name = 'deep-diver';
-  private current: Vec3 = { x: 0, y: 0, z: 0 };
-  private target: Vec3 = { x: 0, y: 0, z: 0 };
-  private retargetIn = 0;
-  private activateCooldown = 0;
-
-  tick(dt: number, ctx: BehaviorContext): BehaviorTick {
-    this.retargetIn -= dt;
-    this.activateCooldown -= dt;
-    const me = self(ctx);
-    const origin = me?.position ?? this.current;
-    if (this.retargetIn <= 0) {
-      const ruin = nearestUnactivatedRuin(ctx, origin, 600);
-      if (ruin) {
-        this.target = ruin.position;
-      } else {
-        const angle = ctx.rng() * Math.PI * 2;
-        const r = 220 + ctx.rng() * 240;
-        this.target = { x: Math.cos(angle) * r, y: 0, z: Math.sin(angle) * r };
-      }
-      this.retargetIn = 4 + ctx.rng() * 3;
-    }
-    this.current = lerpVec3(this.current, this.target, Math.min(1, dt * 1.4));
-    const out: BehaviorTick = { position: this.current };
-    if (me && this.activateCooldown <= 0) {
-      const ruin = nearestUnactivatedRuin(ctx, me.position, 6);
-      if (ruin) {
-        out.activateRuinId = ruin.id;
-        this.activateCooldown = 2;
-      }
-    }
-    return out;
-  }
-}
-
-export type BehaviorName =
+type SeekBehaviorName =
   | 'wanderer'
-  | 'orbiter'
   | 'drifter'
   | 'afk'
   | 'chaser'
   | 'rescuer'
   | 'caravan-seeker'
   | 'deep-diver';
+
+export type BehaviorName = SeekBehaviorName | 'orbiter';
 
 export const ALL_BEHAVIORS: BehaviorName[] = [
   'wanderer',
@@ -280,23 +285,6 @@ export const ALL_BEHAVIORS: BehaviorName[] = [
 ];
 
 export function createBehavior(name: BehaviorName, rng: Rng): Behavior {
-  switch (name) {
-    case 'orbiter':
-      return new OrbiterBehavior(rng);
-    case 'drifter':
-      return new DrifterBehavior();
-    case 'afk':
-      return new AfkBehavior(rng);
-    case 'chaser':
-      return new ChaserBehavior();
-    case 'rescuer':
-      return new RescuerBehavior();
-    case 'caravan-seeker':
-      return new CaravanSeekerBehavior();
-    case 'deep-diver':
-      return new DeepDiverBehavior();
-    case 'wanderer':
-    default:
-      return new WandererBehavior();
-  }
+  if (name === 'orbiter') return new OrbiterBehavior(rng);
+  return makeSeek(SEEK_SPECS[name], rng);
 }
