@@ -87,6 +87,16 @@ const FRAG = /* glsl */ `
   uniform int uOilEnabled;
   uniform float uOilRadius;
   uniform float uOilIntensity;
+  uniform float uOilLumaEdgeSuppress;
+  uniform float uOilGeomEdgeSuppress;
+  uniform float uOilDarkBoost;
+  uniform float uOilMaxBlend;
+  uniform float uOilDeltaClamp;
+  uniform float uOilDeltaClampEdgeMul;
+  uniform float uOilEdgeAttenLo;
+  uniform float uOilEdgeAttenHi;
+  uniform float uOilDeltaBandLo;
+  uniform float uOilDeltaBandHi;
 
   uniform int uMistEnabled;
   uniform float uMistIntensity;
@@ -213,6 +223,29 @@ const FRAG = /* glsl */ `
     return clamp(max(e0, e1), 0.0, 1.0);
   }
 
+  // Luma Sobel on the lit buffer (same response curve as Godot poster_outline_edge_from_sobel).
+  // Kuwahara is unstable on these edges: quadrants straddle fire vs shadow and the chosen mean
+  // jumps, then the additive delta reads as a hyper-sharp saturated halo. We use this to
+  // attenuate oil there so the pass reads as soft paint blobs instead of rim ink.
+  float diffuseLumaEdge(vec2 uv, vec2 pxSz) {
+    vec2 ts = pxSz * 1.25;
+    float tl = posterLum(texture2D(tDiffuse, uv + vec2(-ts.x, ts.y)).rgb);
+    float tc = posterLum(texture2D(tDiffuse, uv + vec2(0.0, ts.y)).rgb);
+    float tr = posterLum(texture2D(tDiffuse, uv + vec2(ts.x, ts.y)).rgb);
+    float ml = posterLum(texture2D(tDiffuse, uv + vec2(-ts.x, 0.0)).rgb);
+    float mr = posterLum(texture2D(tDiffuse, uv + vec2(ts.x, 0.0)).rgb);
+    float bl = posterLum(texture2D(tDiffuse, uv + vec2(-ts.x, -ts.y)).rgb);
+    float bc = posterLum(texture2D(tDiffuse, uv + vec2(0.0, -ts.y)).rgb);
+    float br = posterLum(texture2D(tDiffuse, uv + vec2(ts.x, -ts.y)).rgb);
+    float gx = -tl - 2.0 * ml - bl + tr + 2.0 * mr + br;
+    float gy = -tl - 2.0 * tc - tr + bl + 2.0 * bc + br;
+    float g = length(vec2(gx, gy));
+    return clamp(max(
+      smoothstep(0.02, 0.12, g),
+      smoothstep(0.006, 0.09, g) * 0.85
+    ), 0.0, 1.0);
+  }
+
   vec3 applyOil(vec2 uv, vec3 lit, vec2 pxSz, float geomEdge) {
     if (uOilEnabled == 0 || uOilIntensity < 0.0001) return lit;
     vec3 sCentre = texture2D(tDiffuse, uv).rgb;
@@ -239,9 +272,25 @@ const FRAG = /* glsl */ `
     if (n2 > 0.0) { vec3 mu = m2 / n2; float v = dot(s2 / n2 - mu * mu, vec3(1.0)); if (v < minVar) { minVar = v; kResult = mu; } }
     if (n3 > 0.0) { vec3 mu = m3 / n3; float v = dot(s3 / n3 - mu * mu, vec3(1.0)); if (v < minVar) { minVar = v; kResult = mu; } }
     float lt = posterLum(lit);
-    float darkBoost = 1.0 + 0.22 * (1.0 - smoothstep(0.0, 0.32, lt));
-    float effI = clamp(uOilIntensity * darkBoost * (1.0 + 0.55 * geomEdge), 0.0, 4.0);
-    return lit + (kResult - sCentre) * effI;
+    float darkBoost = 1.0 + uOilDarkBoost * (1.0 - smoothstep(0.0, 0.32, lt));
+    float lEdge = diffuseLumaEdge(uv, pxSz);
+    float eLo = min(uOilEdgeAttenLo, uOilEdgeAttenHi);
+    float eHi = max(uOilEdgeAttenLo, uOilEdgeAttenHi);
+    float lAtten = 1.0 - uOilLumaEdgeSuppress * smoothstep(eLo, eHi, lEdge);
+    float gAtten = 1.0 - uOilGeomEdgeSuppress * smoothstep(0.0, 0.55, geomEdge);
+    float effI = clamp(uOilIntensity * darkBoost * lAtten * gAtten, 0.0, uOilMaxBlend);
+    vec3 delta = kResult - sCentre;
+    float dLen = length(delta);
+    float dbLo = min(uOilDeltaBandLo, uOilDeltaBandHi);
+    float dbHi = max(uOilDeltaBandLo, uOilDeltaBandHi);
+    float dCap = mix(
+      uOilDeltaClamp,
+      uOilDeltaClamp * uOilDeltaClampEdgeMul,
+      smoothstep(dbLo, dbHi, lEdge));
+    if (dLen > dCap && dLen > 1e-5) {
+      delta *= dCap / dLen;
+    }
+    return lit + delta * effI;
   }
 
   vec4 applyMist(vec2 uv, vec3 lit, vec2 pxSz, float geomEdge) {
@@ -494,6 +543,16 @@ interface NprUniforms {
   readonly uOilEnabled: THREE.IUniform<number>;
   readonly uOilRadius: THREE.IUniform<number>;
   readonly uOilIntensity: THREE.IUniform<number>;
+  readonly uOilLumaEdgeSuppress: THREE.IUniform<number>;
+  readonly uOilGeomEdgeSuppress: THREE.IUniform<number>;
+  readonly uOilDarkBoost: THREE.IUniform<number>;
+  readonly uOilMaxBlend: THREE.IUniform<number>;
+  readonly uOilDeltaClamp: THREE.IUniform<number>;
+  readonly uOilDeltaClampEdgeMul: THREE.IUniform<number>;
+  readonly uOilEdgeAttenLo: THREE.IUniform<number>;
+  readonly uOilEdgeAttenHi: THREE.IUniform<number>;
+  readonly uOilDeltaBandLo: THREE.IUniform<number>;
+  readonly uOilDeltaBandHi: THREE.IUniform<number>;
   readonly uMistEnabled: THREE.IUniform<number>;
   readonly uMistIntensity: THREE.IUniform<number>;
   readonly uMistDepthThreshold: THREE.IUniform<number>;
@@ -587,6 +646,16 @@ export function createNprPost(renderer: THREE.WebGLRenderer, initial: NprSetting
     uOilEnabled: { value: 0 },
     uOilRadius: { value: 3 },
     uOilIntensity: { value: 0.8 },
+    uOilLumaEdgeSuppress: { value: 0.94 },
+    uOilGeomEdgeSuppress: { value: 0.45 },
+    uOilDarkBoost: { value: 0.18 },
+    uOilMaxBlend: { value: 1.65 },
+    uOilDeltaClamp: { value: 0.32 },
+    uOilDeltaClampEdgeMul: { value: 0.375 },
+    uOilEdgeAttenLo: { value: 0.03 },
+    uOilEdgeAttenHi: { value: 0.22 },
+    uOilDeltaBandLo: { value: 0.05 },
+    uOilDeltaBandHi: { value: 0.28 },
     uMistEnabled: { value: 0 },
     uMistIntensity: { value: 0.6 },
     uMistDepthThreshold: { value: 0.035 },
@@ -644,6 +713,16 @@ export function createNprPost(renderer: THREE.WebGLRenderer, initial: NprSetting
     uniforms.uOilEnabled.value = s.oilEnabled ? 1 : 0;
     uniforms.uOilRadius.value = s.oilRadiusPx;
     uniforms.uOilIntensity.value = s.oilIntensity;
+    uniforms.uOilLumaEdgeSuppress.value = s.oilLumaEdgeSuppress;
+    uniforms.uOilGeomEdgeSuppress.value = s.oilGeomEdgeSuppress;
+    uniforms.uOilDarkBoost.value = s.oilDarkBoost;
+    uniforms.uOilMaxBlend.value = s.oilMaxBlend;
+    uniforms.uOilDeltaClamp.value = s.oilDeltaClamp;
+    uniforms.uOilDeltaClampEdgeMul.value = s.oilDeltaClampEdgeMul;
+    uniforms.uOilEdgeAttenLo.value = s.oilEdgeAttenLo;
+    uniforms.uOilEdgeAttenHi.value = s.oilEdgeAttenHi;
+    uniforms.uOilDeltaBandLo.value = s.oilDeltaBandLo;
+    uniforms.uOilDeltaBandHi.value = s.oilDeltaBandHi;
 
     uniforms.uMistEnabled.value = s.mistEnabled ? 1 : 0;
     uniforms.uMistIntensity.value = s.mistIntensity;

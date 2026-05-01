@@ -389,10 +389,54 @@ function buildNprPanel(
 
     // --- Oil (Rembrandt) ---
     const oilBody = document.createElement('div');
+    const oilEdgeBody = document.createElement('div');
+    oilEdgeBody.append(
+      compactRow(
+        'Luma pull',
+        makeFloatSlider(0, 1, 0.02, s.oilLumaEdgeSuppress, 2, (v) => patch({ oilLumaEdgeSuppress: v })).row,
+      ),
+      compactRow(
+        'Geom pull',
+        makeFloatSlider(0, 1, 0.02, s.oilGeomEdgeSuppress, 2, (v) => patch({ oilGeomEdgeSuppress: v })).row,
+      ),
+      compactRow(
+        'Dark+',
+        makeFloatSlider(0, 0.4, 0.01, s.oilDarkBoost, 2, (v) => patch({ oilDarkBoost: v })).row,
+      ),
+      compactRow(
+        'Max blend',
+        makeFloatSlider(0.25, 3, 0.05, s.oilMaxBlend, 2, (v) => patch({ oilMaxBlend: v })).row,
+      ),
+      compactRow(
+        'Delta cap',
+        makeFloatSlider(0.05, 0.7, 0.01, s.oilDeltaClamp, 2, (v) => patch({ oilDeltaClamp: v })).row,
+      ),
+      compactRow(
+        'Edge d x',
+        makeFloatSlider(0.05, 1, 0.025, s.oilDeltaClampEdgeMul, 3, (v) => patch({ oilDeltaClampEdgeMul: v })).row,
+      ),
+      compactRow(
+        'Atten lo',
+        makeFloatSlider(0.001, 0.25, 0.005, s.oilEdgeAttenLo, 3, (v) => patch({ oilEdgeAttenLo: v })).row,
+      ),
+      compactRow(
+        'Atten hi',
+        makeFloatSlider(0.05, 0.6, 0.01, s.oilEdgeAttenHi, 2, (v) => patch({ oilEdgeAttenHi: v })).row,
+      ),
+      compactRow(
+        'Cap lo',
+        makeFloatSlider(0.02, 0.35, 0.01, s.oilDeltaBandLo, 2, (v) => patch({ oilDeltaBandLo: v })).row,
+      ),
+      compactRow(
+        'Cap hi',
+        makeFloatSlider(0.12, 0.55, 0.01, s.oilDeltaBandHi, 2, (v) => patch({ oilDeltaBandHi: v })).row,
+      ),
+    );
     oilBody.append(
       compactRow('On', makeBoolToggle('Oil enabled', s.oilEnabled, (v) => patch({ oilEnabled: v }))),
       compactRow('Radius', makeFloatSlider(1, 8, 0.25, s.oilRadiusPx, 2, (v) => patch({ oilRadiusPx: v })).row),
       compactRow('Amount', makeFloatSlider(0, 3, 0.05, s.oilIntensity, 2, (v) => patch({ oilIntensity: v })).row),
+      makeDetails('Oil - edge / anti-halo', oilEdgeBody),
     );
 
     // --- Mist (Rembrandt) ---

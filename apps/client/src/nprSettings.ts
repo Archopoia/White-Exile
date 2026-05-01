@@ -81,6 +81,28 @@ export interface NprSettings {
   oilEnabled: boolean;
   oilRadiusPx: number;
   oilIntensity: number;
+  /**
+   * Oil (Kuwahara) edge / anti-halo — all 0..1 scalars unless noted. Tweak when
+   * fire rims or specs still ring after changing radius or amount.
+   */
+  /** How strongly screen luma edges reduce oil (0 = ignore, 1 = strong). */
+  oilLumaEdgeSuppress: number;
+  /** How strongly depth/normal edge signal reduces oil. */
+  oilGeomEdgeSuppress: number;
+  /** Extra smear in dark areas: darkBoost = 1 + this * (1 - smoothstep on luma). */
+  oilDarkBoost: number;
+  /** Upper cap on the oil blend factor after attenuations. */
+  oilMaxBlend: number;
+  /** Max |Kuwahara mean − centre| in RGB before renormalize (flat areas). */
+  oilDeltaClamp: number;
+  /** At full luma-edge, delta cap is multiplied by this (tighter = less chroma ring). */
+  oilDeltaClampEdgeMul: number;
+  /** Smoothstep band on the 0..1 luma-edge signal for luma attenuation (ordered in getNprSettings). */
+  oilEdgeAttenLo: number;
+  oilEdgeAttenHi: number;
+  /** Smoothstep band on luma-edge for tightening delta cap toward edge mul. */
+  oilDeltaBandLo: number;
+  oilDeltaBandHi: number;
 
   mistEnabled: boolean;
   mistIntensity: number;
@@ -128,6 +150,16 @@ export const NPR_DEFAULTS: NprSettings = Object.freeze({
   oilEnabled: false,
   oilRadiusPx: 3.0,
   oilIntensity: 0.8,
+  oilLumaEdgeSuppress: 0.94,
+  oilGeomEdgeSuppress: 0.45,
+  oilDarkBoost: 0.18,
+  oilMaxBlend: 1.65,
+  oilDeltaClamp: 0.32,
+  oilDeltaClampEdgeMul: 0.375,
+  oilEdgeAttenLo: 0.03,
+  oilEdgeAttenHi: 0.22,
+  oilDeltaBandLo: 0.05,
+  oilDeltaBandHi: 0.28,
 
   mistEnabled: false,
   mistIntensity: 0.6,
@@ -336,6 +368,24 @@ export function getNprSettings(): NprSettings {
     oilEnabled: readBool(parsed.oilEnabled, d.oilEnabled),
     oilRadiusPx: readNumber(parsed.oilRadiusPx, d.oilRadiusPx, 1, 10),
     oilIntensity: readNumber(parsed.oilIntensity, d.oilIntensity, 0, 3),
+    oilLumaEdgeSuppress: readNumber(parsed.oilLumaEdgeSuppress, d.oilLumaEdgeSuppress, 0, 1),
+    oilGeomEdgeSuppress: readNumber(parsed.oilGeomEdgeSuppress, d.oilGeomEdgeSuppress, 0, 1),
+    oilDarkBoost: readNumber(parsed.oilDarkBoost, d.oilDarkBoost, 0, 0.4),
+    oilMaxBlend: readNumber(parsed.oilMaxBlend, d.oilMaxBlend, 0.25, 3),
+    oilDeltaClamp: readNumber(parsed.oilDeltaClamp, d.oilDeltaClamp, 0.05, 0.7),
+    oilDeltaClampEdgeMul: readNumber(parsed.oilDeltaClampEdgeMul, d.oilDeltaClampEdgeMul, 0.05, 1),
+    ...(() => {
+      let lo = readNumber(parsed.oilEdgeAttenLo, d.oilEdgeAttenLo, 0.001, 0.25);
+      let hi = readNumber(parsed.oilEdgeAttenHi, d.oilEdgeAttenHi, 0.05, 0.6);
+      if (lo > hi) [lo, hi] = [hi, lo];
+      return { oilEdgeAttenLo: lo, oilEdgeAttenHi: hi };
+    })(),
+    ...(() => {
+      let lo = readNumber(parsed.oilDeltaBandLo, d.oilDeltaBandLo, 0.02, 0.35);
+      let hi = readNumber(parsed.oilDeltaBandHi, d.oilDeltaBandHi, 0.12, 0.55);
+      if (lo > hi) [lo, hi] = [hi, lo];
+      return { oilDeltaBandLo: lo, oilDeltaBandHi: hi };
+    })(),
 
     mistEnabled: readBool(parsed.mistEnabled, d.mistEnabled),
     mistIntensity: readNumber(parsed.mistIntensity, d.mistIntensity, 0, 2),
