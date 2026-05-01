@@ -85,8 +85,24 @@ describe('Server schemas', () => {
       roomId: 'default',
       protocolVersion: PROTOCOL_VERSION,
       tickHz: 15,
+      resumeToken: 'p1',
+      resumed: true,
     });
     expect(parsed.tickHz).toBe(15);
+    expect(parsed.resumeToken).toBe('p1');
+    expect(parsed.resumed).toBe(true);
+  });
+
+  it('welcome.resumed defaults to false', () => {
+    const parsed = ServerWelcomeSchema.parse({
+      playerId: 'p1',
+      traceId: 't1',
+      roomId: 'default',
+      protocolVersion: PROTOCOL_VERSION,
+      tickHz: 15,
+      resumeToken: 'p1',
+    });
+    expect(parsed.resumed).toBe(false);
   });
 
   it('room snapshot accepts an empty player list', () => {

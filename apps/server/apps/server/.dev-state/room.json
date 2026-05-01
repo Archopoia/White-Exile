@@ -1,0 +1,159 @@
+{
+  "id": "default",
+  "totalDust": 3371.450000001523,
+  "players": [
+    {
+      "id": "45c7e6e0-1b7f-4b43-843f-a330d03307f3",
+      "name": "wee-spark",
+      "isBot": false,
+      "tier": "dust",
+      "position": {
+        "x": -11.165793312411509,
+        "y": 11.22183746452188,
+        "z": 30.809851019499423
+      },
+      "essence": 128.88016979347822,
+      "totalDustContributed": 141.69999999999578,
+      "lastBurstMs": 1777642827837,
+      "lastExtractMs": 1777642823790,
+      "disconnected": false,
+      "disconnectedAt": 0
+    },
+    {
+      "id": "e9b4ff69-08d8-40a7-8bb4-c5abed1e53d4",
+      "name": "BOT_afk_03",
+      "isBot": true,
+      "tier": "dust",
+      "position": {
+        "x": -2.657524959626128,
+        "y": 12.352442387491465,
+        "z": 12.820090801264564
+      },
+      "essence": 25.025000000000098,
+      "totalDustContributed": 27.500000000000256,
+      "lastBurstMs": 0,
+      "lastExtractMs": 0,
+      "disconnected": false,
+      "disconnectedAt": 0
+    },
+    {
+      "id": "c18ed6b2-0325-4a0a-a82f-c4553a0fcb04",
+      "name": "BOT_wanderer_04",
+      "isBot": true,
+      "tier": "dust",
+      "position": {
+        "x": -14.994316578667837,
+        "y": -5.627886961051422,
+        "z": 4.606401853365827
+      },
+      "essence": 24.9770000000001,
+      "totalDustContributed": 48.44999999999965,
+      "lastBurstMs": 1777642824729,
+      "lastExtractMs": 0,
+      "disconnected": false,
+      "disconnectedAt": 0
+    },
+    {
+      "id": "5ac0c408-01ac-4ed1-9454-7915e78a468a",
+      "name": "BOT_orbiter_05",
+      "isBot": true,
+      "tier": "dust",
+      "position": {
+        "x": -16.163439687348525,
+        "y": -3.601672161543993,
+        "z": -14.866863336377792
+      },
+      "essence": 24.931000000000097,
+      "totalDustContributed": 27.400000000000254,
+      "lastBurstMs": 0,
+      "lastExtractMs": 0,
+      "disconnected": false,
+      "disconnectedAt": 0
+    },
+    {
+      "id": "3d8c77e4-91d5-4766-b238-f70ab033d6ab",
+      "name": "BOT_clicker_06",
+      "isBot": true,
+      "tier": "dust",
+      "position": {
+        "x": -5.422706439428481,
+        "y": -0.7813929588555619,
+        "z": 12.88812453811672
+      },
+      "essence": 24.8845000000001,
+      "totalDustContributed": 145.84999999999968,
+      "lastBurstMs": 1777642829754,
+      "lastExtractMs": 0,
+      "disconnected": false,
+      "disconnectedAt": 0
+    },
+    {
+      "id": "cbba74b4-7b3a-4bb5-80c5-c854d33e1791",
+      "name": "BOT_afk_07",
+      "isBot": true,
+      "tier": "dust",
+      "position": {
+        "x": -6.8516687532534055,
+        "y": -8.629551102407277,
+        "z": -14.233252722643275
+      },
+      "essence": 24.837500000000095,
+      "totalDustContributed": 27.300000000000253,
+      "lastBurstMs": 0,
+      "lastExtractMs": 0,
+      "disconnected": false,
+      "disconnectedAt": 0
+    },
+    {
+      "id": "bc515e2c-9c9e-4fd3-b047-bf1522c09f80",
+      "name": "BOT_wanderer_00",
+      "isBot": true,
+      "tier": "dust",
+      "position": {
+        "x": 3.3567044039680947,
+        "y": 17.023578647102056,
+        "z": 2.267744263869364
+      },
+      "essence": 24.65850000000009,
+      "totalDustContributed": 45.09999999999971,
+      "lastBurstMs": 1777642824961,
+      "lastExtractMs": 0,
+      "disconnected": false,
+      "disconnectedAt": 0
+    },
+    {
+      "id": "fb178e52-67c2-48d5-9308-1e68b0b8407f",
+      "name": "BOT_clicker_02",
+      "isBot": true,
+      "tier": "dust",
+      "position": {
+        "x": 15.15965148985767,
+        "y": 2.4009830506791943,
+        "z": 9.079803187806414
+      },
+      "essence": 24.65850000000009,
+      "totalDustContributed": 145.59999999999974,
+      "lastBurstMs": 1777642829614,
+      "lastExtractMs": 0,
+      "disconnected": false,
+      "disconnectedAt": 0
+    },
+    {
+      "id": "d47e9318-e736-416b-9443-0283c79ab558",
+      "name": "BOT_orbiter_01",
+      "isBot": true,
+      "tier": "dust",
+      "position": {
+        "x": 6.692615814705412,
+        "y": 15.56866479760409,
+        "z": -12.940778490581453
+      },
+      "essence": 24.524000000000086,
+      "totalDustContributed": 26.950000000000248,
+      "lastBurstMs": 0,
+      "lastExtractMs": 0,
+      "disconnected": false,
+      "disconnectedAt": 0
+    }
+  ]
+}

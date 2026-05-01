@@ -29,16 +29,20 @@ import { childLogger, logger } from './logger.js';
 import { TokenBucket } from './rateLimiter.js';
 import { Room } from './room.js';
 
-const ROOM_ID = 'default';
+export const ROOM_ID = 'default';
 
-export function attachSocketServer(httpServer: HttpServer): { io: IOServer; room: Room } {
+export function attachSocketServer(
+  httpServer: HttpServer,
+  initialRoom?: Room,
+): { io: IOServer; room: Room } {
   const io = new IOServer(httpServer, {
     cors: { origin: config.corsOrigin },
     serveClient: false,
   });
-  const room = new Room(ROOM_ID);
+  const room = initialRoom ?? new Room(ROOM_ID);
 
   scheduleTickLoop(io, room);
+  schedulePruneLoop(room);
 
   io.on('connection', (socket) => handleConnection(socket, room, io));
   return { io, room };
@@ -76,18 +80,35 @@ function handleConnection(socket: Socket, room: Room, io: IOServer): void {
     if (parsed.data.protocolVersion !== PROTOCOL_VERSION) {
       return reject('protocol_mismatch', 'protocol mismatch', 'hello.protocol_mismatch');
     }
-    playerId = randomUUID();
-    const player = room.addPlayer({
-      id: playerId,
-      name: parsed.data.displayName,
-      isBot: parsed.data.isBot ?? false,
-      tier: 'dust',
-      position: { x: 0, y: 0, z: 0 },
-      essence: 0,
-    });
+
+    // Try to reattach by resumeToken before allocating a new player.
+    let resumed = false;
+    if (parsed.data.resumeToken) {
+      const existing = room.tryReattach(parsed.data.resumeToken);
+      if (existing) {
+        playerId = existing.id;
+        existing.name = parsed.data.displayName;
+        existing.isBot = parsed.data.isBot ?? existing.isBot;
+        resumed = true;
+      }
+    }
+
+    if (!playerId) {
+      playerId = randomUUID();
+      room.addPlayer({
+        id: playerId,
+        name: parsed.data.displayName,
+        isBot: parsed.data.isBot ?? false,
+        tier: 'dust',
+        position: { x: 0, y: 0, z: 0 },
+        essence: 0,
+      });
+    }
+
+    const player = room.get(playerId);
     log.info(
-      { evt: 'player.joined', playerId, name: player.name, isBot: player.isBot },
-      'player joined',
+      { evt: resumed ? 'player.resumed' : 'player.joined', playerId, name: player?.name, isBot: player?.isBot, resumed },
+      resumed ? 'player resumed' : 'player joined',
     );
     const welcome: ServerWelcome = {
       playerId,
@@ -95,6 +116,8 @@ function handleConnection(socket: Socket, room: Room, io: IOServer): void {
       roomId: room.id,
       protocolVersion: PROTOCOL_VERSION,
       tickHz: config.tickHz,
+      resumeToken: playerId,
+      resumed,
     };
     socket.emit(EVT.server.welcome, welcome);
     socket.emit(EVT.server.snapshot, room.snapshot());
@@ -198,8 +221,10 @@ function handleConnection(socket: Socket, room: Room, io: IOServer): void {
 
   socket.on('disconnect', (reason) => {
     if (playerId) {
-      room.removePlayer(playerId);
-      log.info({ evt: 'player.left', playerId, reason }, 'player left');
+      // Soft-disconnect: keep the record so refresh / HMR / server-restart
+      // can resume via `resumeToken`. `pruneDisconnected` finalizes.
+      const marked = room.markDisconnected(playerId);
+      log.info({ evt: 'player.disconnected', playerId, reason, marked }, 'player disconnected');
     } else {
       log.info({ evt: 'socket.disconnected', reason }, 'socket disconnected');
     }
@@ -231,4 +256,17 @@ function scheduleTickLoop(io: IOServer, room: Room): void {
     }
   }, intervalMs);
   logger.info({ evt: 'room.loop_started', tickHz: config.tickHz, intervalMs }, 'tick loop started');
+}
+
+function schedulePruneLoop(room: Room): void {
+  const { pruneIntervalMs, botGraceMs, humanGraceMs } = config.devPersistence;
+  setInterval(() => {
+    const dropped = room.pruneDisconnected({ botGraceMs, humanGraceMs });
+    if (dropped.length > 0) {
+      logger.info(
+        { evt: 'room.pruned', roomId: room.id, dropped: dropped.length, ids: dropped },
+        'pruned soft-disconnected players',
+      );
+    }
+  }, pruneIntervalMs);
 }

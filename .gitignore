@@ -4,6 +4,9 @@ build/
 .turbo/
 .cache/
 
+# Dev-only persisted server state
+apps/server/.dev-state/
+
 # Logs
 logs/
 *.log

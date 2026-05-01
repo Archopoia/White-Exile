@@ -27,6 +27,12 @@ export interface BotOptions {
   rng: Rng;
   tickHz: number;
   logger: Logger;
+  /**
+   * Stable resume token. Lets the server re-attach this bot's record across
+   * dev `tsx watch` restarts (combined with server-side dev persistence) so
+   * the world doesn't briefly fill with ghost bots awaiting GC.
+   */
+  resumeToken?: string;
 }
 
 export class Bot {
@@ -52,6 +58,7 @@ export class Bot {
         protocolVersion: PROTOCOL_VERSION,
         displayName: this.opts.name,
         isBot: true,
+        ...(this.opts.resumeToken ? { resumeToken: this.opts.resumeToken } : {}),
       };
       this.socket.emit(EVT.client.hello, hello);
     });

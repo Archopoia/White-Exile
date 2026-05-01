@@ -6,6 +6,11 @@
  *   - per-player essence + position + tier
  *   - planet radius (derived from totalDust on each snapshot)
  *
+ * Disconnects are *soft*: a player flagged `disconnected` is hidden from
+ * snapshots but kept around for a grace window so a refresh / HMR / server
+ * restart can re-attach the same record. `pruneDisconnected` finalizes the
+ * removal once the grace expires.
+ *
  * Methods are pure operations on internal state; broadcasting is handled by
  * the Socket.io glue in net.ts so this file stays unit-testable.
  */
@@ -28,6 +33,9 @@ export interface PlayerState {
   totalDustContributed: number;
   lastBurstMs: number;
   lastExtractMs: number;
+  /** True while the socket is gone but we're still holding the record open. */
+  disconnected: boolean;
+  disconnectedAt: number;
 }
 
 export interface BurstResult {
@@ -43,6 +51,13 @@ export interface ExtractResult {
   newEssence: number;
 }
 
+/** Minimal JSON shape used by the dev persistence file. */
+export interface RoomData {
+  id: string;
+  totalDust: number;
+  players: PlayerState[];
+}
+
 export class Room {
   readonly id: string;
   totalDust = 0;
@@ -54,6 +69,13 @@ export class Room {
   }
 
   size(): number {
+    let n = 0;
+    for (const p of this.players.values()) if (!p.disconnected) n++;
+    return n;
+  }
+
+  /** Total record count, including soft-disconnected players awaiting GC. */
+  totalRecords(): number {
     return this.players.size;
   }
 
@@ -65,31 +87,84 @@ export class Room {
     return [...this.players.values()];
   }
 
-  addPlayer(p: Omit<PlayerState, 'totalDustContributed' | 'lastBurstMs' | 'lastExtractMs'>): PlayerState {
+  addPlayer(
+    p: Omit<
+      PlayerState,
+      'totalDustContributed' | 'lastBurstMs' | 'lastExtractMs' | 'disconnected' | 'disconnectedAt'
+    >,
+  ): PlayerState {
     const state: PlayerState = {
       ...p,
       totalDustContributed: 0,
       lastBurstMs: 0,
       lastExtractMs: 0,
+      disconnected: false,
+      disconnectedAt: 0,
     };
     this.players.set(p.id, state);
     return state;
   }
 
+  /**
+   * Mark a player as disconnected without dropping their record. Snapshots
+   * will hide them; `pruneDisconnected` will finalize the removal once the
+   * grace window expires.
+   */
+  markDisconnected(playerId: string, now: number = Date.now()): boolean {
+    const p = this.players.get(playerId);
+    if (!p || p.disconnected) return false;
+    p.disconnected = true;
+    p.disconnectedAt = now;
+    return true;
+  }
+
+  /**
+   * Try to re-attach a previously-known player by id. Returns the player on
+   * success (and clears the disconnect flag), or `undefined` if no record
+   * exists. Works for both already-connected and soft-disconnected records.
+   */
+  tryReattach(playerId: string): PlayerState | undefined {
+    const p = this.players.get(playerId);
+    if (!p) return undefined;
+    p.disconnected = false;
+    p.disconnectedAt = 0;
+    return p;
+  }
+
+  /** Drop disconnected records older than their grace window. */
+  pruneDisconnected(opts: {
+    now?: number;
+    botGraceMs: number;
+    humanGraceMs: number;
+  }): string[] {
+    const now = opts.now ?? Date.now();
+    const dropped: string[] = [];
+    for (const p of this.players.values()) {
+      if (!p.disconnected) continue;
+      const grace = p.isBot ? opts.botGraceMs : opts.humanGraceMs;
+      if (now - p.disconnectedAt >= grace) {
+        this.players.delete(p.id);
+        dropped.push(p.id);
+      }
+    }
+    return dropped;
+  }
+
+  /** Hard remove (used by tests; net.ts prefers `markDisconnected`). */
   removePlayer(playerId: string): boolean {
     return this.players.delete(playerId);
   }
 
   setPosition(playerId: string, position: Vec3): boolean {
     const p = this.players.get(playerId);
-    if (!p) return false;
+    if (!p || p.disconnected) return false;
     p.position = clampToPlayVolume(position);
     return true;
   }
 
   applyBurst(playerId: string, intensity: number, now: number = Date.now()): BurstResult {
     const p = this.players.get(playerId);
-    if (!p) return { ok: false, reason: 'unknown_player', dustAdded: 0 };
+    if (!p || p.disconnected) return { ok: false, reason: 'unknown_player', dustAdded: 0 };
     if (now - p.lastBurstMs < config.bursts.cooldownMs) {
       return { ok: false, reason: 'cooldown', dustAdded: 0 };
     }
@@ -103,7 +178,9 @@ export class Room {
 
   applyExtract(playerId: string, now: number = Date.now(), rng: () => number = Math.random): ExtractResult {
     const p = this.players.get(playerId);
-    if (!p) return { ok: false, reason: 'unknown_player', essenceGained: 0, newEssence: 0 };
+    if (!p || p.disconnected) {
+      return { ok: false, reason: 'unknown_player', essenceGained: 0, newEssence: 0 };
+    }
     if (now - p.lastExtractMs < config.extract.cooldownMs) {
       return { ok: false, reason: 'cooldown', essenceGained: 0, newEssence: p.essence };
     }
@@ -126,6 +203,7 @@ export class Room {
     if (dt <= 0) return 0;
 
     for (const p of this.players.values()) {
+      if (p.disconnected) continue;
       const dust = config.passive.dustPerTick;
       this.totalDust += dust;
       p.totalDustContributed += dust;
@@ -135,11 +213,13 @@ export class Room {
   }
 
   snapshot(now: number = Date.now()): RoomSnapshot {
+    const visible: PlayerState[] = [];
+    for (const p of this.players.values()) if (!p.disconnected) visible.push(p);
     return {
       serverTime: now,
       totalDust: this.totalDust,
       planetRadius: planetRadiusFromTotalDust(this.totalDust),
-      players: this.list().map((p) => ({
+      players: visible.map((p) => ({
         id: p.id,
         name: p.name,
         isBot: p.isBot,
@@ -148,5 +228,38 @@ export class Room {
         essence: p.essence,
       })),
     };
+  }
+
+  /** Plain JSON for the dev persistence file. Disconnected records are kept. */
+  serialize(): RoomData {
+    return {
+      id: this.id,
+      totalDust: this.totalDust,
+      players: this.list(),
+    };
+  }
+
+  /** Rehydrate a room from persisted JSON. Marks every player disconnected so
+   *  they only become visible once they reconnect with their resumeToken. */
+  static restore(data: RoomData, now: number = Date.now()): Room {
+    const room = new Room(data.id);
+    room.totalDust = Number.isFinite(data.totalDust) ? Math.max(0, data.totalDust) : 0;
+    for (const raw of data.players ?? []) {
+      const p: PlayerState = {
+        id: raw.id,
+        name: raw.name,
+        isBot: !!raw.isBot,
+        tier: raw.tier,
+        position: raw.position,
+        essence: Math.max(0, raw.essence ?? 0),
+        totalDustContributed: Math.max(0, raw.totalDustContributed ?? 0),
+        lastBurstMs: 0,
+        lastExtractMs: 0,
+        disconnected: true,
+        disconnectedAt: now,
+      };
+      room.players.set(p.id, p);
+    }
+    return room;
   }
 }

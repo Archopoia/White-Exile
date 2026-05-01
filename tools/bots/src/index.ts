@@ -78,6 +78,9 @@ async function main(): Promise<void> {
     const rng = mulberry32((args.seed + i * 1013904223) >>> 0);
     const behavior = createBehavior(behaviorName, rng);
     const name = `BOT_${behaviorName}_${i.toString().padStart(2, '0')}`;
+    // Stable per-(seed, botId) so a `tsx watch` server restart re-attaches
+    // the same bot record (combined with server dev persistence).
+    const resumeToken = `bot-${args.seed}-${i}`;
     const bot = new Bot({
       url: args.url,
       botId: i,
@@ -86,6 +89,7 @@ async function main(): Promise<void> {
       rng,
       tickHz: args.tickHz,
       logger,
+      resumeToken,
     });
     bots.push(bot);
     if (args.staggerMs > 0) {

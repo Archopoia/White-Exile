@@ -36,6 +36,13 @@ export const ClientHelloSchema = z.object({
   protocolVersion: z.literal(PROTOCOL_VERSION),
   displayName: z.string().min(1).max(24),
   isBot: z.boolean().optional().default(false),
+  /**
+   * Stable session token from a prior run. If present and the server still
+   * remembers a player with this id (live or in disconnect grace), state is
+   * re-attached instead of allocating a fresh player record. Lets a browser
+   * refresh, Vite HMR, or `tsx watch` server restart preserve world state.
+   */
+  resumeToken: z.string().min(1).max(64).optional(),
 });
 export type ClientHello = z.infer<typeof ClientHelloSchema>;
 
@@ -70,6 +77,10 @@ export const ServerWelcomeSchema = z.object({
   roomId: z.string(),
   protocolVersion: z.literal(PROTOCOL_VERSION),
   tickHz: z.number().int().positive(),
+  /** Echo of `resumeToken`; client should persist this for next session. */
+  resumeToken: z.string(),
+  /** True when the server reattached an existing player record. */
+  resumed: z.boolean().optional().default(false),
 });
 export type ServerWelcome = z.infer<typeof ServerWelcomeSchema>;
 

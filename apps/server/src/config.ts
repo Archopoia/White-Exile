@@ -23,6 +23,8 @@ function bool(name: string, fallback: boolean): boolean {
   return raw === '1' || raw.toLowerCase() === 'true';
 }
 
+const isProd = (process.env.NODE_ENV ?? '').toLowerCase() === 'production';
+
 export const config = Object.freeze({
   host: str('HOST', '0.0.0.0'),
   port: num('PORT', 3001),
@@ -46,6 +48,20 @@ export const config = Object.freeze({
     cooldownMs: num('EXTRACT_COOLDOWN_MS', 250),
     rewardMin: num('EXTRACT_MIN', 1),
     rewardMax: num('EXTRACT_MAX', 4),
+  },
+  /**
+   * Dev-only: persist the Room across `tsx watch` restarts so iterating on
+   * server code doesn't wipe accumulated dust / essence / bot records. Off
+   * automatically in production (or set `DEV_PERSISTENCE=0` to force off).
+   */
+  devPersistence: {
+    enabled: bool('DEV_PERSISTENCE', !isProd),
+    path: str('DEV_PERSISTENCE_PATH', 'apps/server/.dev-state/room.json'),
+    saveIntervalMs: num('DEV_PERSISTENCE_SAVE_MS', 5_000),
+    /** How long to hold a soft-disconnected record before pruning it. */
+    botGraceMs: num('BOT_GRACE_MS', 10_000),
+    humanGraceMs: num('HUMAN_GRACE_MS', 60_000),
+    pruneIntervalMs: num('PRUNE_INTERVAL_MS', 5_000),
   },
 });
 

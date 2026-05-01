@@ -32,6 +32,12 @@ export interface NetClientOptions {
   url: string;
   displayName: string;
   isBot?: boolean;
+  /**
+   * Optional stable token from a prior session (typically read from
+   * localStorage). Lets the server reattach our existing player record so a
+   * refresh / HMR / server restart preserves essence and position.
+   */
+  resumeToken?: string;
 }
 
 export interface NetClientCallbacks {
@@ -48,6 +54,7 @@ export class NetClient {
   private readonly callbacks: NetClientCallbacks;
   private readonly displayName: string;
   private readonly isBot: boolean;
+  private resumeToken: string | undefined;
   /** True after `server.welcome` — intents before then are dropped client-side. */
   private handshakeComplete = false;
 
@@ -55,6 +62,7 @@ export class NetClient {
     this.callbacks = callbacks;
     this.displayName = options.displayName;
     this.isBot = options.isBot ?? false;
+    this.resumeToken = options.resumeToken;
     this.socket = io(options.url, { transports: ['websocket'], autoConnect: true });
     this.bind();
   }
@@ -68,6 +76,7 @@ export class NetClient {
         protocolVersion: PROTOCOL_VERSION,
         displayName: this.displayName,
         isBot: this.isBot,
+        ...(this.resumeToken ? { resumeToken: this.resumeToken } : {}),
       };
       this.socket.emit(EVT.client.hello, hello);
     });
@@ -85,8 +94,17 @@ export class NetClient {
         return;
       }
       this.handshakeComplete = true;
-      debugLogger.info('welcome', { traceId: parsed.data.traceId, playerId: parsed.data.playerId });
-      inputLog('net.welcome', { playerId: parsed.data.playerId, traceId: parsed.data.traceId });
+      this.resumeToken = parsed.data.resumeToken;
+      debugLogger.info('welcome', {
+        traceId: parsed.data.traceId,
+        playerId: parsed.data.playerId,
+        resumed: parsed.data.resumed,
+      });
+      inputLog('net.welcome', {
+        playerId: parsed.data.playerId,
+        traceId: parsed.data.traceId,
+        resumed: parsed.data.resumed,
+      });
       this.callbacks.onWelcome?.(parsed.data);
     });
 

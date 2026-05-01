@@ -53,4 +53,71 @@ describe('Room', () => {
     expect(snap.players.length).toBe(1);
     expect(snap.planetRadius).toBeGreaterThan(0);
   });
+
+  it('hides soft-disconnected players from snapshots and counts', () => {
+    const room = new Room('test');
+    room.addPlayer(makePlayer('a'));
+    room.addPlayer(makePlayer('b'));
+    room.markDisconnected('a', 1_000);
+    expect(room.size()).toBe(1);
+    expect(room.totalRecords()).toBe(2);
+    expect(room.snapshot().players.map((p) => p.id)).toEqual(['b']);
+  });
+
+  it('reattaches an existing record via tryReattach', () => {
+    const room = new Room('test');
+    room.addPlayer(makePlayer('a'));
+    room.applyBurst('a', 1, 1_000);
+    const dustBefore = room.totalDust;
+    room.markDisconnected('a', 2_000);
+    const reattached = room.tryReattach('a');
+    expect(reattached?.id).toBe('a');
+    expect(reattached?.disconnected).toBe(false);
+    expect(room.totalDust).toBe(dustBefore);
+  });
+
+  it('prunes only after the grace window elapses', () => {
+    const room = new Room('test');
+    room.addPlayer(makePlayer('human'));
+    room.addPlayer({ ...makePlayer('bot'), isBot: true });
+    room.markDisconnected('human', 0);
+    room.markDisconnected('bot', 0);
+
+    const earlyDropped = room.pruneDisconnected({
+      now: 5_000,
+      botGraceMs: 10_000,
+      humanGraceMs: 60_000,
+    });
+    expect(earlyDropped).toEqual([]);
+
+    const midDropped = room.pruneDisconnected({
+      now: 15_000,
+      botGraceMs: 10_000,
+      humanGraceMs: 60_000,
+    });
+    expect(midDropped).toEqual(['bot']);
+
+    const lateDropped = room.pruneDisconnected({
+      now: 65_000,
+      botGraceMs: 10_000,
+      humanGraceMs: 60_000,
+    });
+    expect(lateDropped).toEqual(['human']);
+    expect(room.totalRecords()).toBe(0);
+  });
+
+  it('serializes and restores totalDust + players', () => {
+    const room = new Room('test');
+    room.addPlayer(makePlayer('a'));
+    room.applyBurst('a', 1, 1_000);
+    const data = room.serialize();
+    const restored = Room.restore(data);
+    expect(restored.totalDust).toBeCloseTo(room.totalDust);
+    expect(restored.totalRecords()).toBe(1);
+    // Restored players are soft-disconnected until they reconnect.
+    expect(restored.snapshot().players).toEqual([]);
+    const reattached = restored.tryReattach('a');
+    expect(reattached?.essence).toBeGreaterThanOrEqual(0);
+    expect(restored.snapshot().players.length).toBe(1);
+  });
 });

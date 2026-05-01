@@ -430,6 +430,29 @@ export class TutelaryScene {
     this.playerId = id;
   }
 
+  /**
+   * Adopt a server-provided world position into the local surface-walk sim.
+   * Called once on resume so the player doesn't snap back to the north pole
+   * after a refresh. We project to a unit direction and pick a stable facing.
+   */
+  setLocalSpiritFromWorld(world: Vec3): void {
+    const v = TMP_VEC3_A.set(world.x, world.y, world.z);
+    if (v.lengthSq() < 1e-6) return;
+    this.spiritPos.copy(v).normalize();
+    // Re-derive facing tangent from current facing projected to new tangent plane.
+    const up = TMP_VEC3_B.copy(this.spiritPos);
+    this.spiritFacing.sub(up.clone().multiplyScalar(this.spiritFacing.dot(up)));
+    if (this.spiritFacing.lengthSq() < 1e-6) {
+      const ref = Math.abs(up.dot(WORLD_X)) < 0.9 ? WORLD_X : WORLD_Y;
+      this.spiritFacing.crossVectors(ref, up).normalize();
+    } else {
+      this.spiritFacing.normalize();
+    }
+    const surfaceR = this.currentRadius + SPIRIT_HEIGHT;
+    this.worldPos.copy(this.spiritPos).multiplyScalar(surfaceR);
+    this.localSpirit.position.copy(this.worldPos);
+  }
+
   start(): void {
     if (this.rafHandle) return;
     const loop = () => {
