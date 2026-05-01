@@ -394,10 +394,10 @@ export function createFlameLighting(
     heroLight.shadow.camera.far = far;
     heroLight.shadow.camera.updateProjectionMatrix();
     const inv = THREE.MathUtils.clamp(HERO_SHADOW_FAR_REF / far, 0.1, 1);
-    // Point shadows: normalBias shifts receiver depth along normal (Peter Panning). radius≠0 fans PCF
-    // rays and often samples empty cubemap texels → round "holes". Prefer bias-only acne fight.
+    // Point: keep radius 0 (angular PCF breaks cubemap taps). In getPointShadow, dp += bias — *negative*
+    // bias shrinks dp and tends to false-lit contact; a small *positive* bias pulls shadow back to the feet.
     heroLight.shadow.normalBias = 0;
-    heroLight.shadow.bias = -0.00012 * inv;
+    heroLight.shadow.bias = 0.00008 * inv;
     heroLight.shadow.radius = 0;
   }
 
@@ -409,7 +409,7 @@ export function createFlameLighting(
     light.shadow.camera.updateProjectionMatrix();
     const inv = THREE.MathUtils.clamp(50 / far, 0.1, 1);
     light.shadow.normalBias = 0;
-    light.shadow.bias = -0.00012 * inv;
+    light.shadow.bias = 0.00008 * inv;
     light.shadow.radius = 0;
   }
 
@@ -424,9 +424,10 @@ export function createFlameLighting(
       sun.shadow.camera.bottom = -SUN_SHADOW_RADIUS;
       sun.shadow.camera.near = 2;
       sun.shadow.camera.far = 3200;
-      sun.shadow.bias = -0.00038;
-      sun.shadow.normalBias = 0.012;
-      sun.shadow.radius = 1.5;
+      // Less negative bias + lower normalBias = less lit sliver at contact; tighten PCF spread.
+      sun.shadow.bias = -0.0001;
+      sun.shadow.normalBias = 0.0045;
+      sun.shadow.radius = 1;
       sun.shadow.camera.updateProjectionMatrix();
       // Force the shadow map to re-allocate at the new size.
       sun.shadow.map?.dispose();
