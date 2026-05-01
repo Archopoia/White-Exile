@@ -6,6 +6,8 @@ build/
 
 # Dev-only persisted server state
 apps/server/.dev-state/
+# Wrong path if cwd was apps/server with old default `apps/server/.dev-state/...`
+apps/server/apps/server/
 
 # Logs
 logs/

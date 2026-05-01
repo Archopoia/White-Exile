@@ -4,7 +4,8 @@
  * Boots Fastify (HTTP + health), attaches Socket.io, and starts the room
  * tick loop. All authoritative game state lives in apps/server/src/room.ts.
  *
- * Dev mode also: loads/saves a Room snapshot to `.dev-state/room.json` so
+ * Dev mode also: loads/saves a Room snapshot under `apps/server/.dev-state/`
+ * (default relative path `.dev-state/room.json` from the server package cwd) so
  * `tsx watch` restarts don't wipe essence spread / soft-
  * disconnected players awaiting resume.
  */

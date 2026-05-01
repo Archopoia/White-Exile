@@ -49,7 +49,7 @@
 | `BURST_ESSENCE_SPREAD` | `1.5` | burst adds `BURST_ESSENCE_SPREAD * (0.5 + 0.5 * intensity)` to `essenceSpread` |
 | `PASSIVE_ESSENCE_SPREAD_PER_SEC` | `1.1` | passive essence spread per second while connected |
 | `DEV_PERSISTENCE` | `1` (off in `NODE_ENV=production`) | persist Room JSON across `tsx watch` restarts |
-| `DEV_PERSISTENCE_PATH` | `apps/server/.dev-state/room.json` | persisted room file |
+| `DEV_PERSISTENCE_PATH` | `.dev-state/room.json` (relative to server cwd) | persisted room file |
 | `DEV_PERSISTENCE_SAVE_MS` | `5000` | autosave interval |
 | `BOT_GRACE_MS` / `HUMAN_GRACE_MS` | 10000 / 60000 | how long a soft-disconnected record waits for resume |
 | `PRUNE_INTERVAL_MS` | `5000` | sweep cadence for pruning expired soft-disconnects |
@@ -115,11 +115,11 @@ Pass `--seed N` to make bot motion reproducible across runs.
 
 In dev (`NODE_ENV !== 'production'`), three layers cooperate so iterating doesn't reset the world:
 
-1. **Server dev persistence** — Room state (player records + essence spread) autosaves to `apps/server/.dev-state/room.json` every `DEV_PERSISTENCE_SAVE_MS` and on shutdown. Loaded on next boot.
+1. **Server dev persistence** — Room state (player records + essence spread) autosaves to `.dev-state/room.json` under the server package (i.e. `apps/server/.dev-state/room.json` from the repo root) every `DEV_PERSISTENCE_SAVE_MS` and on shutdown. Loaded on next boot.
 2. **Soft disconnect + resume token** — when a client (or bot) disconnects, its record stays in `disconnected: true` for `BOT_GRACE_MS` / `HUMAN_GRACE_MS`. A reconnecting client passes `resumeToken` (echoed in `server.welcome`) to re-attach instead of getting a fresh record. Watch for `player.resumed` vs `player.joined` in server logs.
 3. **Client Vite HMR** — `apps/client/src/main.ts` self-accepts via `import.meta.hot.accept(...)`. Saving `scene.ts` / `hud.ts` / `net.ts` etc. swaps the running game in place; the socket reconnects with the cached `resumeToken` from `localStorage.tutelary.resumeToken` and the server reattaches you. Watch the browser console for `[tutelary-input] hmr.dispose` / `hmr.accepted`.
 
-To wipe the dev world (start fresh): stop the server and delete `apps/server/.dev-state/room.json`. To force-disable persistence even in dev: `DEV_PERSISTENCE=0 pnpm dev:server`.
+To wipe the dev world (start fresh): stop the server and delete `apps/server/.dev-state/room.json` (or whatever `DEV_PERSISTENCE_PATH` points at). To force-disable persistence even in dev: `DEV_PERSISTENCE=0 pnpm dev:server`.
 
 Bots already pass a stable `resumeToken` of `bot-<seed>-<botId>`, so server restarts re-attach the same bot records (no ghost flicker waiting for GC).
 

@@ -50,7 +50,8 @@ export const config = Object.freeze({
    */
   devPersistence: {
     enabled: bool('DEV_PERSISTENCE', !isProd),
-    path: str('DEV_PERSISTENCE_PATH', 'apps/server/.dev-state/room.json'),
+    /** Relative to process cwd (package dir when using `pnpm --filter @tutelary/server dev`). */
+    path: str('DEV_PERSISTENCE_PATH', '.dev-state/room.json'),
     saveIntervalMs: num('DEV_PERSISTENCE_SAVE_MS', 5_000),
     /** How long to hold a soft-disconnected record before pruning it. */
     botGraceMs: num('BOT_GRACE_MS', 10_000),

@@ -7,12 +7,12 @@
       "isBot": false,
       "tier": "dust",
       "position": {
-        "x": 3.3752733503069314,
-        "y": -11.572141776393197,
-        "z": -9.069055739090775
+        "x": 4.5700350622409545,
+        "y": -29.93677995324031,
+        "z": 13.483354004678795
       },
-      "essenceSpread": 467.78469497328746,
-      "lastBurstMs": 1777643255749,
+      "essenceSpread": 634.5079949732778,
+      "lastBurstMs": 1777643269767,
       "disconnected": false,
       "disconnectedAt": 0
     },
@@ -22,12 +22,12 @@
       "isBot": true,
       "tier": "dust",
       "position": {
-        "x": 4.404854508799001,
-        "y": 14.27378053365924,
-        "z": -0.9040032670086553
+        "x": 6.112760119835246,
+        "y": -5.946599496887729,
+        "z": -15.828249475590873
       },
-      "essenceSpread": 32.47360000000001,
-      "lastBurstMs": 1777643263643,
+      "essenceSpread": 274.1969000000045,
+      "lastBurstMs": 1777643412586,
       "disconnected": false,
       "disconnectedAt": 0
     },
@@ -37,11 +37,11 @@
       "isBot": true,
       "tier": "dust",
       "position": {
-        "x": -13.121269657730197,
-        "y": 3.9139722760575992,
-        "z": 3.9452003709128713
+        "x": -7.790380890287267,
+        "y": -11.2604112710356,
+        "z": -5.563348801808047
       },
-      "essenceSpread": 21.864700000000017,
+      "essenceSpread": 187.08800000000238,
       "lastBurstMs": 0,
       "disconnected": false,
       "disconnectedAt": 0
@@ -52,12 +52,12 @@
       "isBot": true,
       "tier": "dust",
       "position": {
-        "x": 2.362504955818661,
-        "y": -8.991114574835189,
-        "z": 14.919459748614456
+        "x": -17.495226114011796,
+        "y": -1.8283082662803432,
+        "z": -3.657126957683663
       },
-      "essenceSpread": 72.66009999999997,
-      "lastBurstMs": 1777643263727,
+      "essenceSpread": 605.383400000006,
+      "lastBurstMs": 1777643413374,
       "disconnected": false,
       "disconnectedAt": 0
     },
@@ -71,7 +71,7 @@
         "y": 10.131150120869279,
         "z": -10.86698132529492
       },
-      "essenceSpread": 21.556700000000017,
+      "essenceSpread": 186.78000000000236,
       "lastBurstMs": 0,
       "disconnected": false,
       "disconnectedAt": 0
@@ -86,7 +86,7 @@
         "y": -10.482888548634946,
         "z": -14.086454114061215
       },
-      "essenceSpread": 21.148600000000012,
+      "essenceSpread": 186.37190000000234,
       "lastBurstMs": 0,
       "disconnected": false,
       "disconnectedAt": 0
@@ -97,12 +97,12 @@
       "isBot": true,
       "tier": "dust",
       "position": {
-        "x": 13.017431601500217,
-        "y": 11.965292093144745,
-        "z": 3.270311743016845
+        "x": 8.279108662654519,
+        "y": -6.2092597883159675,
+        "z": -7.634449406196833
       },
-      "essenceSpread": 22.45500000000001,
-      "lastBurstMs": 1777643261810,
+      "essenceSpread": 261.17830000000407,
+      "lastBurstMs": 1777643412493,
       "disconnected": false,
       "disconnectedAt": 0
     },
@@ -112,11 +112,11 @@
       "isBot": true,
       "tier": "dust",
       "position": {
-        "x": 5.542136737928658,
-        "y": 11.625615804165367,
-        "z": 12.863498255709072
+        "x": -7.112005876739872,
+        "y": 10.737299234778531,
+        "z": -7.054769192766382
       },
-      "essenceSpread": 20.650300000000012,
+      "essenceSpread": 185.87360000000234,
       "lastBurstMs": 0,
       "disconnected": false,
       "disconnectedAt": 0
@@ -127,12 +127,12 @@
       "isBot": true,
       "tier": "dust",
       "position": {
-        "x": -16.96051996550365,
-        "y": -4.788756207656848,
-        "z": -3.6366874466490033
+        "x": 0.26485044875070224,
+        "y": -14.838746742166,
+        "z": 8.385949406600096
       },
-      "essenceSpread": 62.459999999999965,
-      "lastBurstMs": 1777643263278,
+      "essenceSpread": 598.1833000000064,
+      "lastBurstMs": 1777643413795,
       "disconnected": false,
       "disconnectedAt": 0
     }
