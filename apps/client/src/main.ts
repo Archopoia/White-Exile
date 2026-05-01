@@ -17,6 +17,7 @@ import {
   getResumeToken,
   getSkyHazeMul,
   getToneMappingExposure,
+  getTorchReachMul,
   setDisplayName,
   setFillLightMul,
   setFogDensityMul,
@@ -27,6 +28,7 @@ import {
   setResumeToken,
   setSkyHazeMul,
   setToneMappingExposure,
+  setTorchReachMul,
 } from './clientSettings.js';
 import { DEFAULT_WORLD_CONFIG } from '@realtime-room/shared';
 import { debugLogger } from './debug.js';
@@ -67,11 +69,13 @@ function boot(): RunningClient {
   const fillLightMul = getFillLightMul();
   const toneExposure = getToneMappingExposure();
   const skyHazeMul = getSkyHazeMul();
+  const torchReachMul = getTorchReachMul();
   const bootVisual: SceneVisualSettings = {
     fogDensityMul,
     fillLightMul,
     toneMappingExposure: toneExposure,
     skyHazeMul,
+    torchReachMul,
   };
 
   const hud: HudState = {
@@ -136,6 +140,10 @@ function boot(): RunningClient {
       setSkyHazeMul(mul);
       scene.setSkyHazeMul(mul);
     },
+    onTorchReachMulChange: (mul: number) => {
+      setTorchReachMul(mul);
+      scene.setTorchReachMul(mul);
+    },
     onDisplayNameChange: (name: string) => {
       setDisplayName(name);
     },
@@ -154,6 +162,7 @@ function boot(): RunningClient {
       fillLightMul,
       toneExposure,
       skyHazeMul,
+      torchReachMul,
       displayName,
       race,
       duneHeightScale: DEFAULT_WORLD_CONFIG.duneHeightScale,

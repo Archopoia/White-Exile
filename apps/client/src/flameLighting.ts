@@ -252,6 +252,8 @@ export interface FlameLighting {
   setZoneIntensity(scale: number): void;
   /** Multiplies hemisphere, sun, and skylight ambient (1 = authored tier defaults). */
   setFillLightMul(mul: number): void;
+  /** Multiplies all caravan torch PointLight `distance` (client-only; see `getTorchReachMul`). */
+  setTorchReachMul(mul: number): void;
   setSunDirection(dir: THREE.Vector3): void;
   setTier(tier: FxTier): void;
   update(dt: number, time: number): void;
@@ -326,9 +328,22 @@ export function createFlameLighting(
   let localRadius = 14;
   let zoneScale = 1;
   let fillLightMul = 1;
+  /** Client-only multiplier on every torch PointLight `distance` (local + pool). */
+  let torchReachMul = 1;
+  let lastOtherFlames: ReadonlyArray<OtherFlame> = [];
   let heroBaseIntensity = 3.6;
   /** Parallel light rays travel along this (sun → scene), fixed in world space. */
   const sunDir = new THREE.Vector3(0.4, -0.55, 0.7).normalize();
+
+  function heroTorchDistanceWorld(): number {
+    const r = Math.max(0.15, localRadius);
+    return Math.max(2.5, r * 2.2 * torchReachMul);
+  }
+
+  function otherTorchDistanceWorld(lightRadius: number): number {
+    const or = Math.max(0.15, lightRadius);
+    return Math.max(2.5, or * 2.0 * torchReachMul);
+  }
 
   function applyShadowSettings(): void {
     // Sun.
@@ -360,7 +375,7 @@ export function createFlameLighting(
       heroLight.shadow.normalBias = 0.06;
       heroLight.shadow.radius = 18;
       heroLight.shadow.camera.near = 0.2;
-      heroLight.shadow.camera.far = Math.max(20, localRadius * 2);
+      heroLight.shadow.camera.far = Math.max(40, heroTorchDistanceWorld() * 1.15);
       heroLight.shadow.camera.updateProjectionMatrix();
       heroLight.shadow.map?.dispose();
       heroLight.shadow.map = null;
@@ -413,16 +428,17 @@ export function createFlameLighting(
     // fuel must mean short reach and low intensity (see intensity curve below).
     localRadius = Math.max(0, radius);
     const r = Math.max(0.15, localRadius);
-    heroLight.distance = Math.max(2.5, r * 2.2);
+    heroLight.distance = heroTorchDistanceWorld();
     // Avoid a large constant term: it used to keep torches bright even at ~0 radius.
     heroBaseIntensity = Math.max(0.08, 0.12 + r * 0.24);
     if (heroLight.castShadow) {
-      heroLight.shadow.camera.far = heroLight.distance;
+      heroLight.shadow.camera.far = Math.max(40, heroLight.distance * 1.15);
       heroLight.shadow.camera.updateProjectionMatrix();
     }
   }
 
   function setOtherFlames(list: ReadonlyArray<OtherFlame>): void {
+    lastOtherFlames = list;
     const limited = list.slice(0, flamePool.length);
     for (let i = 0; i < limited.length; i++) {
       const o = limited[i];
@@ -431,9 +447,8 @@ export function createFlameLighting(
       if (!slot) continue;
       slot.ownerId = o.id;
       slot.light.color.setHex(o.color);
-      // Same scaling rule as the hero: wider radius = wider illuminated area.
       const or = Math.max(0.15, o.lightRadius);
-      slot.light.distance = Math.max(2.5, or * 2.0);
+      slot.light.distance = otherTorchDistanceWorld(o.lightRadius);
       slot.light.position.set(o.position.x, o.position.y + 1.1, o.position.z);
       slot.light.visible = true;
       slot.mesh.setColor(o.color);
@@ -475,6 +490,12 @@ export function createFlameLighting(
     syncFillLights();
   }
 
+  function setTorchReachMul(mul: number): void {
+    torchReachMul = THREE.MathUtils.clamp(mul, 0.1, 80);
+    setLocalRadius(localRadius);
+    setOtherFlames(lastOtherFlames);
+  }
+
   function applyFixedSunWorldPose(): void {
     sunDir.normalize();
     // Light rays travel parallel to sunDir (from sun toward the scene).
@@ -500,6 +521,8 @@ export function createFlameLighting(
     cfg = TIER_CONFIG[tier];
     syncFillLights();
     applyShadowSettings();
+    setLocalRadius(localRadius);
+    setOtherFlames(lastOtherFlames);
   }
 
   function update(dt: number, time: number): void {
@@ -546,6 +569,7 @@ export function createFlameLighting(
     setOtherFlames,
     setZoneIntensity,
     setFillLightMul,
+    setTorchReachMul,
     setSunDirection,
     setTier,
     update,

@@ -80,6 +80,8 @@ export interface SceneVisualSettings {
   readonly toneMappingExposure: number;
   /** Multiplies sky dome `uHaze` from zone presets. */
   readonly skyHazeMul: number;
+  /** Multiplies all player torch PointLight reach (client-only). */
+  readonly torchReachMul: number;
 }
 
 export const DEFAULT_SCENE_VISUAL: SceneVisualSettings = Object.freeze({
@@ -88,6 +90,7 @@ export const DEFAULT_SCENE_VISUAL: SceneVisualSettings = Object.freeze({
   /** Lifted so lower ambient + stronger sun still lands in a playable range. */
   toneMappingExposure: 1.32,
   skyHazeMul: 1,
+  torchReachMul: 1,
 });
 
 const MOVE_SPEED = 22;
@@ -238,6 +241,7 @@ export class RoomScene {
     this.sky = createDeadSky(this.scene, { initialHazeMul: v.skyHazeMul });
     this.lighting = createFlameLighting(this.scene, this.renderer, initialTier);
     this.lighting.setFillLightMul(v.fillLightMul);
+    this.lighting.setTorchReachMul(v.torchReachMul);
     // Stored convention: sky's `uSunDir` points TOWARD the sun, lighting's
     // `setSunDirection` takes the FROM-the-sun vector. They are inverses.
     // The sun sits low (~12° above horizon) and slightly to the player's
@@ -332,6 +336,10 @@ export class RoomScene {
 
   setFillLightMul(mul: number): void {
     this.lighting.setFillLightMul(mul);
+  }
+
+  setTorchReachMul(mul: number): void {
+    this.lighting.setTorchReachMul(mul);
   }
 
   setToneMappingExposure(exposure: number): void {

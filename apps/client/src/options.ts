@@ -22,6 +22,7 @@ export interface RoomOptionsCallbacks {
   onFillLightMulChange: (mul: number) => void;
   onToneExposureChange: (exposure: number) => void;
   onSkyHazeMulChange: (mul: number) => void;
+  onTorchReachMulChange: (mul: number) => void;
   onDisplayNameChange: (name: string) => void;
   /** Live client preview while dragging the dune scale slider. */
   onDuneHeightScalePreview: (scale: number) => void;
@@ -35,6 +36,8 @@ export interface RoomOptionsCallbacks {
     readonly fillLightMul: number;
     readonly toneExposure: number;
     readonly skyHazeMul: number;
+    /** Client-only multiplier on all player torch PointLight distances. */
+    readonly torchReachMul: number;
     readonly displayName: string;
     readonly race: Race;
     readonly duneHeightScale: number;
@@ -358,6 +361,9 @@ export function createRoomOptionsOverlay(cb: RoomOptionsCallbacks): RoomOptionsO
   const skyHazeSlider = makeFloatSlider(0, 1.5, 0.05, cb.initial.skyHazeMul, 2, (v) => {
     cb.onSkyHazeMulChange(v);
   });
+  const torchReachSlider = makeFloatSlider(0.25, 80, 0.05, cb.initial.torchReachMul, 2, (v) => {
+    cb.onTorchReachMulChange(v);
+  });
 
   panelGraphics.append(
     compactRow('Quality', fxKnob),
@@ -367,6 +373,7 @@ export function createRoomOptionsOverlay(cb: RoomOptionsCallbacks): RoomOptionsO
     compactRow('Fill', fillSlider.row),
     compactRow('Exposure', exposureSlider.row),
     compactRow('Sky', skyHazeSlider.row),
+    compactRow('Torches ×', torchReachSlider.row),
     compactRow('Dunes', duneKnob.row),
   );
 

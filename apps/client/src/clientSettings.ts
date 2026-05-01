@@ -7,7 +7,8 @@
  *
  * Identity-style values that aren't tunables (resume token, last-known
  * server-assigned race) are tracked alongside but aren't presented as
- * settings.
+ * settings. Torch reach (`rtRoom.torchReachMul`) scales all player flame
+ * PointLight distances on the client only.
  */
 import { DEFAULT_RACE, RACES, isRace, type Race } from '@realtime-room/shared';
 
@@ -28,6 +29,7 @@ const KEY_FOG_MUL = 'rtRoom.fogMul';
 const KEY_FILL_MUL = 'rtRoom.fillMul';
 const KEY_TONE_EXPOSURE = 'rtRoom.toneExposure';
 const KEY_SKY_HAZE_MUL = 'rtRoom.skyHazeMul';
+const KEY_TORCH_REACH_MUL = 'rtRoom.torchReachMul';
 
 function readLs(key: string): string | null {
   try {
@@ -129,6 +131,19 @@ export function getSkyHazeMul(): number {
 export function setSkyHazeMul(mul: number): void {
   const v = Math.max(0, Math.min(1.5, mul));
   writeLs(KEY_SKY_HAZE_MUL, String(v));
+}
+
+/**
+ * Multiplies PointLight `distance` for every caravan torch (you + pooled players).
+ * 1 = authored server radius mapping; raise for longer view without changing sim.
+ */
+export function getTorchReachMul(): number {
+  return Math.max(0.1, Math.min(80, readFloat(KEY_TORCH_REACH_MUL, 1)));
+}
+
+export function setTorchReachMul(mul: number): void {
+  const v = Math.max(0.1, Math.min(80, mul));
+  writeLs(KEY_TORCH_REACH_MUL, String(v));
 }
 
 export function getRace(): Race {
