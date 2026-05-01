@@ -68,7 +68,7 @@ Open the client URL, move the mouse to drift through the void, click anywhere to
 Bots are real Socket.io clients (not server-injected ghosts), so they exercise the same validation and rate-limiting paths as humans. All bot players are tagged `isBot: true` and have a `BOT_<behavior>_<n>` name for log filtering.
 
 ```bash
-pnpm dev:bots -- --count 30 --mix wanderer,clicker --seed 42 --tickHz 8
+pnpm dev:bots -- --count 30 --mix wanderer,clicker --seed 42 --tickHz 28
 ```
 
 CLI options:
@@ -77,7 +77,7 @@ CLI options:
 - `--mix` comma-separated behaviors: `wanderer,orbiter,clicker,afk,chaser`
 - `--seed` deterministic RNG seed (default `Date.now()`)
 - `--url` server URL (default `http://localhost:3001`)
-- `--tickHz` per-bot tick rate (default 8)
+- `--tickHz` per-bot tick rate (default 28; min timer step 16 ms)
 - `--staggerMs` startup spacing (default 120)
 
 ## Tests, lint, types

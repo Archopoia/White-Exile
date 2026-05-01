@@ -24,10 +24,15 @@ import {
   planetRadiusFromTotalDust,
 } from '@tutelary/shared';
 import { debugLogger } from './debug.js';
+import { inputLog } from './inputLog.js';
 
 interface SpiritMarker {
   group: THREE.Group;
   core: THREE.Mesh;
+  /** Latest authoritative world position from snapshots. */
+  readonly target: THREE.Vector3;
+  /** Rendered position; exponential lerp toward `target` each frame (remotes only). */
+  readonly visual: THREE.Vector3;
 }
 
 const MAX_DUST_PARTICLES = 6144;
@@ -41,6 +46,8 @@ const CAMERA_LOOK_HEIGHT = 0.4;
 const CAMERA_LERP = 0.12;
 const PASSIVE_DUST_PER_SPIRIT_PER_SEC = 6;
 const DUST_COLOR = 0xffd9a3;
+/** Higher = remote spirits (incl. bots) snap faster to network targets (~120ms time constant at 14). */
+const REMOTE_SPIRIT_SMOOTHING_LAMBDA = 14;
 
 const TMP_VEC3_A = new THREE.Vector3();
 const TMP_VEC3_B = new THREE.Vector3();
@@ -143,7 +150,7 @@ export class TutelaryScene {
     this.dustLife = new Float32Array(MAX_DUST_PARTICLES);
     this.dustGeometry.setAttribute('position', new THREE.BufferAttribute(this.dustPositions, 3));
     this.dustMaterial = new THREE.PointsMaterial({
-      size: 0.16,
+      size: 0.24,
       sizeAttenuation: true,
       color: DUST_COLOR,
       transparent: true,
@@ -152,6 +159,9 @@ export class TutelaryScene {
       blending: THREE.AdditiveBlending,
     });
     this.dust = new THREE.Points(this.dustGeometry, this.dustMaterial);
+    // Positions are rewritten every frame; default bounds stay near origin and
+    // Three.js would frustum-cull the whole system while particles live on the planet.
+    this.dust.frustumCulled = false;
     this.scene.add(this.dust);
 
     this.bindInput();
@@ -236,7 +246,12 @@ export class TutelaryScene {
     return group;
   }
 
+  private handlePointerDown = (): void => {
+    this.canvas.focus();
+  };
+
   private bindInput(): void {
+    this.canvas.addEventListener('pointerdown', this.handlePointerDown);
     this.canvas.addEventListener('pointermove', this.handlePointerMove);
     this.canvas.addEventListener('click', this.handleClick);
     window.addEventListener('keydown', this.handleKeyDown);
@@ -253,11 +268,13 @@ export class TutelaryScene {
   private handleClick = (): void => {
     const planetHit = this.raycastPlanet();
     if (planetHit) {
+      inputLog('scene.pointer.click', { action: 'extract', hit: planetHit.toArray() });
       this.callbacks.onExtract({ x: planetHit.x, y: planetHit.y, z: planetHit.z });
       this.spawnDustBurst(planetHit, 0.7);
       debugLogger.debug('input.extract.click', { surface: planetHit.toArray() });
       return;
     }
+    inputLog('scene.pointer.click', { action: 'burst' });
     this.emitBurstAtSpirit();
   };
 
@@ -266,8 +283,13 @@ export class TutelaryScene {
     this.keys.add(code);
     if (code === 'Space') {
       event.preventDefault();
+      if (event.repeat) return;
+      inputLog('scene.keydown', { key: 'Space', action: 'burst' });
       this.emitBurstAtSpirit();
     } else if (code === 'KeyE') {
+      event.preventDefault();
+      if (event.repeat) return;
+      inputLog('scene.keydown', { key: 'E', action: 'extract' });
       this.emitExtractAtFeet();
     }
   };
@@ -284,6 +306,7 @@ export class TutelaryScene {
     const pos = { x: this.worldPos.x, y: this.worldPos.y, z: this.worldPos.z };
     this.callbacks.onBurst(pos, 1);
     this.spawnDustBurst(this.worldPos, 1);
+    inputLog('scene.vfx.burst_local', { pos });
     debugLogger.debug('input.burst', { pos });
   }
 
@@ -291,6 +314,7 @@ export class TutelaryScene {
     const surface = this.spiritPos.clone().multiplyScalar(this.currentRadius);
     this.callbacks.onExtract({ x: surface.x, y: surface.y, z: surface.z });
     this.spawnDustBurst(surface, 0.7);
+    inputLog('scene.vfx.extract_local', { surface: surface.toArray() });
     debugLogger.debug('input.extract.key', { surface: surface.toArray() });
   }
 
@@ -302,7 +326,7 @@ export class TutelaryScene {
   }
 
   private spawnDustBurst(at: THREE.Vector3, intensity: number): void {
-    const count = Math.floor(20 + 40 * intensity);
+    const count = Math.floor(32 + 56 * intensity);
     for (let i = 0; i < count; i++) {
       const idx = this.dustHead;
       this.dustHead = (this.dustHead + 1) % MAX_DUST_PARTICLES;
@@ -367,7 +391,12 @@ export class TutelaryScene {
         const color = isLocal ? 0xfff2b0 : tierColor(player.tier, player.isBot);
         const group = isLocal ? this.localSpirit : TutelaryScene.makeSpiritMarker(color, 0.5);
         const core = group.children[0] as THREE.Mesh;
-        marker = { group, core };
+        marker = {
+          group,
+          core,
+          target: new THREE.Vector3(),
+          visual: new THREE.Vector3(),
+        };
         if (!isLocal) this.scene.add(group);
         this.spirits.set(player.id, marker);
       }
@@ -381,7 +410,12 @@ export class TutelaryScene {
       } else {
         dir.normalize();
       }
-      marker.group.position.copy(dir).multiplyScalar(surfaceR);
+      marker.target.copy(dir).multiplyScalar(surfaceR);
+      // First snapshot: snap visual to target so new joiners don't slide in from origin.
+      if (marker.visual.lengthSq() < 1e-12) {
+        marker.visual.copy(marker.target);
+        marker.group.position.copy(marker.visual);
+      }
     }
 
     for (const [id, marker] of this.spirits) {
@@ -416,6 +450,7 @@ export class TutelaryScene {
     // the planet or pin the camera at the world origin.
     const stepDt = Math.min(dt, 0.1);
     this.updateSurfaceMotion(stepDt);
+    this.smoothRemoteSpirits(stepDt);
     this.updateCamera();
     this.maybeSendCursor(stepDt);
     this.spawnPassiveDust(stepDt);
@@ -428,6 +463,24 @@ export class TutelaryScene {
     if (!this.preferReducedMotion) {
       const wobble = 0.1 * Math.sin(this.clock.elapsedTime * 6);
       this.localSpirit.scale.setScalar(1 + wobble);
+    }
+  }
+
+  /** Smooth other players between ~12 Hz snapshots so bots don't stair-step. */
+  private smoothRemoteSpirits(dt: number): void {
+    if (this.preferReducedMotion) {
+      for (const [id, m] of this.spirits) {
+        if (id === this.playerId) continue;
+        m.visual.copy(m.target);
+        m.group.position.copy(m.visual);
+      }
+      return;
+    }
+    const t = 1 - Math.exp(-REMOTE_SPIRIT_SMOOTHING_LAMBDA * dt);
+    for (const [id, m] of this.spirits) {
+      if (id === this.playerId) continue;
+      m.visual.lerp(m.target, t);
+      m.group.position.copy(m.visual);
     }
   }
 
@@ -573,6 +626,7 @@ export class TutelaryScene {
     window.removeEventListener('keydown', this.handleKeyDown);
     window.removeEventListener('keyup', this.handleKeyUp);
     window.removeEventListener('blur', this.handleBlur);
+    this.canvas.removeEventListener('pointerdown', this.handlePointerDown);
     this.canvas.removeEventListener('pointermove', this.handlePointerMove);
     this.canvas.removeEventListener('click', this.handleClick);
     this.renderer.dispose();

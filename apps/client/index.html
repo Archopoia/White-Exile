@@ -27,6 +27,10 @@
       #scene {
         position: fixed;
         inset: 0;
+        outline: none;
+      }
+      #scene:focus {
+        box-shadow: inset 0 0 0 1px rgba(120, 160, 255, 0.25);
       }
       .hud {
         position: fixed;
@@ -80,7 +84,7 @@
     </style>
   </head>
   <body>
-    <canvas id="scene"></canvas>
+    <canvas id="scene" tabindex="0" aria-label="Game view — click to focus, then WASD to move"></canvas>
     <div class="hud hud--top-left" id="hud-stats">
       <div><span id="hud-status-dot" class="status-dot"></span><span id="hud-status">connecting...</span></div>
       <div>Essence <strong id="hud-essence">0</strong></div>

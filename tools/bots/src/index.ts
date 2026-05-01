@@ -50,7 +50,7 @@ function parseArgs(argv: string[]): ParsedArgs {
   if (mix.length === 0) mix.push('wanderer');
   const seed = Number(args.get('seed') ?? Date.now());
   const url = args.get('url') ?? process.env.SERVER_URL ?? 'http://localhost:3001';
-  const tickHz = Number(args.get('tickHz') ?? '8');
+  const tickHz = Number(args.get('tickHz') ?? '28');
   const staggerMs = Number(args.get('staggerMs') ?? '120');
   return { count, mix, seed, url, tickHz, staggerMs };
 }

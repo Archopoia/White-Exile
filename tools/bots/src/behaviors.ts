@@ -60,7 +60,7 @@ class WandererBehavior implements Behavior {
       this.target = spherePoint(ctx.rng, PLAY_RADIUS);
       this.timeToRetarget = 1.5 + ctx.rng() * 2.5;
     }
-    this.current = lerpVec3(this.current, this.target, Math.min(1, dt * 1.2));
+    this.current = lerpVec3(this.current, this.target, Math.min(1, dt * 2.4));
     return { position: this.current, burst: ctx.rng() < dt * 0.4 };
   }
 }
@@ -99,15 +99,17 @@ class ClickerBehavior implements Behavior {
   readonly name = 'clicker';
   private cooldown = 0;
   private current: Vec3 = { x: PLAY_RADIUS, y: 0, z: 0 };
+  private desired: Vec3 = { x: PLAY_RADIUS, y: 0, z: 0 };
 
   tick(dt: number, ctx: BehaviorContext): BehaviorTick {
     this.cooldown -= dt;
     let burst = false;
     if (this.cooldown <= 0) {
-      this.current = spherePoint(ctx.rng, PLAY_RADIUS);
+      this.desired = spherePoint(ctx.rng, PLAY_RADIUS);
       this.cooldown = 0.25 + ctx.rng() * 0.4;
       burst = true;
     }
+    this.current = lerpVec3(this.current, this.desired, Math.min(1, dt * 10));
     return { position: this.current, burst };
   }
 }
@@ -148,7 +150,7 @@ class ChaserBehavior implements Behavior {
       target = best;
     }
     if (!target) target = spherePoint(ctx.rng, PLAY_RADIUS);
-    this.current = lerpVec3(this.current, target, Math.min(1, dt * 1.5));
+    this.current = lerpVec3(this.current, target, Math.min(1, dt * 2.8));
     return { position: this.current, burst: ctx.rng() < dt * 0.6 };
   }
 }

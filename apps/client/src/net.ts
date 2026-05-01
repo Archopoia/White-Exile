@@ -26,6 +26,7 @@ import {
   type Vec3,
 } from '@tutelary/shared';
 import { debugLogger } from './debug.js';
+import { inputLog } from './inputLog.js';
 
 export interface NetClientOptions {
   url: string;
@@ -47,6 +48,8 @@ export class NetClient {
   private readonly callbacks: NetClientCallbacks;
   private readonly displayName: string;
   private readonly isBot: boolean;
+  /** True after `server.welcome` — intents before then are dropped client-side. */
+  private handshakeComplete = false;
 
   constructor(options: NetClientOptions, callbacks: NetClientCallbacks = {}) {
     this.callbacks = callbacks;
@@ -70,6 +73,7 @@ export class NetClient {
     });
 
     this.socket.on('disconnect', (reason) => {
+      this.handshakeComplete = false;
       debugLogger.warn('socket.disconnect', { reason });
       this.callbacks.onConnectionChange?.('disconnected');
     });
@@ -80,7 +84,9 @@ export class NetClient {
         debugLogger.error('welcome.invalid', { issues: parsed.error.issues });
         return;
       }
+      this.handshakeComplete = true;
       debugLogger.info('welcome', { traceId: parsed.data.traceId, playerId: parsed.data.playerId });
+      inputLog('net.welcome', { playerId: parsed.data.playerId, traceId: parsed.data.traceId });
       this.callbacks.onWelcome?.(parsed.data);
     });
 
@@ -113,16 +119,48 @@ export class NetClient {
   }
 
   sendCursor(position: Vec3): void {
+    if (!this.socket.connected || !this.handshakeComplete) return;
     const msg: ClientCursorMove = { position };
     this.socket.emit(EVT.client.cursorMove, msg);
   }
 
   sendBurst(position: Vec3, intensity = 1): void {
+    inputLog('client.intent.dropBurst', {
+      intensity,
+      x: position.x,
+      y: position.y,
+      z: position.z,
+      connected: this.socket.connected,
+      handshakeComplete: this.handshakeComplete,
+    });
+    if (!this.socket.connected) {
+      inputLog('client.intent.dropBurst.skipped', { reason: 'socket_disconnected' });
+      return;
+    }
+    if (!this.handshakeComplete) {
+      inputLog('client.intent.dropBurst.skipped', { reason: 'awaiting_server_welcome' });
+      return;
+    }
     const msg: ClientDropBurst = { position, intensity };
     this.socket.emit(EVT.client.dropBurst, msg);
   }
 
   sendExtract(surfacePoint: Vec3): void {
+    inputLog('client.intent.extract', {
+      x: surfacePoint.x,
+      y: surfacePoint.y,
+      z: surfacePoint.z,
+      connected: this.socket.connected,
+      handshakeComplete: this.handshakeComplete,
+    });
+    if (!this.socket.connected) {
+      inputLog('client.intent.extract.skipped', { reason: 'socket_disconnected' });
+      return;
+    }
+    if (!this.handshakeComplete) {
+      inputLog('client.intent.extract.skipped', { reason: 'awaiting_server_welcome' });
+      return;
+    }
     const msg: ClientExtract = { surfacePoint };
     this.socket.emit(EVT.client.extract, msg);
   }

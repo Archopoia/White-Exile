@@ -70,7 +70,8 @@ export class Bot {
 
   start(): void {
     if (this.timer) return;
-    const intervalMs = Math.max(50, Math.floor(1000 / this.opts.tickHz));
+    // Cap at ~60 Hz so high `--tickHz` stays smooth without starving the event loop.
+    const intervalMs = Math.max(16, Math.floor(1000 / this.opts.tickHz));
     this.timer = setInterval(() => this.tickOnce(intervalMs / 1000), intervalMs);
   }
 

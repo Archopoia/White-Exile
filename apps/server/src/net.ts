@@ -50,7 +50,7 @@ function handleConnection(socket: Socket, room: Room, io: IOServer): void {
   log.info({ evt: 'socket.connected' }, 'socket connected');
 
   const limits = {
-    cursor: new TokenBucket({ ratePerSec: 30, burst: 60 }),
+    cursor: new TokenBucket({ ratePerSec: 48, burst: 96 }),
     burst: new TokenBucket({ ratePerSec: config.bursts.perSec, burst: config.bursts.perSec }),
     extract: new TokenBucket({ ratePerSec: 8, burst: 8 }),
     other: new TokenBucket({
@@ -111,7 +111,10 @@ function handleConnection(socket: Socket, room: Room, io: IOServer): void {
   });
 
   socket.on(EVT.client.dropBurst, (raw: unknown) => {
-    if (!playerId) return;
+    if (!playerId) {
+      log.warn({ evt: 'intent.dropBurst.ignored', reason: 'before_hello' }, 'burst before hello');
+      return;
+    }
     if (!limits.burst.take()) {
       return reject('rate_limit', 'burst rate exceeded', 'dropBurst.rate_limit');
     }
@@ -120,21 +123,41 @@ function handleConnection(socket: Socket, room: Room, io: IOServer): void {
       return reject('invalid_payload', 'bad dropBurst', 'dropBurst.invalid');
     }
     const result = room.applyBurst(playerId, parsed.data.intensity ?? 1);
-    if (!result.ok) return;
+    if (!result.ok) {
+      log.info(
+        {
+          evt: 'intent.dropBurst.denied',
+          playerId,
+          reason: result.reason ?? 'unknown',
+          intensity: parsed.data.intensity,
+        },
+        'burst denied',
+      );
+      return;
+    }
     const evt: ServerEventBurst = {
       playerId,
       origin: parsed.data.position,
       intensity: parsed.data.intensity ?? 1,
     };
     io.to(ROOM_ID).emit(EVT.server.burst, evt);
-    log.debug(
-      { evt: 'player.burst', playerId, dustAdded: result.dustAdded },
-      'burst applied',
+    log.info(
+      {
+        evt: 'intent.dropBurst',
+        playerId,
+        dustAdded: result.dustAdded,
+        intensity: parsed.data.intensity ?? 1,
+        origin: parsed.data.position,
+      },
+      'burst accepted',
     );
   });
 
   socket.on(EVT.client.extract, (raw: unknown) => {
-    if (!playerId) return;
+    if (!playerId) {
+      log.warn({ evt: 'intent.extract.ignored', reason: 'before_hello' }, 'extract before hello');
+      return;
+    }
     if (!limits.extract.take()) {
       return reject('rate_limit', 'extract rate exceeded', 'extract.rate_limit');
     }
@@ -143,13 +166,34 @@ function handleConnection(socket: Socket, room: Room, io: IOServer): void {
       return reject('invalid_payload', 'bad extract', 'extract.invalid');
     }
     const result = room.applyExtract(playerId);
-    if (!result.ok) return;
+    if (!result.ok) {
+      log.info(
+        {
+          evt: 'intent.extract.denied',
+          playerId,
+          reason: result.reason ?? 'unknown',
+          surfacePoint: parsed.data.surfacePoint,
+        },
+        'extract denied',
+      );
+      return;
+    }
     const evt: ServerEventEssence = {
       playerId,
       amount: result.essenceGained,
       newTotal: result.newEssence,
     };
     socket.emit(EVT.server.essence, evt);
+    log.info(
+      {
+        evt: 'intent.extract',
+        playerId,
+        essenceGained: result.essenceGained,
+        newTotal: result.newEssence,
+        surfacePoint: parsed.data.surfacePoint,
+      },
+      'extract accepted',
+    );
   });
 
   socket.on('disconnect', (reason) => {

@@ -27,6 +27,9 @@
 - `socket.connected` / `socket.disconnected` — raw connection lifecycle
 - `player.joined` / `player.left` — post-hello logical lifecycle
 - `dropBurst.rate_limit` / `extract.rate_limit` — token bucket rejected an intent
+- `intent.dropBurst` / `intent.extract` — **accepted** burst or extract (see `dustAdded`, `essenceGained`, `origin` / `surfacePoint`)
+- `intent.dropBurst.denied` / `intent.extract.denied` — server cooldown or other deny (`reason`)
+- `intent.dropBurst.ignored` / `intent.extract.ignored` — client sent before hello (`before_hello`)
 - `cursorMove.invalid`, `dropBurst.invalid`, `extract.invalid` — Zod parse failed
 - `room.tick` — periodic summary every ~10s with `players`, `totalDust`, `planetRadius`
 
@@ -70,6 +73,10 @@ rg '"evt":"(player\.joined|player\.left)"' logs/dev.ndjson
 # Rate limiting hits
 rg 'rate_limit' logs/dev.ndjson
 ```
+
+## Client input log (browser console)
+
+`apps/client/src/inputLog.ts` logs **`[tutelary-input]`** on every Space / E / click and on each `sendBurst` / `sendExtract` (including skips: disconnected or awaiting welcome). Open **DevTools → Console** on the game tab — these lines do **not** appear in the Vite terminal.
 
 ## Client debug logger
 

@@ -6,6 +6,7 @@
  * the client mostly translates intents and renders state.
  */
 import { debugLogger } from './debug.js';
+import { inputLog } from './inputLog.js';
 import { updateHud, type HudState } from './hud.js';
 import { NetClient } from './net.js';
 import { TutelaryScene } from './scene.js';
@@ -81,6 +82,7 @@ const net = new NetClient(
       updateHud(hud);
     },
     onError: (err) => {
+      inputLog('server.error', { code: err.code, message: err.message });
       debugLogger.warn('server.error', { ...err });
     },
   },
