@@ -271,7 +271,7 @@ export class RoomScene {
     this.localCore.receiveShadow = true;
     this.localGroup.add(this.localCore);
     this.localLabel = makeTooltip('');
-    this.localLabel.position.set(0, 1.05, 0);
+    this.localLabel.position.set(0, 2.15, 0);
     this.localCore.add(this.localLabel);
     this.localGroup.position.copy(this.localPos);
     this.scene.add(this.localGroup);
@@ -289,7 +289,7 @@ export class RoomScene {
     this.syncLabelLayerVisibility();
 
     this.groundTip = makeTooltip(labelGround(this.labelMode));
-    this.groundTip.position.set(0, 0.35, 0);
+    this.groundTip.position.set(0, 0.95, 0);
     this.ground.add(this.groundTip);
 
     window.addEventListener('keydown', this.onKeyDown);
@@ -452,7 +452,7 @@ export class RoomScene {
         core.castShadow = true;
         core.receiveShadow = true;
         const label = makeTooltip('');
-        label.position.set(0, 0.88, 0);
+        label.position.set(0, 1.95, 0);
         core.add(label);
         this.scene.add(core);
         entry = { core, label };
@@ -502,7 +502,7 @@ export class RoomScene {
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         const label = makeTooltip('');
-        label.position.set(0, 0.52, 0);
+        label.position.set(0, 1.2, 0);
         mesh.add(label);
         this.scene.add(mesh);
         entry = { mesh, label };
@@ -539,7 +539,7 @@ export class RoomScene {
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         const label = makeTooltip('');
-        label.position.set(0, RUIN_HEIGHT / 2 + 0.45, 0);
+        label.position.set(0, RUIN_HEIGHT / 2 + 1.25, 0);
         mesh.add(label);
         this.scene.add(mesh);
         entry = { mesh, label };
@@ -571,7 +571,7 @@ export class RoomScene {
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         const label = makeTooltip('');
-        label.position.set(0, 1.05, 0);
+        label.position.set(0, 1.95, 0);
         mesh.add(label);
         this.scene.add(mesh);
         entry = { mesh, label };

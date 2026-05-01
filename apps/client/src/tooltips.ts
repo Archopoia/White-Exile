@@ -18,7 +18,11 @@ export function makeTooltip(text: string): CSS2DObject {
   const el = document.createElement('div');
   el.className = 'scene-tooltip';
   el.textContent = text;
-  return new CSS2DObject(el);
+  const obj = new CSS2DObject(el);
+  // CSS2DRenderer uses translate(-100*cx%, -100*cy%) before screen placement; (0.5, 1) pulls the box up so its
+  // bottom edge sits on the anchor (see three.js CSS2DObject `center` + renderer).
+  obj.center.set(0.5, 1);
+  return obj;
 }
 
 export function setTooltipText(obj: CSS2DObject, text: string): void {

@@ -9,13 +9,10 @@ import {
   FOLLOWER_KIND_DISPLAY,
   RACE_PROFILES,
   ZONE_DISPLAY_LABEL,
-  type FollowerKind,
   type FollowerSnapshot,
   type PlayerSnapshot,
-  type Race,
   type RelicSnapshot,
   type RuinSnapshot,
-  type Zone,
 } from '@realtime-room/shared';
 import type { WorldLabelMode } from './tooltips.js';
 
@@ -32,23 +29,6 @@ const NAME_MAX = 22;
 function truncateName(name: string): string {
   if (name.length <= NAME_MAX) return name;
   return `${name.slice(0, NAME_MAX - 1)}…`;
-}
-
-function raceCode(race: Race): string {
-  if (race === 'emberfolk') return 'Em';
-  if (race === 'ashborn') return 'As';
-  return 'Lu';
-}
-
-function zoneKeyword(zone: Zone): string {
-  const z = ZONE_DISPLAY_LABEL[zone];
-  return z.split(/\s+/)[0] ?? z;
-}
-
-function followerKindLetter(kind: FollowerKind): string {
-  if (kind === 'lantern-bearer') return 'L';
-  if (kind === 'beast') return 'B';
-  return 'W';
 }
 
 function inRescueLight(prox: LabelProximity | undefined): boolean {
@@ -88,8 +68,10 @@ function labelYouFull(p: PlayerSnapshot): string {
 }
 
 function labelYouKeywords(p: PlayerSnapshot): string {
+  const race = RACE_PROFILES[p.race].displayName;
+  const zone = ZONE_DISPLAY_LABEL[p.zone];
   const r = Math.round(p.lightRadius);
-  return `U · Race ${raceCode(p.race)} · Zone ${zoneKeyword(p.zone)} · Light ~${r}`;
+  return [`You`, `Race: ${race}`, `Zone: ${zone}`, `Light radius ~${r}`].join('\n');
 }
 
 function labelOtherPlayerFull(p: PlayerSnapshot): string {
@@ -113,11 +95,12 @@ function labelOtherPlayerFull(p: PlayerSnapshot): string {
 
 function labelOtherPlayerKeywords(p: PlayerSnapshot): string {
   const name = truncateName(p.name);
+  const race = RACE_PROFILES[p.race].displayName;
   const r = Math.round(p.lightRadius);
   const sim = p.id.startsWith('ghost-');
   const bot = p.isBot && !sim;
-  const kind = sim ? 'Sim' : bot ? 'Bot' : 'Player';
-  return `P ${name} · Race ${raceCode(p.race)} · Light ~${r} · Kind ${kind}`;
+  const role = sim ? 'Simulated caravan (not a human)' : bot ? 'Network bot' : 'Human player';
+  return [name, `Race: ${race}`, `Light radius ~${r}`, role].join('\n');
 }
 
 function labelFollowerFull(f: FollowerSnapshot, prox?: LabelProximity): string {
@@ -131,7 +114,7 @@ function labelFollowerFull(f: FollowerSnapshot, prox?: LabelProximity): string {
       `${kind} follower (stranded)`,
       'No caravan owns them yet. Move your light bubble over them to recruit them into your caravan.',
     ].join('\n');
-    if (inRescueLight(prox)) body = appendIfMissing(body, 'R — rescue');
+    if (inRescueLight(prox)) body = appendIfMissing(body, 'In your light: press R to rescue');
     return body;
   }
   return [
@@ -142,14 +125,14 @@ function labelFollowerFull(f: FollowerSnapshot, prox?: LabelProximity): string {
 }
 
 function labelFollowerKeywords(f: FollowerSnapshot, prox?: LabelProximity): string {
-  const letter = followerKindLetter(f.kind);
+  const kind = FOLLOWER_KIND_DISPLAY[f.kind];
   const pct = Math.round(f.morale * 100);
   if (f.ownerId === null) {
-    let line = `Follower ${letter} · Stray · Morale ${pct}%`;
-    if (inRescueLight(prox)) line = appendIfMissing(line, 'R — rescue');
-    return line;
+    let body = [`${kind} · Stranded (no owner yet)`, `Morale ${pct}%`].join('\n');
+    if (inRescueLight(prox)) body = appendIfMissing(body, 'In your light: press R to rescue');
+    return body;
   }
-  return `Follower ${letter} · Kin · Morale ${pct}%`;
+  return [`${kind} · With a caravan`, `Morale ${pct}%`].join('\n');
 }
 
 function labelRuinFull(r: RuinSnapshot, prox?: LabelProximity): string {
@@ -167,15 +150,15 @@ function labelRuinFull(r: RuinSnapshot, prox?: LabelProximity): string {
     'Ancient ruin (inactive pillar)',
     `Standing near this pillar activates the ruin. ${charge} Activating also widens usable light in the immediate area.`,
   ].join('\n');
-  if (inRuinHintRange(prox)) body = appendIfMissing(body, 'F — activate');
+  if (inRuinHintRange(prox)) body = appendIfMissing(body, 'Close enough: press F to activate');
   return body;
 }
 
 function labelRuinKeywords(r: RuinSnapshot, prox?: LabelProximity): string {
-  const state = r.activated ? 'On' : 'Off';
-  let line = `Ruin · State ${state} · Charge ${r.followerCharge}`;
-  if (!r.activated && inRuinHintRange(prox)) line = appendIfMissing(line, 'F — activate');
-  return line;
+  const head = r.activated ? 'Ruin · Already activated' : 'Ruin · Not activated yet';
+  let body = [head, `Stranded followers tied here: ${r.followerCharge}`].join('\n');
+  if (!r.activated && inRuinHintRange(prox)) body = appendIfMissing(body, 'Close enough: press F to activate');
+  return body;
 }
 
 function labelRelicFull(r: RelicSnapshot): string {
@@ -193,13 +176,19 @@ function labelRelicFull(r: RelicSnapshot): string {
 }
 
 function labelRelicKeywords(r: RelicSnapshot): string {
-  const st = r.claimed ? 'Claimed' : 'Open';
-  return `Relic · ${st} · +${r.radiusBonus} radius · Walk / fuel to claim`;
+  const head = r.claimed ? 'Relic · Already claimed' : 'Relic · Available';
+  return [head, `Light radius bonus +${r.radiusBonus}`, 'Pass through with fuel to claim'].join('\n');
 }
 
 export function labelGround(mode: WorldLabelMode): string {
   if (mode === 'off') return '';
-  if (mode === 'keywords') return 'Ground · Ash dunes · Farther out = heavier fog & faster fuel drain';
+  if (mode === 'keywords') {
+    return [
+      'Walkable ash dunes',
+      'Farther from the center: heavier fog',
+      'Fuel drains faster unless you share light or use a ruin',
+    ].join('\n');
+  }
   return labelGroundFull();
 }
 
