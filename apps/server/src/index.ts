@@ -1,16 +1,9 @@
 /**
- * Tutelary server entry point.
- *
- * Boots Fastify (HTTP + health), attaches Socket.io, and starts the room
- * tick loop. All authoritative game state lives in apps/server/src/room.ts.
- *
- * Dev mode also: loads/saves a Room snapshot under `apps/server/.dev-state/`
- * (default relative path `.dev-state/room.json` from the server package cwd) so
- * `tsx watch` restarts don't wipe essence spread / soft-
- * disconnected players awaiting resume.
+ * Server entry: Fastify (HTTP + health), Socket.io, authoritative room tick.
  */
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import { PROTOCOL_VERSION } from '@realtime-room/shared';
 import { config } from './config.js';
 import { logger } from './logger.js';
 import { ROOM_ID, attachSocketServer } from './net.js';
@@ -23,21 +16,21 @@ async function main(): Promise<void> {
 
   app.get('/health', async () => ({
     status: 'ok',
-    svc: 'tutelary-server',
+    svc: 'rt-room-server',
     tickHz: config.tickHz,
+    protocolVersion: PROTOCOL_VERSION,
   }));
 
   await app.listen({ host: config.host, port: config.port });
   logger.info(
     { evt: 'server.listening', host: config.host, port: config.port, corsOrigin: config.corsOrigin },
-    `Tutelary server listening on http://${config.host}:${config.port}`,
+    `server listening on http://${config.host}:${config.port}`,
   );
 
   const restored = await loadRoomIfPresent(ROOM_ID);
   const initialRoom = restored ?? new Room(ROOM_ID);
   const { room } = attachSocketServer(app.server, initialRoom);
 
-  // Periodic autosave so a crash loses at most one interval of progress.
   let saveTimer: NodeJS.Timeout | null = null;
   if (config.devPersistence.enabled) {
     saveTimer = setInterval(() => {
@@ -53,8 +46,6 @@ async function main(): Promise<void> {
     );
   }
 
-  // Graceful shutdown: persist before exit so SIGINT / `tsx watch` restart
-  // doesn't drop the last few seconds.
   let shuttingDown = false;
   async function shutdown(signal: string): Promise<void> {
     if (shuttingDown) return;
@@ -70,7 +61,6 @@ async function main(): Promise<void> {
   }
   process.once('SIGINT', () => void shutdown('SIGINT'));
   process.once('SIGTERM', () => void shutdown('SIGTERM'));
-  // tsx-watch sends SIGUSR2 in some environments; treat the same way.
   process.once('SIGUSR2', () => void shutdown('SIGUSR2'));
 }
 

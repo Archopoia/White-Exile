@@ -1,8 +1,5 @@
 /**
- * Centralized server configuration.
- *
- * Read-once-at-boot: every other module imports the frozen `config` object.
- * Avoid scattering process.env access through hot paths.
+ * Centralized server configuration (read once at boot).
  */
 
 function num(name: string, fallback: number): number {
@@ -35,25 +32,18 @@ export const config = Object.freeze({
   logFilePath: str('LOG_FILE_PATH', 'logs/dev.ndjson'),
   rateLimitMessagesPerSec: num('RATE_LIMIT_MSGS_PER_SEC', 60),
   rateLimitBurst: num('RATE_LIMIT_BURST', 30),
-  bursts: {
-    perSec: num('BURST_PER_SEC', 8),
-    cooldownMs: num('BURST_COOLDOWN_MS', 80),
-    essenceSpreadPerBurst: num('BURST_ESSENCE_SPREAD', 1.5),
+  move: {
+    ratePerSec: num('MOVE_RATE_PER_SEC', 48),
+    burst: num('MOVE_BURST', 96),
   },
-  passive: {
-    essenceSpreadPerSec: num('PASSIVE_ESSENCE_SPREAD_PER_SEC', 1.1),
+  roomSettingsPatch: {
+    ratePerSec: num('ROOM_SETTINGS_RATE_PER_SEC', 8),
+    burst: num('ROOM_SETTINGS_BURST', 16),
   },
-  /**
-   * Dev-only: persist the Room across `tsx watch` restarts so iterating on
-   * server code doesn't wipe player records / soft-disconnected slots. Off
-   * automatically in production (or set `DEV_PERSISTENCE=0` to force off).
-   */
   devPersistence: {
     enabled: bool('DEV_PERSISTENCE', !isProd),
-    /** Relative to process cwd (package dir when using `pnpm --filter @tutelary/server dev`). */
     path: str('DEV_PERSISTENCE_PATH', '.dev-state/room.json'),
     saveIntervalMs: num('DEV_PERSISTENCE_SAVE_MS', 5_000),
-    /** How long to hold a soft-disconnected record before pruning it. */
     botGraceMs: num('BOT_GRACE_MS', 10_000),
     humanGraceMs: num('HUMAN_GRACE_MS', 60_000),
     pruneIntervalMs: num('PRUNE_INTERVAL_MS', 5_000),

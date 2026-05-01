@@ -1,12 +1,7 @@
 /**
- * Bot behavior registry.
- *
- * A behavior is a tiny stateful brain: given dt and a context (last snapshot,
- * rng), it produces the bot's intended position and whether to burst this
- * tick. Behaviors are plain TypeScript so they're easy to read in logs and
- * extend without modifying the runner.
+ * Pluggable bot brains: each tick returns the next intended position.
  */
-import type { RoomSnapshot, Vec3 } from '@tutelary/shared';
+import type { RoomSnapshot, Vec3 } from '@realtime-room/shared';
 import type { Rng } from './rng.js';
 
 export interface BehaviorContext {
@@ -18,7 +13,6 @@ export interface BehaviorContext {
 
 export interface BehaviorTick {
   position: Vec3;
-  burst: boolean;
 }
 
 export interface Behavior {
@@ -26,12 +20,12 @@ export interface Behavior {
   tick(dt: number, ctx: BehaviorContext): BehaviorTick;
 }
 
-const PLAY_RADIUS = 18;
+const PLAY_RADIUS = 120;
 
 function spherePoint(rng: Rng, radius: number): Vec3 {
   const u = rng() * 2 - 1;
   const theta = rng() * Math.PI * 2;
-  const r = Math.sqrt(1 - u * u);
+  const r = Math.sqrt(Math.max(0, 1 - u * u));
   return {
     x: radius * r * Math.cos(theta),
     y: radius * u,
@@ -60,7 +54,7 @@ class WandererBehavior implements Behavior {
       this.timeToRetarget = 1.5 + ctx.rng() * 2.5;
     }
     this.current = lerpVec3(this.current, this.target, Math.min(1, dt * 2.4));
-    return { position: this.current, burst: ctx.rng() < dt * 0.4 };
+    return { position: this.current };
   }
 }
 
@@ -79,7 +73,7 @@ class OrbiterBehavior implements Behavior {
     this.axis = { x: Math.cos(tilt), y: Math.sin(tilt), z: 0 };
   }
 
-  tick(dt: number, _ctx: BehaviorContext): BehaviorTick {
+  tick(dt: number): BehaviorTick {
     this.phase += dt * this.speed;
     const cos = Math.cos(this.phase);
     const sin = Math.sin(this.phase);
@@ -89,27 +83,25 @@ class OrbiterBehavior implements Behavior {
         y: this.radius * cos * this.axis.y - this.radius * sin * this.axis.x,
         z: this.radius * Math.sin(this.phase * 0.4),
       },
-      burst: false,
     };
   }
 }
 
-class ClickerBehavior implements Behavior {
-  readonly name = 'clicker';
+/** Picks new targets on a short cadence (stress for move intents). */
+class DrifterBehavior implements Behavior {
+  readonly name = 'drifter';
   private cooldown = 0;
   private current: Vec3 = { x: PLAY_RADIUS, y: 0, z: 0 };
   private desired: Vec3 = { x: PLAY_RADIUS, y: 0, z: 0 };
 
   tick(dt: number, ctx: BehaviorContext): BehaviorTick {
     this.cooldown -= dt;
-    let burst = false;
     if (this.cooldown <= 0) {
       this.desired = spherePoint(ctx.rng, PLAY_RADIUS);
       this.cooldown = 0.25 + ctx.rng() * 0.4;
-      burst = true;
     }
     this.current = lerpVec3(this.current, this.desired, Math.min(1, dt * 10));
-    return { position: this.current, burst };
+    return { position: this.current };
   }
 }
 
@@ -121,8 +113,8 @@ class AfkBehavior implements Behavior {
     this.anchor = spherePoint(rng, PLAY_RADIUS);
   }
 
-  tick(_dt: number, _ctx: BehaviorContext): BehaviorTick {
-    return { position: this.anchor, burst: false };
+  tick(): BehaviorTick {
+    return { position: this.anchor };
   }
 }
 
@@ -150,20 +142,20 @@ class ChaserBehavior implements Behavior {
     }
     if (!target) target = spherePoint(ctx.rng, PLAY_RADIUS);
     this.current = lerpVec3(this.current, target, Math.min(1, dt * 2.8));
-    return { position: this.current, burst: ctx.rng() < dt * 0.6 };
+    return { position: this.current };
   }
 }
 
-export type BehaviorName = 'wanderer' | 'orbiter' | 'clicker' | 'afk' | 'chaser';
+export type BehaviorName = 'wanderer' | 'orbiter' | 'drifter' | 'afk' | 'chaser';
 
-export const ALL_BEHAVIORS: BehaviorName[] = ['wanderer', 'orbiter', 'clicker', 'afk', 'chaser'];
+export const ALL_BEHAVIORS: BehaviorName[] = ['wanderer', 'orbiter', 'drifter', 'afk', 'chaser'];
 
 export function createBehavior(name: BehaviorName, rng: Rng): Behavior {
   switch (name) {
     case 'orbiter':
       return new OrbiterBehavior(rng);
-    case 'clicker':
-      return new ClickerBehavior();
+    case 'drifter':
+      return new DrifterBehavior();
     case 'afk':
       return new AfkBehavior(rng);
     case 'chaser':

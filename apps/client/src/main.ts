@@ -1,25 +1,15 @@
 /**
- * Client bootstrap.
- *
- * Creates the Three.js scene, opens a Socket.io connection, and wires
- * snapshots into both the scene and the HUD. Game logic is server-driven;
- * the client mostly translates intents and renders state.
- *
- * Dev-mode HMR: the boot routine returns a `dispose()` and the module
- * registers `import.meta.hot.accept(...)` so saving any imported file
- * (scene / hud / net / etc.) swaps the running game without a full page
- * reload. Player identity persists via `localStorage.tutelary.resumeToken`,
- * so the server reattaches our existing record across HMR, full refresh,
- * and `tsx watch` server restarts.
+ * Client bootstrap: Three.js scene, Socket.io, HUD, optional room options (ESC).
+ * HMR: dispose + reconnect; resume token keeps the same player record.
  */
 import { debugLogger } from './debug.js';
-import { inputLog } from './inputLog.js';
 import { updateHud, type HudState } from './hud.js';
 import { NetClient } from './net.js';
-import { TutelaryScene } from './scene.js';
+import { createRoomOptionsOverlay, type RoomOptionsOverlay } from './options.js';
+import { RoomScene } from './scene.js';
 
-const STORAGE_NAME = 'tutelary.displayName';
-const STORAGE_TOKEN = 'tutelary.resumeToken';
+const STORAGE_NAME = 'rtRoom.displayName';
+const STORAGE_TOKEN = 'rtRoom.resumeToken';
 
 function makeDisplayName(): string {
   try {
@@ -34,10 +24,10 @@ function makeDisplayName(): string {
   } catch {
     /* ignore */
   }
-  const adjectives = ['lit', 'soft', 'kind', 'wild', 'lone', 'odd', 'wee', 'cosmic'];
-  const nouns = ['ember', 'mote', 'ghost', 'wisp', 'spark', 'dust', 'soul', 'star'];
-  const a = adjectives[Math.floor(Math.random() * adjectives.length)] ?? 'lit';
-  const n = nouns[Math.floor(Math.random() * nouns.length)] ?? 'mote';
+  const adjectives = ['calm', 'swift', 'bright', 'quiet', 'bold', 'free', 'odd', 'new'];
+  const nouns = ['node', 'beam', 'wave', 'unit', 'guest', 'peer', 'host', 'link'];
+  const a = adjectives[Math.floor(Math.random() * adjectives.length)] ?? 'new';
+  const n = nouns[Math.floor(Math.random() * nouns.length)] ?? 'peer';
   return `${a}-${n}`;
 }
 
@@ -74,8 +64,9 @@ function resolveServerUrl(): string {
 }
 
 interface RunningClient {
-  scene: TutelaryScene;
+  scene: RoomScene;
   net: NetClient;
+  options: RoomOptionsOverlay;
   dispose: () => void;
 }
 
@@ -88,11 +79,10 @@ function boot(): RunningClient {
 
   const hud: HudState = {
     status: 'connecting',
-    essenceSpread: 0,
-    planetRadius: 0,
     players: 0,
     displayName,
-    tier: 'dust',
+    roomNote: '',
+    tick: 0,
   };
   updateHud(hud);
 
@@ -100,10 +90,15 @@ function boot(): RunningClient {
   let appliedServerPos = false;
 
   let net: NetClient | null = null;
-  const scene = new TutelaryScene(canvas, {
-    onCursorMove: (target) => net?.sendCursor(target),
-    onBurst: (target, intensity) => net?.sendBurst(target, intensity),
+  const scene = new RoomScene(canvas, {
+    onMoveIntent: (position) => net?.sendMove(position),
   });
+
+  const options = createRoomOptionsOverlay((roomNote) => {
+    net?.sendRoomSettingsPatch({ roomNote });
+  });
+
+  canvas.addEventListener('click', () => canvas.focus());
 
   net = new NetClient(
     {
@@ -130,26 +125,20 @@ function boot(): RunningClient {
       },
       onSnapshot: (snap) => {
         scene.applySnapshot(snap);
-        hud.planetRadius = snap.planetRadius;
         hud.players = snap.players.length;
+        hud.roomNote = snap.settings.roomNote;
+        hud.tick = snap.tick;
+        options.syncRoomNoteFromServer(snap.settings.roomNote);
         const me = localPlayerId
           ? snap.players.find((p) => p.id === localPlayerId)
           : snap.players.find((p) => p.name === displayName);
-        if (me) {
-          hud.essenceSpread = me.essenceSpread;
-          hud.tier = me.tier;
-          // First snapshot for our player after a resume: adopt server pos
-          // so the spirit doesn't snap to the north pole.
-          if (!appliedServerPos) {
-            scene.setLocalSpiritFromWorld(me.position);
-            appliedServerPos = true;
-          }
+        if (me && !appliedServerPos) {
+          scene.syncLocalFromServer(me.position);
+          appliedServerPos = true;
         }
         updateHud(hud);
       },
-      onBurst: (evt) => scene.applyServerBurst(evt),
       onError: (err) => {
-        inputLog('server.error', { code: err.code, message: err.message });
         debugLogger.warn('server.error', { ...err });
       },
     },
@@ -162,11 +151,17 @@ function boot(): RunningClient {
   return {
     scene,
     net: liveNet,
+    options,
     dispose: () => {
       try {
         scene.dispose();
       } catch (e) {
         debugLogger.warn('dispose.scene_failed', { err: String(e) });
+      }
+      try {
+        options.dispose();
+      } catch (e) {
+        debugLogger.warn('dispose.options_failed', { err: String(e) });
       }
       try {
         liveNet.dispose();
@@ -179,18 +174,12 @@ function boot(): RunningClient {
 
 const running = boot();
 
-// ---------------------------------------------------------------------------
-// Vite HMR: self-accept so editing scene / hud / net / etc. swaps the running
-// game in place instead of triggering a full page reload. Server-side resume
-// (via resumeToken) preserves world state across the brief reconnect.
-// ---------------------------------------------------------------------------
 if (import.meta.hot) {
   import.meta.hot.dispose(() => {
     debugLogger.debug('hmr.dispose', {});
     running.dispose();
   });
   import.meta.hot.accept(() => {
-    // Vite re-runs this module after our dispose hook fires; nothing to do here.
     debugLogger.debug('hmr.accepted', {});
   });
 }

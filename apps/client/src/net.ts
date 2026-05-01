@@ -1,27 +1,21 @@
 /**
- * Socket transport for the client.
- *
- * Handles the hello handshake, snapshot decode, and emits typed callbacks.
- * The simulation/render loop (`scene.ts`) consumes these via `onSnapshot`,
- * `onWelcome`, `onError`. No game logic lives here.
+ * Socket transport: hello, validated snapshots, move + room settings intents.
  */
 import { io, type Socket } from 'socket.io-client';
 import {
   EVT,
   PROTOCOL_VERSION,
   RoomSnapshotSchema,
-  ServerEventBurstSchema,
   ServerErrorSchema,
   ServerWelcomeSchema,
-  type ClientCursorMove,
-  type ClientDropBurst,
   type ClientHello,
+  type ClientMove,
+  type ClientRoomSettingsPatch,
   type RoomSnapshot,
-  type ServerEventBurst,
   type ServerError,
   type ServerWelcome,
   type Vec3,
-} from '@tutelary/shared';
+} from '@realtime-room/shared';
 import { debugLogger } from './debug.js';
 import { inputLog } from './inputLog.js';
 
@@ -29,18 +23,12 @@ export interface NetClientOptions {
   url: string;
   displayName: string;
   isBot?: boolean;
-  /**
-   * Optional stable token from a prior session (typically read from
-   * localStorage). Lets the server reattach our existing player record so a
-   * refresh / HMR / server restart preserves essence spread and position.
-   */
   resumeToken?: string;
 }
 
 export interface NetClientCallbacks {
   onWelcome?: (welcome: ServerWelcome) => void;
   onSnapshot?: (snap: RoomSnapshot) => void;
-  onBurst?: (evt: ServerEventBurst) => void;
   onError?: (err: ServerError) => void;
   onConnectionChange?: (state: 'connecting' | 'connected' | 'disconnected') => void;
 }
@@ -51,7 +39,6 @@ export class NetClient {
   private readonly displayName: string;
   private readonly isBot: boolean;
   private resumeToken: string | undefined;
-  /** True after `server.welcome` — intents before then are dropped client-side. */
   private handshakeComplete = false;
 
   constructor(options: NetClientOptions, callbacks: NetClientCallbacks = {}) {
@@ -108,11 +95,6 @@ export class NetClient {
       this.callbacks.onSnapshot?.(parsed.data);
     });
 
-    this.socket.on(EVT.server.burst, (raw: unknown) => {
-      const parsed = ServerEventBurstSchema.safeParse(raw);
-      if (parsed.success) this.callbacks.onBurst?.(parsed.data);
-    });
-
     this.socket.on(EVT.server.error, (raw: unknown) => {
       const parsed = ServerErrorSchema.safeParse(raw);
       if (parsed.success) {
@@ -122,23 +104,18 @@ export class NetClient {
     });
   }
 
-  sendCursor(position: Vec3): void {
+  sendMove(position: Vec3): void {
     if (!this.socket.connected || !this.handshakeComplete) return;
-    const msg: ClientCursorMove = { position };
-    this.socket.emit(EVT.client.cursorMove, msg);
+    const msg: ClientMove = { position };
+    this.socket.emit(EVT.client.move, msg);
   }
 
-  sendBurst(position: Vec3, intensity = 1): void {
-    if (!this.socket.connected) {
-      inputLog('client.intent.dropBurst.skipped', { reason: 'socket_disconnected' });
+  sendRoomSettingsPatch(patch: ClientRoomSettingsPatch): void {
+    if (!this.socket.connected || !this.handshakeComplete) {
+      inputLog('client.intent.roomSettingsPatch.skipped', { reason: 'not_ready' });
       return;
     }
-    if (!this.handshakeComplete) {
-      inputLog('client.intent.dropBurst.skipped', { reason: 'awaiting_server_welcome' });
-      return;
-    }
-    const msg: ClientDropBurst = { position, intensity };
-    this.socket.emit(EVT.client.dropBurst, msg);
+    this.socket.emit(EVT.client.roomSettingsPatch, patch);
   }
 
   dispose(): void {

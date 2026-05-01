@@ -1,20 +1,15 @@
 /**
- * Single bot client.
- *
- * Connects via socket.io-client (the same transport as humans), sends a
- * hello with `isBot: true`, then drives a behavior at a fixed tick. All log
- * lines carry `botId` and `name` so a multi-bot session is easy to grep.
+ * Socket.io bot: hello with isBot, then move intents at tickHz.
  */
 import { io, type Socket } from 'socket.io-client';
 import {
   EVT,
   PROTOCOL_VERSION,
   RoomSnapshotSchema,
-  type ClientCursorMove,
-  type ClientDropBurst,
   type ClientHello,
+  type ClientMove,
   type RoomSnapshot,
-} from '@tutelary/shared';
+} from '@realtime-room/shared';
 import type { Logger } from 'pino';
 import type { Behavior, BehaviorContext } from './behaviors.js';
 import type { Rng } from './rng.js';
@@ -27,11 +22,6 @@ export interface BotOptions {
   rng: Rng;
   tickHz: number;
   logger: Logger;
-  /**
-   * Stable resume token. Lets the server re-attach this bot's record across
-   * dev `tsx watch` restarts (combined with server-side dev persistence) so
-   * the world doesn't briefly fill with ghost bots awaiting GC.
-   */
   resumeToken?: string;
 }
 
@@ -77,7 +67,6 @@ export class Bot {
 
   start(): void {
     if (this.timer) return;
-    // Cap at ~60 Hz so high `--tickHz` stays smooth without starving the event loop.
     const intervalMs = Math.max(16, Math.floor(1000 / this.opts.tickHz));
     this.timer = setInterval(() => this.tickOnce(intervalMs / 1000), intervalMs);
   }
@@ -98,11 +87,7 @@ export class Bot {
       elapsed: this.elapsed,
     };
     const out = this.opts.behavior.tick(dt, ctx);
-    const cursorMsg: ClientCursorMove = { position: out.position };
-    this.socket.emit(EVT.client.cursorMove, cursorMsg);
-    if (out.burst) {
-      const burstMsg: ClientDropBurst = { position: out.position, intensity: 1 };
-      this.socket.emit(EVT.client.dropBurst, burstMsg);
-    }
+    const move: ClientMove = { position: out.position };
+    this.socket.emit(EVT.client.move, move);
   }
 }

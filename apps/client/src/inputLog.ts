@@ -1,12 +1,10 @@
 /**
- * Always-on input / intent logging (browser DevTools console).
- *
- * Always-on **local** player lines (keys, clicks, skipped intents). Not used
- * for bots or server echo. For verbose client traces, enable `?debug=1` and
- * use `debugLogger`. Server acceptance for **your** session appears in the
- * server terminal at `info` for humans; bots are `debug` only.
+ * Dev-only structured console lines (grep-friendly).
  */
-export function inputLog(evt: string, data?: Record<string, unknown>): void {
-  const line = { evt, t: new Date().toISOString(), ...data };
-  console.log('[tutelary-input]', line);
+export function inputLog(line: string, detail?: Record<string, unknown>): void {
+  if (detail && Object.keys(detail).length > 0) {
+    console.log('[rt-room-input]', line, detail);
+  } else {
+    console.log('[rt-room-input]', line);
+  }
 }

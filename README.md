@@ -1,86 +1,67 @@
-# Tutelary Online
+# Realtime room skeleton
 
-Real-time, browser-based shared cosmos: every player is a tutelary spirit **spreading essence** around a single 3D globe (incremental / burst loop). See [PITCH.md](PITCH.md) for the design.
+TypeScript monorepo: **one authoritative room**, Socket.io to browsers and tooling, **Zod** wire schemas in `packages/shared`, optional **headless bots**, **dev JSON persistence** for the room, **resume tokens**, and a **minimal Three.js** client (move intents + ESC session panel for a shared room note).
+
+This repo is intentionally **not** a shipped game — it is a clean baseline to grow your own simulation and UI.
 
 ## Stack
 
-- TypeScript monorepo (pnpm workspaces).
-- Server: Fastify + Socket.io + Pino, authoritative room state.
-- Client: Vite + Three.js (WebGL 2), DOM HUD overlay.
-- Shared: Zod schemas for the wire protocol and pure math.
-- Bots: Node CLI driving real socket.io-client clients with pluggable behaviors.
-
-## Layout
-
-```
-apps/
-  client/   # Three.js scene, HUD, socket transport
-  server/   # Fastify + Socket.io + Pino, authoritative room
-packages/
-  shared/   # Zod protocol schemas + planet math (single source of truth)
-tools/
-  bots/     # Pluggable AI clients (wanderer / orbiter / clicker / afk / chaser)
-docs/
-  architecture.md
-  debugging.md
-```
+| Part        | Role |
+|------------|------|
+| `apps/server` | Fastify (`/health`), Socket.io, tick loop, rate limits |
+| `apps/client` | Vite, Three.js grid + avatars, DOM HUD |
+| `packages/shared` | `PROTOCOL_VERSION`, event names, Zod payloads |
+| `tools/bots` | `socket.io-client` load clients |
 
 ## Prerequisites
 
-- Node.js 20+ (tested on 22)
+- Node.js 20+
 - pnpm 10+ (`npm install -g pnpm`)
 
-## One-time install
+## Install
 
 ```bash
 pnpm install
 ```
 
-## Run a session
+## Run
 
 ```bash
-# Terminal 1: server (http://localhost:3001, /health for liveness)
+# Terminal 1 — API + WebSocket (default http://localhost:3001)
 pnpm dev:server
 
-# Terminal 2: client (http://localhost:5173)
+# Terminal 2 — client (default http://localhost:5173)
 pnpm dev:client
 
-# Terminal 3 (optional): a flock of bot players
-pnpm dev:bots -- --count 12 --mix wanderer,orbiter,clicker,afk
+# Optional — bot flock
+pnpm dev:bots -- --count 12 --mix wanderer,orbiter,drifter,afk
 ```
 
-Or run server + client together:
+Combined:
 
 ```bash
 pnpm dev:all
-```
-
-Or server + client + 8 bots:
-
-```bash
 pnpm dev:full
 ```
 
-Open the client URL, WASD on the sphere, **click** to send a burst (server accrues your **essence spread**); passive spread still ticks on the server.
+Quick protocol check (server must be running):
+
+```bash
+pnpm smoke:net
+```
+
+## Client
+
+- Click the canvas to focus, then **WASD**, **Space** / **Shift** for vertical motion. Move intents stream to the server; positions are clamped to a shared volume.
+- **ESC** toggles the session panel: **Room note** is stored in authoritative `RoomSettings` and appears in every client’s HUD after **Apply**.
+
+Display name and resume token are stored under `localStorage` keys `rtRoom.displayName` and `rtRoom.resumeToken`.
 
 ## Bots
 
-Bots are real Socket.io clients (not server-injected ghosts), so they exercise the same validation and rate-limiting paths as humans. All bot players are tagged `isBot: true` and have a `BOT_<behavior>_<n>` name for log filtering.
+CLI flags: `--count`, `--mix` (`wanderer`, `orbiter`, `drifter`, `afk`, `chaser`), `--seed`, `--url`, `--tickHz`, `--staggerMs`. Each bot uses a stable `resumeToken` so dev persistence can reattach the same record after a server restart.
 
-```bash
-pnpm dev:bots -- --count 30 --mix wanderer,clicker --seed 42 --tickHz 28
-```
-
-CLI options:
-
-- `--count` total bot count (default 8)
-- `--mix` comma-separated behaviors: `wanderer,orbiter,clicker,afk,chaser`
-- `--seed` deterministic RNG seed (default `Date.now()`)
-- `--url` server URL (default `http://localhost:3001`)
-- `--tickHz` per-bot tick rate (default 28; min timer step 16 ms)
-- `--staggerMs` startup spacing (default 120)
-
-## Tests, lint, types
+## Quality
 
 ```bash
 pnpm typecheck
@@ -90,4 +71,6 @@ pnpm lint
 
 ## Debugging
 
-See [docs/debugging.md](docs/debugging.md) for environment variables, log fields, and example greps you can paste into Cursor.
+See [docs/debugging.md](docs/debugging.md) for log fields and environment variables.
+
+If an old `apps/server/.dev-state/room.json` causes confusing headcount, delete that file while the server is stopped and start again.

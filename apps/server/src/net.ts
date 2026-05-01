@@ -1,27 +1,19 @@
 /**
- * Socket.io glue for the authoritative room.
- *
- * Each connection:
- *   1. Awaits a ClientHello with matching protocol version.
- *   2. Receives a ServerWelcome with traceId + tickHz.
- *   3. Streams cursor / burst intents.
- * Every inbound payload is parsed with Zod from packages/shared. Bad payloads
- * are logged and rejected; we never trust the client for economy values.
+ * Socket.io: hello, move intents, room settings patches, tick snapshots.
  */
 import { randomUUID } from 'node:crypto';
 import { Server as IOServer, type Socket } from 'socket.io';
 import type { Server as HttpServer } from 'node:http';
 import {
-  ClientCursorMoveSchema,
-  ClientDropBurstSchema,
   ClientHelloSchema,
+  ClientMoveSchema,
+  ClientRoomSettingsPatchSchema,
   EVT,
   PROTOCOL_VERSION,
   type RoomSnapshot,
   type ServerError,
-  type ServerEventBurst,
   type ServerWelcome,
-} from '@tutelary/shared';
+} from '@realtime-room/shared';
 import { config } from './config.js';
 import { childLogger, logger } from './logger.js';
 import { TokenBucket } from './rateLimiter.js';
@@ -52,8 +44,11 @@ function handleConnection(socket: Socket, room: Room, io: IOServer): void {
   log.debug({ evt: 'socket.connected' }, 'socket connected');
 
   const limits = {
-    cursor: new TokenBucket({ ratePerSec: 48, burst: 96 }),
-    burst: new TokenBucket({ ratePerSec: config.bursts.perSec, burst: config.bursts.perSec }),
+    move: new TokenBucket({ ratePerSec: config.move.ratePerSec, burst: config.move.burst }),
+    roomSettings: new TokenBucket({
+      ratePerSec: config.roomSettingsPatch.ratePerSec,
+      burst: config.roomSettingsPatch.burst,
+    }),
     other: new TokenBucket({
       ratePerSec: config.rateLimitMessagesPerSec,
       burst: config.rateLimitBurst,
@@ -95,8 +90,7 @@ function handleConnection(socket: Socket, room: Room, io: IOServer): void {
         id: playerId,
         name: parsed.data.displayName,
         isBot: parsed.data.isBot ?? false,
-        tier: 'dust',
-        position: { x: 0, y: 0, z: 0 },
+        position: { x: 0, y: 2, z: 8 },
       });
     }
 
@@ -124,55 +118,31 @@ function handleConnection(socket: Socket, room: Room, io: IOServer): void {
     socket.emit(EVT.server.snapshot, room.snapshot());
   });
 
-  socket.on(EVT.client.cursorMove, (raw: unknown) => {
+  socket.on(EVT.client.move, (raw: unknown) => {
     if (!playerId) return;
-    if (!limits.cursor.take()) return;
-    const parsed = ClientCursorMoveSchema.safeParse(raw);
+    if (!limits.move.take()) return;
+    const parsed = ClientMoveSchema.safeParse(raw);
     if (!parsed.success) {
-      return reject('invalid_payload', 'bad cursorMove', 'cursorMove.invalid');
+      return reject('invalid_payload', 'bad move', 'move.invalid');
     }
     room.setPosition(playerId, parsed.data.position);
   });
 
-  socket.on(EVT.client.dropBurst, (raw: unknown) => {
-    if (!playerId) {
-      log.warn({ evt: 'intent.dropBurst.ignored', reason: 'before_hello' }, 'burst before hello');
-      return;
+  socket.on(EVT.client.roomSettingsPatch, (raw: unknown) => {
+    if (!playerId) return;
+    if (!limits.roomSettings.take()) {
+      return reject('rate_limit', 'room settings rate exceeded', 'roomSettingsPatch.rate_limit');
     }
-    if (!limits.burst.take()) {
-      return reject('rate_limit', 'burst rate exceeded', 'dropBurst.rate_limit');
-    }
-    const parsed = ClientDropBurstSchema.safeParse(raw);
+    const parsed = ClientRoomSettingsPatchSchema.safeParse(raw);
     if (!parsed.success) {
-      return reject('invalid_payload', 'bad dropBurst', 'dropBurst.invalid');
+      return reject('invalid_payload', 'bad roomSettingsPatch', 'roomSettingsPatch.invalid');
     }
-    const result = room.applyBurst(playerId, parsed.data.intensity ?? 1);
-    if (!result.ok) {
-      const deniedPayload = {
-        evt: 'intent.dropBurst.denied',
-        playerId,
-        reason: result.reason ?? 'unknown',
-        intensity: parsed.data.intensity,
-      };
-      if (room.get(playerId)?.isBot) log.debug(deniedPayload, 'burst denied');
-      else log.info(deniedPayload, 'burst denied');
-      return;
-    }
-    const evt: ServerEventBurst = {
-      playerId,
-      origin: parsed.data.position,
-      intensity: parsed.data.intensity ?? 1,
-    };
-    io.to(ROOM_ID).emit(EVT.server.burst, evt);
-    const burstPayload = {
-      evt: 'intent.dropBurst',
-      playerId,
-      essenceSpreadAdded: result.essenceSpreadAdded,
-      intensity: parsed.data.intensity ?? 1,
-      origin: parsed.data.position,
-    };
-    if (room.get(playerId)?.isBot) log.debug(burstPayload, 'burst accepted');
-    else log.info(burstPayload, 'burst accepted');
+    room.patchRoomSettings(parsed.data);
+    log.info(
+      { evt: 'config.updated', playerId, keys: Object.keys(parsed.data) },
+      'room settings updated',
+    );
+    io.to(ROOM_ID).emit(EVT.server.snapshot, room.snapshot());
   });
 
   socket.on('disconnect', (reason) => {
@@ -186,7 +156,6 @@ function handleConnection(socket: Socket, room: Room, io: IOServer): void {
     }
   });
 
-  void io;
   void socket.join(ROOM_ID);
 }
 
@@ -204,8 +173,7 @@ function scheduleTickLoop(io: IOServer, room: Room): void {
           evt: 'room.tick',
           roomId: room.id,
           players: room.size(),
-          essenceSpreadSum: room.sumEssenceSpread().toFixed(2),
-          planetRadius: snap.planetRadius.toFixed(2),
+          tick: snap.tick,
         },
         'periodic tick',
       );

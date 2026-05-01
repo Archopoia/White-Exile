@@ -17,7 +17,7 @@ import { config } from './config.js';
 function buildOptions(): LoggerOptions {
   const base: LoggerOptions = {
     level: config.logLevel,
-    base: { svc: 'tutelary-server' },
+    base: { svc: 'rt-room-server' },
     timestamp: pino.stdTimeFunctions.isoTime,
   };
 

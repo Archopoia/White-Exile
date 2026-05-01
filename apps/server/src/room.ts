@@ -1,93 +1,54 @@
 /**
  * Authoritative room state.
  *
- * Owns:
- *   - per-player essence spread, position, tier
- *   - planet radius (derived from the sum of all players' essence spread)
- *
- * Disconnects are *soft*: a player flagged `disconnected` is hidden from
- * snapshots but kept around for a grace window so a refresh / HMR / server
- * restart can re-attach the same record. `pruneDisconnected` finalizes the
- * removal once the grace expires.
- *
- * Methods are pure operations on internal state; broadcasting is handled by
- * the Socket.io glue in net.ts so this file stays unit-testable.
+ * Soft disconnect: hidden from snapshots but retained for resume until the
+ * grace window expires. Broadcasting lives in net.ts.
  */
 import {
+  DEFAULT_ROOM_SETTINGS,
+  type RoomSettings,
   type RoomSnapshot,
-  type SpiritTier,
   type Vec3,
+  RoomSettingsSchema,
   clampToPlayVolume,
-  planetRadiusFromEssenceSpread,
-} from '@tutelary/shared';
-import { config } from './config.js';
+} from '@realtime-room/shared';
 
 export interface PlayerState {
   id: string;
   name: string;
   isBot: boolean;
-  tier: SpiritTier;
   position: Vec3;
-  /** Cumulative essence this spirit has spread (bursts + passive). */
-  essenceSpread: number;
-  lastBurstMs: number;
-  /** True while the socket is gone but we're still holding the record open. */
   disconnected: boolean;
   disconnectedAt: number;
 }
 
-export interface BurstResult {
-  ok: boolean;
-  reason?: 'cooldown' | 'unknown_player';
-  essenceSpreadAdded: number;
-}
-
-/** Minimal JSON shape used by the dev persistence file. */
 export interface RoomData {
   id: string;
+  settings: RoomSettings;
   players: PlayerState[];
-}
-
-/** Loose shape for migrating older persistence files. */
-interface PersistedPlayerRaw {
-  id: string;
-  name: string;
-  isBot: boolean;
-  tier: SpiritTier;
-  position: Vec3;
-  essenceSpread?: number;
-  essence?: number;
-  totalDustContributed?: number;
-  lastBurstMs?: number;
-  lastExtractMs?: number;
-  disconnected?: boolean;
-  disconnectedAt?: number;
-}
-
-function migrateEssenceSpread(raw: PersistedPlayerRaw): number {
-  if (typeof raw.essenceSpread === 'number' && Number.isFinite(raw.essenceSpread) && raw.essenceSpread >= 0) {
-    return raw.essenceSpread;
-  }
-  const legacy = Math.max(0, raw.totalDustContributed ?? 0) + Math.max(0, raw.essence ?? 0);
-  return legacy;
 }
 
 export class Room {
   readonly id: string;
   private readonly players = new Map<string, PlayerState>();
+  private settings: RoomSettings = { ...DEFAULT_ROOM_SETTINGS };
+  private tickCount = 0;
   private lastTickMs = Date.now();
 
   constructor(id: string) {
     this.id = id;
   }
 
-  /** Sum of essence spread across all records (including soft-disconnected). */
-  sumEssenceSpread(): number {
-    let s = 0;
-    for (const p of this.players.values()) {
-      s += p.essenceSpread;
+  getSettings(): RoomSettings {
+    return { ...this.settings };
+  }
+
+  patchRoomSettings(patch: Partial<RoomSettings>): void {
+    const merged = { ...this.settings, ...patch };
+    if (merged.roomNote !== undefined) {
+      merged.roomNote = merged.roomNote.slice(0, 200);
     }
-    return s;
+    this.settings = RoomSettingsSchema.parse(merged);
   }
 
   size(): number {
@@ -96,7 +57,6 @@ export class Room {
     return n;
   }
 
-  /** Total record count, including soft-disconnected players awaiting GC. */
   totalRecords(): number {
     return this.players.size;
   }
@@ -109,13 +69,10 @@ export class Room {
     return [...this.players.values()];
   }
 
-  addPlayer(
-    p: Omit<PlayerState, 'essenceSpread' | 'lastBurstMs' | 'disconnected' | 'disconnectedAt'>,
-  ): PlayerState {
+  addPlayer(p: Omit<PlayerState, 'disconnected' | 'disconnectedAt'>): PlayerState {
     const state: PlayerState = {
       ...p,
-      essenceSpread: 0,
-      lastBurstMs: 0,
+      position: clampToPlayVolume(p.position),
       disconnected: false,
       disconnectedAt: 0,
     };
@@ -123,33 +80,22 @@ export class Room {
     return state;
   }
 
-  /**
-   * Mark a player as disconnected without dropping their record. Snapshots
-   * will hide them; `pruneDisconnected` will finalize the removal once the
-   * grace window expires.
-   */
   markDisconnected(playerId: string, now: number = Date.now()): boolean {
-    const p = this.players.get(playerId);
-    if (!p || p.disconnected) return false;
-    p.disconnected = true;
-    p.disconnectedAt = now;
+    const pl = this.players.get(playerId);
+    if (!pl || pl.disconnected) return false;
+    pl.disconnected = true;
+    pl.disconnectedAt = now;
     return true;
   }
 
-  /**
-   * Try to re-attach a previously-known player by id. Returns the player on
-   * success (and clears the disconnect flag), or `undefined` if no record
-   * exists. Works for both already-connected and soft-disconnected records.
-   */
   tryReattach(playerId: string): PlayerState | undefined {
-    const p = this.players.get(playerId);
-    if (!p) return undefined;
-    p.disconnected = false;
-    p.disconnectedAt = 0;
-    return p;
+    const pl = this.players.get(playerId);
+    if (!pl) return undefined;
+    pl.disconnected = false;
+    pl.disconnectedAt = 0;
+    return pl;
   }
 
-  /** Drop disconnected records older than their grace window. */
   pruneDisconnected(opts: {
     now?: number;
     botGraceMs: number;
@@ -157,104 +103,74 @@ export class Room {
   }): string[] {
     const now = opts.now ?? Date.now();
     const dropped: string[] = [];
-    for (const p of this.players.values()) {
-      if (!p.disconnected) continue;
-      const grace = p.isBot ? opts.botGraceMs : opts.humanGraceMs;
-      if (now - p.disconnectedAt >= grace) {
-        this.players.delete(p.id);
-        dropped.push(p.id);
+    for (const pl of this.players.values()) {
+      if (!pl.disconnected) continue;
+      const grace = pl.isBot ? opts.botGraceMs : opts.humanGraceMs;
+      if (now - pl.disconnectedAt >= grace) {
+        this.players.delete(pl.id);
+        dropped.push(pl.id);
       }
     }
     return dropped;
   }
 
-  /** Hard remove (used by tests; net.ts prefers `markDisconnected`). */
   removePlayer(playerId: string): boolean {
     return this.players.delete(playerId);
   }
 
   setPosition(playerId: string, position: Vec3): boolean {
-    const p = this.players.get(playerId);
-    if (!p || p.disconnected) return false;
-    p.position = clampToPlayVolume(position);
+    const pl = this.players.get(playerId);
+    if (!pl || pl.disconnected) return false;
+    pl.position = clampToPlayVolume(position);
     return true;
   }
 
-  applyBurst(playerId: string, intensity: number, now: number = Date.now()): BurstResult {
-    const p = this.players.get(playerId);
-    if (!p || p.disconnected) return { ok: false, reason: 'unknown_player', essenceSpreadAdded: 0 };
-    if (now - p.lastBurstMs < config.bursts.cooldownMs) {
-      return { ok: false, reason: 'cooldown', essenceSpreadAdded: 0 };
-    }
-    p.lastBurstMs = now;
-    const clampedIntensity = Math.min(1, Math.max(0, intensity));
-    const added =
-      config.bursts.essenceSpreadPerBurst * (0.5 + 0.5 * clampedIntensity);
-    p.essenceSpread += added;
-    return { ok: true, essenceSpreadAdded: added };
-  }
-
-  /**
-   * Per-tick passive simulation: slow essence spread drip per active player.
-   * Returns elapsed seconds for any caller that wants to batch derived effects.
-   */
   tick(now: number = Date.now()): number {
     const dt = (now - this.lastTickMs) / 1000;
     this.lastTickMs = now;
-    if (dt <= 0) return 0;
-
-    for (const p of this.players.values()) {
-      if (p.disconnected) continue;
-      p.essenceSpread += config.passive.essenceSpreadPerSec * dt;
-    }
+    this.tickCount++;
     return dt;
   }
 
   snapshot(now: number = Date.now()): RoomSnapshot {
     const visible: PlayerState[] = [];
-    for (const p of this.players.values()) if (!p.disconnected) visible.push(p);
-    const aggregate = this.sumEssenceSpread();
+    for (const pl of this.players.values()) if (!pl.disconnected) visible.push(pl);
     return {
       serverTime: now,
-      planetRadius: planetRadiusFromEssenceSpread(aggregate),
-      players: visible.map((p) => ({
-        id: p.id,
-        name: p.name,
-        isBot: p.isBot,
-        tier: p.tier,
-        position: p.position,
-        essenceSpread: p.essenceSpread,
+      tick: this.tickCount,
+      settings: { ...this.settings },
+      players: visible.map((pl) => ({
+        id: pl.id,
+        name: pl.name,
+        isBot: pl.isBot,
+        position: pl.position,
       })),
     };
   }
 
-  /** Plain JSON for the dev persistence file. Disconnected records are kept. */
   serialize(): RoomData {
     return {
       id: this.id,
+      settings: { ...this.settings },
       players: this.list(),
     };
   }
 
-  /** Rehydrate a room from persisted JSON. Marks every player disconnected so
-   *  they only become visible once they reconnect with their resumeToken. */
-  static restore(data: RoomData & { totalDust?: number }, now: number = Date.now()): Room {
+  static restore(data: RoomData): Room {
     const room = new Room(data.id);
-    const rawPlayers = (data as { players?: PersistedPlayerRaw[] }).players ?? [];
-    for (const raw of rawPlayers) {
+    room.settings = RoomSettingsSchema.parse(data.settings ?? DEFAULT_ROOM_SETTINGS);
+    const now = Date.now();
+    for (const raw of data.players ?? []) {
       if (!raw?.id) continue;
-      const p: PlayerState = {
+      const pl: PlayerState = {
         id: raw.id,
         name: typeof raw.name === 'string' ? raw.name : raw.id,
         isBot: !!raw.isBot,
-        tier: raw.tier ?? 'dust',
-        position: raw.position ?? { x: 0, y: 0, z: 0 },
-        essenceSpread: migrateEssenceSpread(raw),
-        lastBurstMs: 0,
+        position: clampToPlayVolume(raw.position ?? { x: 0, y: 0, z: 0 }),
         disconnected: true,
         disconnectedAt: now,
       };
-      room.players.set(p.id, p);
+      room.players.set(pl.id, pl);
     }
     return room;
   }

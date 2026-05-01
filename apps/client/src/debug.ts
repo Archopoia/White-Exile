@@ -1,52 +1,34 @@
 /**
- * Lightweight client-side debug logger.
- *
- * Disabled by default; opt in via `?debug=1`, `localStorage.tutelaryDebug=1`,
- * or `VITE_DEBUG=1`. When disabled, only **errors** print; info/warn/debug are
- * suppressed so the console stays readable while `[tutelary-input]` covers
- * local player actions.
+ * Client debug logger. Opt in: ?debug=1 or localStorage.rtRoomDebug=1
  */
+import { inputLog } from './inputLog.js';
 
-type Level = 'debug' | 'info' | 'warn' | 'error';
-
-function readFlag(): boolean {
-  if (import.meta.env.VITE_DEBUG === '1') return true;
+function debugEnabled(): boolean {
   try {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('debug') === '1') return true;
-    if (window.localStorage.getItem('tutelaryDebug') === '1') return true;
+    const q = new URLSearchParams(window.location.search).get('debug');
+    if (q === '1' || q === 'true') return true;
+    if (window.localStorage.getItem('rtRoomDebug') === '1') return true;
   } catch {
-    /* ignore: SSR or restricted access */
+    /* ignore */
   }
   return false;
 }
 
-const enabled = readFlag();
-const PREFIX = '[tutelary-client]';
-
-function emit(level: Level, evt: string, data?: Record<string, unknown>): void {
-  // Quiet by default: only errors always print. Opt in for info/warn/debug.
-  if (!enabled && level !== 'error') return;
-  const payload = data ? { evt, ...data } : { evt };
-  switch (level) {
-    case 'error':
-      console.error(PREFIX, payload);
-      break;
-    case 'warn':
-      console.warn(PREFIX, payload);
-      break;
-    case 'info':
-      console.info(PREFIX, payload);
-      break;
-    default:
-      console.log(PREFIX, payload);
-  }
-}
+const PREFIX = '[rt-room-client]';
 
 export const debugLogger = {
-  enabled,
-  debug: (evt: string, data?: Record<string, unknown>) => emit('debug', evt, data),
-  info: (evt: string, data?: Record<string, unknown>) => emit('info', evt, data),
-  warn: (evt: string, data?: Record<string, unknown>) => emit('warn', evt, data),
-  error: (evt: string, data?: Record<string, unknown>) => emit('error', evt, data),
+  debug(msg: string, data?: Record<string, unknown>) {
+    if (!debugEnabled()) return;
+    inputLog(`${PREFIX} ${msg}`, data ?? {});
+  },
+  info(msg: string, data?: Record<string, unknown>) {
+    if (!debugEnabled()) return;
+    inputLog(`${PREFIX} ${msg}`, data ?? {});
+  },
+  warn(msg: string, data?: Record<string, unknown>) {
+    console.warn(PREFIX, msg, data ?? {});
+  },
+  error(msg: string, data?: Record<string, unknown>) {
+    console.error(PREFIX, msg, data ?? {});
+  },
 };

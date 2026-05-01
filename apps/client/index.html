@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Tutelary - Dust to Dominion</title>
+    <title>Realtime room</title>
     <link rel="icon" href="data:," />
     <style>
       :root {
@@ -84,19 +84,17 @@
     </style>
   </head>
   <body>
-    <canvas id="scene" tabindex="0" aria-label="Game view — click to focus, then WASD to move"></canvas>
+    <canvas id="scene" tabindex="0" aria-label="View — click to focus, then WASD to move, Space and Shift for up and down"></canvas>
     <div class="hud hud--top-left" id="hud-stats">
       <div><span id="hud-status-dot" class="status-dot"></span><span id="hud-status">connecting...</span></div>
-      <div>Essence spread <strong id="hud-essence-spread">0</strong></div>
-      <div>Planet radius <strong id="hud-radius">0</strong></div>
-      <div>Spirits <strong id="hud-players">0</strong></div>
+      <div>Room note <strong id="hud-room-note">—</strong></div>
+      <div>Players <strong id="hud-players">0</strong> · tick <strong id="hud-tick">0</strong></div>
     </div>
     <div class="hud hud--top-right" id="hud-name">
-      <div>You: <strong id="hud-display-name">spirit</strong></div>
-      <div style="opacity: 0.7">tier <strong id="hud-tier">dust</strong></div>
+      <div>You: <strong id="hud-display-name">guest</strong></div>
     </div>
     <div class="hud hud--bottom-center">
-      WASD to walk the planet. Click for an essence burst (passive spread still ticks on the server).
+      Click the view to focus. WASD moves; Space and Shift move up and down. ESC opens the session panel.
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

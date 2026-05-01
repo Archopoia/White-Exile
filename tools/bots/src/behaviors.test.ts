@@ -18,18 +18,21 @@ describe('bot behaviors', () => {
     }
   });
 
-  it('clicker eventually emits a burst', () => {
-    const behavior = createBehavior('clicker', mulberry32(1));
-    let bursts = 0;
-    for (let i = 0; i < 200; i++) {
-      const out = behavior.tick(0.1, {
-        rng: mulberry32(i),
-        botId: 0,
-        snapshot: null,
-        elapsed: i * 0.1,
-      });
-      if (out.burst) bursts++;
-    }
-    expect(bursts).toBeGreaterThan(0);
+  it('drifter keeps updating position over time', () => {
+    const behavior = createBehavior('drifter', mulberry32(1));
+    const a = behavior.tick(0.1, {
+      rng: mulberry32(1),
+      botId: 0,
+      snapshot: null,
+      elapsed: 0,
+    }).position;
+    const b = behavior.tick(0.5, {
+      rng: mulberry32(2),
+      botId: 0,
+      snapshot: null,
+      elapsed: 0.5,
+    }).position;
+    const moved = (a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2;
+    expect(moved).toBeGreaterThan(1e-6);
   });
 });

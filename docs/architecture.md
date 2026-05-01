@@ -1,21 +1,19 @@
 # Architecture
 
-## High-level
+## Overview
 
 ```mermaid
 flowchart LR
-  Browser[Human Browser]
-  BotProc[Bot Process]
-  Fastify[Fastify HTTP and health]
+  Browser[Browser client]
+  BotProc[Bot process]
+  Fastify[Fastify HTTP]
   IO[Socket.io]
-  Room[Room State]
-  Sim[Tick Loop]
-  Shared[packages shared]
-  Browser -->|websocket| IO
-  BotProc -->|websocket| IO
+  Room[Room state]
+  Shared["@realtime-room/shared"]
+  Browser -->|WebSocket| IO
+  BotProc -->|WebSocket| IO
   Fastify --- IO
   IO --> Room
-  Sim --> Room
   Shared -.->|Zod schemas| Browser
   Shared -.->|Zod schemas| IO
   Shared -.->|Zod schemas| BotProc
@@ -23,51 +21,30 @@ flowchart LR
 
 ## Authority
 
-The server owns:
-
-- per-player **`essenceSpread`** (cumulative spread from bursts + passive), **`tier`**, **`position`** (clamped to a play volume)
-- **`planetRadius`** each snapshot: pure function of the **sum of all players’ `essenceSpread`** in the room (including soft-disconnected records until pruned)
-- burst cooldowns and rate limits
-
-Clients send **intents** (`cursorMove`, `dropBurst`); the server validates payloads with Zod, applies cooldowns and rate limits, and broadcasts authoritative `RoomSnapshot` and burst events. The client never decides essence spread amounts.
+The server owns player records (`id`, `displayName`, `isBot`, `position` clamped to the play volume), **room settings** (e.g. shared room note), and the monotonic **tick** counter included in each snapshot. Clients send **intents** only (`move`, `roomSettingsPatch`); payloads are validated with Zod before mutating room state.
 
 ## Wire protocol
 
-The single source of truth lives in [`packages/shared/src/protocol.ts`](../packages/shared/src/protocol.ts):
+Canonical definitions: [`packages/shared/src/protocol.ts`](../packages/shared/src/protocol.ts).
 
-- `PROTOCOL_VERSION` — bumped on breaking changes; mismatched clients are rejected on hello.
-- `EVT.client.*` / `EVT.server.*` — typed event-name constants.
-- Zod schemas exported alongside `type X = z.infer<typeof X>`.
-
-```text
-client.hello                  -> server.welcome | server.error(protocol_mismatch)
-client.intent.cursorMove       (intent only)
-client.intent.dropBurst        -> server.event.burst (broadcast) | server.error(rate_limit)
-                              <- server.snapshot.roomState (broadcast every tick)
-```
+- `PROTOCOL_VERSION` — increment on breaking wire changes; hello rejects mismatches.
+- `EVT.client.*` / `EVT.server.*` — typed event names.
+- Typical flow: `client.hello` → `server.welcome` + `server.snapshot.roomState` → streaming `client.intent.move` and periodic `server.snapshot.roomState`.
 
 ## Tick loop
 
-`apps/server/src/net.ts` schedules a `setInterval` at `TICK_HZ` (default 12 Hz). Each tick:
+`apps/server/src/net.ts` schedules `setInterval` at `TICK_HZ` (default 12). Each tick: `Room.tick()`, build `RoomSnapshot`, broadcast to the room. Periodic structured logs summarize player count and tick.
 
-1. `Room.tick()` advances passive essence spread for connected players.
-2. A `RoomSnapshot` is built and broadcast.
-3. Every `tickHz * 10` ticks the server emits a `room.tick` log line summarizing `essenceSpreadSum`, `planetRadius`, and player count for low-frequency observability.
+## Client
 
-## Rendering (client)
+`apps/client/src/scene.ts` renders a minimal Three.js world (grid, spheres). `net.ts` validates snapshots with the shared schema. `options.ts` drives the ESC session UI for room settings patches.
 
-`apps/client/src/scene.ts` runs a Three.js loop:
+## Dev persistence
 
-- Icosphere planet, scaled by `snap.planetRadius`.
-- Additive atmosphere shell.
-- Starfield (1200 points).
-- Pooled particle field (max 6144) with simple gravity toward origin.
-- Local spirit walks the planet in surface space; remotes follow snapshots.
-- Remote spirits added/removed from snapshots.
+When enabled (non-production by default), `apps/server/src/persistence.ts` writes `Room.serialize()` to JSON on an interval and on shutdown so `tsx watch` restarts keep soft-disconnected records until pruned.
 
-## Repository conventions
+## Conventions
 
-- **Always-applied rules**: see [`.cursor/rules/`](../.cursor/rules/).
-- **Strict TypeScript**: `noUncheckedIndexedAccess`, no `any`.
-- **One canonical name per concept**: `essenceSpread`, `spiritTier`. Update everywhere on rename (see `migration-and-terminology` agent).
-- **No deprecated event aliases** unless the team explicitly approves.
+- Strict TypeScript, no `any`.
+- One canonical name per concept across packages.
+- Player-visible copy stays short and non-technical (see `.cursor/rules/player-facing-copy.mdc`).

@@ -1,11 +1,6 @@
 /**
- * Dev-only Room persistence.
- *
- * Saves/loads the authoritative Room state as JSON to `config.devPersistence.path`
- * so player records and soft-disconnected slots waiting
- * to resume) survives `tsx watch` restarts and graceful shutdowns.
- *
- * Disabled in production by config; this is purely a development convenience.
+ * Dev-only room persistence: JSON snapshot under config.devPersistence.path.
+ * Disabled in production unless explicitly enabled.
  */
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
@@ -31,7 +26,6 @@ export async function loadRoomIfPresent(roomId: string): Promise<Room | null> {
       {
         evt: 'persistence.loaded',
         path,
-        essenceSpreadSum: room.sumEssenceSpread().toFixed(2),
         records: room.totalRecords(),
       },
       'restored room from dev state',
@@ -43,10 +37,6 @@ export async function loadRoomIfPresent(roomId: string): Promise<Room | null> {
   }
 }
 
-/**
- * Atomic write: serialize → temp file → rename. Avoids corrupted files when
- * the process is killed mid-write.
- */
 export async function saveRoom(room: Room): Promise<void> {
   if (!config.devPersistence.enabled) return;
   const path = absolutePath();

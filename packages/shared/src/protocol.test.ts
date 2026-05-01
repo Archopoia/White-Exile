@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ClientCursorMoveSchema,
-  ClientDropBurstSchema,
   ClientHelloSchema,
+  ClientMoveSchema,
+  ClientRoomSettingsPatchSchema,
   PROTOCOL_VERSION,
   RoomSnapshotSchema,
   ServerWelcomeSchema,
@@ -19,10 +19,10 @@ describe('ClientHelloSchema', () => {
   it('accepts a valid hello', () => {
     const parsed = ClientHelloSchema.parse({
       protocolVersion: PROTOCOL_VERSION,
-      displayName: 'Spirit',
+      displayName: 'Explorer',
       isBot: false,
     });
-    expect(parsed.displayName).toBe('Spirit');
+    expect(parsed.displayName).toBe('Explorer');
   });
 
   it('rejects oversized display names', () => {
@@ -37,7 +37,7 @@ describe('ClientHelloSchema', () => {
   it('rejects mismatched protocol versions', () => {
     const result = ClientHelloSchema.safeParse({
       protocolVersion: 999,
-      displayName: 'Spirit',
+      displayName: 'Explorer',
     });
     expect(result.success).toBe(false);
   });
@@ -45,35 +45,37 @@ describe('ClientHelloSchema', () => {
   it('defaults isBot to false', () => {
     const parsed = ClientHelloSchema.parse({
       protocolVersion: PROTOCOL_VERSION,
-      displayName: 'Spirit',
+      displayName: 'Explorer',
     });
     expect(parsed.isBot).toBe(false);
   });
 });
 
-describe('ClientCursorMoveSchema', () => {
+describe('ClientMoveSchema', () => {
   it('accepts finite vectors', () => {
-    const parsed = ClientCursorMoveSchema.parse({
+    const parsed = ClientMoveSchema.parse({
       position: { x: 1, y: 2, z: 3 },
     });
     expect(parsed.position.y).toBe(2);
   });
 
   it('rejects NaN coordinates', () => {
-    const result = ClientCursorMoveSchema.safeParse({
+    const result = ClientMoveSchema.safeParse({
       position: { x: 1, y: Number.NaN, z: 3 },
     });
     expect(result.success).toBe(false);
   });
 });
 
-describe('ClientDropBurstSchema', () => {
-  it('clamps intensity within range', () => {
-    const result = ClientDropBurstSchema.safeParse({
-      position: { x: 0, y: 0, z: 0 },
-      intensity: 5,
-    });
-    expect(result.success).toBe(false);
+describe('ClientRoomSettingsPatchSchema', () => {
+  it('accepts partial settings', () => {
+    const parsed = ClientRoomSettingsPatchSchema.parse({ roomNote: 'Hello' });
+    expect(parsed.roomNote).toBe('Hello');
+  });
+
+  it('accepts empty patch', () => {
+    const parsed = ClientRoomSettingsPatchSchema.parse({});
+    expect(parsed).toEqual({});
   });
 });
 
@@ -108,7 +110,8 @@ describe('Server schemas', () => {
   it('room snapshot accepts an empty player list', () => {
     const parsed = RoomSnapshotSchema.parse({
       serverTime: 0,
-      planetRadius: 0.5,
+      tick: 0,
+      settings: { roomNote: '' },
       players: [],
     });
     expect(parsed.players).toEqual([]);

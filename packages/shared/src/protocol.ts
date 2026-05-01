@@ -1,17 +1,14 @@
 /**
- * Tutelary wire protocol.
+ * Wire protocol for the realtime room skeleton.
  *
- * Single source of truth for client <-> server messages. Both apps and tools
- * import from here; never duplicate event names or payload shapes elsewhere.
- *
- * Versioned envelope: bump PROTOCOL_VERSION on breaking changes; the server
- * rejects mismatched clients on the join handshake.
+ * Versioned handshake: bump PROTOCOL_VERSION on breaking changes; the server
+ * rejects mismatched clients on join.
  */
 import { z } from 'zod';
 
-export const PROTOCOL_VERSION = 2 as const;
+export const PROTOCOL_VERSION = 1 as const;
 
-/** Compact 3D vector. Floats are clamped server-side to a play volume. */
+/** Compact 3D vector. Coordinates are clamped server-side to the play volume. */
 export const Vec3Schema = z.object({
   x: z.number().finite(),
   y: z.number().finite(),
@@ -19,17 +16,19 @@ export const Vec3Schema = z.object({
 });
 export type Vec3 = z.infer<typeof Vec3Schema>;
 
-export const SpiritTierSchema = z.union([
-  z.literal('dust'),
-  z.literal('water'),
-  z.literal('fire'),
-  z.literal('air'),
-  z.literal('verdant'),
-]);
-export type SpiritTier = z.infer<typeof SpiritTierSchema>;
+/** Authoritative room-level fields any client may display. */
+export const RoomSettingsSchema = z.object({
+  /** Short label shown in the HUD for everyone in the session. */
+  roomNote: z.string().max(200).default(''),
+});
+export type RoomSettings = z.infer<typeof RoomSettingsSchema>;
+
+export const DEFAULT_ROOM_SETTINGS: RoomSettings = {
+  roomNote: '',
+};
 
 /* -------------------------------------------------------------------------- */
-/* Client -> Server                                                            */
+/* Client -> Server                                                           */
 /* -------------------------------------------------------------------------- */
 
 export const ClientHelloSchema = z.object({
@@ -37,28 +36,23 @@ export const ClientHelloSchema = z.object({
   displayName: z.string().min(1).max(24),
   isBot: z.boolean().optional().default(false),
   /**
-   * Stable session token from a prior run. If present and the server still
-   * remembers a player with this id (live or in disconnect grace), state is
-   * re-attached instead of allocating a fresh player record. Lets a browser
-   * refresh, Vite HMR, or `tsx watch` server restart preserve world state.
+   * Stable session token. If the server still holds this player (live or
+   * within the disconnect grace window), the same record is reattached.
    */
   resumeToken: z.string().min(1).max(64).optional(),
 });
 export type ClientHello = z.infer<typeof ClientHelloSchema>;
 
-export const ClientCursorMoveSchema = z.object({
+export const ClientMoveSchema = z.object({
   position: Vec3Schema,
 });
-export type ClientCursorMove = z.infer<typeof ClientCursorMoveSchema>;
+export type ClientMove = z.infer<typeof ClientMoveSchema>;
 
-export const ClientDropBurstSchema = z.object({
-  position: Vec3Schema,
-  intensity: z.number().min(0).max(1).default(1),
-});
-export type ClientDropBurst = z.infer<typeof ClientDropBurstSchema>;
+export const ClientRoomSettingsPatchSchema = RoomSettingsSchema.partial();
+export type ClientRoomSettingsPatch = z.infer<typeof ClientRoomSettingsPatchSchema>;
 
 /* -------------------------------------------------------------------------- */
-/* Server -> Client                                                            */
+/* Server -> Client                                                           */
 /* -------------------------------------------------------------------------- */
 
 export const ServerWelcomeSchema = z.object({
@@ -67,9 +61,7 @@ export const ServerWelcomeSchema = z.object({
   roomId: z.string(),
   protocolVersion: z.literal(PROTOCOL_VERSION),
   tickHz: z.number().int().positive(),
-  /** Echo of `resumeToken`; client should persist this for next session. */
   resumeToken: z.string(),
-  /** True when the server reattached an existing player record. */
   resumed: z.boolean().optional().default(false),
 });
 export type ServerWelcome = z.infer<typeof ServerWelcomeSchema>;
@@ -78,26 +70,17 @@ export const PlayerSnapshotSchema = z.object({
   id: z.string(),
   name: z.string(),
   isBot: z.boolean(),
-  tier: SpiritTierSchema,
   position: Vec3Schema,
-  /** Cumulative essence this spirit has spread (bursts + passive); progression anchor. */
-  essenceSpread: z.number().nonnegative(),
 });
 export type PlayerSnapshot = z.infer<typeof PlayerSnapshotSchema>;
 
 export const RoomSnapshotSchema = z.object({
   serverTime: z.number().int().nonnegative(),
-  planetRadius: z.number().nonnegative(),
+  tick: z.number().int().nonnegative(),
+  settings: RoomSettingsSchema,
   players: z.array(PlayerSnapshotSchema),
 });
 export type RoomSnapshot = z.infer<typeof RoomSnapshotSchema>;
-
-export const ServerEventBurstSchema = z.object({
-  playerId: z.string(),
-  origin: Vec3Schema,
-  intensity: z.number().min(0).max(1),
-});
-export type ServerEventBurst = z.infer<typeof ServerEventBurstSchema>;
 
 export const ServerErrorSchema = z.object({
   code: z.union([
@@ -112,19 +95,18 @@ export const ServerErrorSchema = z.object({
 export type ServerError = z.infer<typeof ServerErrorSchema>;
 
 /* -------------------------------------------------------------------------- */
-/* Event name constants (typed strings)                                        */
+/* Event name constants                                                       */
 /* -------------------------------------------------------------------------- */
 
 export const EVT = {
   client: {
     hello: 'client.hello',
-    cursorMove: 'client.intent.cursorMove',
-    dropBurst: 'client.intent.dropBurst',
+    move: 'client.intent.move',
+    roomSettingsPatch: 'client.intent.roomSettingsPatch',
   },
   server: {
     welcome: 'server.welcome',
     snapshot: 'server.snapshot.roomState',
-    burst: 'server.event.burst',
     error: 'server.error',
   },
 } as const;
@@ -134,6 +116,6 @@ export type ServerEventName = (typeof EVT.server)[keyof typeof EVT.server];
 
 export const ClientEventPayloads = {
   [EVT.client.hello]: ClientHelloSchema,
-  [EVT.client.cursorMove]: ClientCursorMoveSchema,
-  [EVT.client.dropBurst]: ClientDropBurstSchema,
+  [EVT.client.move]: ClientMoveSchema,
+  [EVT.client.roomSettingsPatch]: ClientRoomSettingsPatchSchema,
 } as const;

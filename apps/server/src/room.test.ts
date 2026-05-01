@@ -6,7 +6,6 @@ function makePlayer(id: string) {
     id,
     name: `p_${id}`,
     isBot: false,
-    tier: 'dust' as const,
     position: { x: 0, y: 0, z: 0 },
   };
 }
@@ -20,30 +19,15 @@ describe('Room', () => {
     expect(room.list().map((p) => p.id).sort()).toEqual(['a', 'b']);
   });
 
-  it('applies bursts and increases player essence spread', () => {
+  it('snapshot lists visible players and settings', () => {
     const room = new Room('test');
     room.addPlayer(makePlayer('a'));
-    const result = room.applyBurst('a', 1, 1_000);
-    expect(result.ok).toBe(true);
-    expect(result.essenceSpreadAdded).toBeGreaterThan(0);
-    expect(room.get('a')?.essenceSpread).toBeCloseTo(result.essenceSpreadAdded);
-  });
-
-  it('rejects bursts within cooldown', () => {
-    const room = new Room('test');
-    room.addPlayer(makePlayer('a'));
-    expect(room.applyBurst('a', 1, 1_000).ok).toBe(true);
-    expect(room.applyBurst('a', 1, 1_010).ok).toBe(false);
-  });
-
-  it('snapshot includes derived planet radius from aggregate spread', () => {
-    const room = new Room('test');
-    room.addPlayer(makePlayer('a'));
-    room.applyBurst('a', 1, 1_000);
+    room.patchRoomSettings({ roomNote: 'Hi' });
     const snap = room.snapshot();
     expect(snap.players.length).toBe(1);
-    expect(snap.players[0]?.essenceSpread).toBeGreaterThan(0);
-    expect(snap.planetRadius).toBeGreaterThan(0);
+    expect(snap.players[0]?.id).toBe('a');
+    expect(snap.settings.roomNote).toBe('Hi');
+    expect(snap.tick).toBeGreaterThanOrEqual(0);
   });
 
   it('hides soft-disconnected players from snapshots and counts', () => {
@@ -59,13 +43,12 @@ describe('Room', () => {
   it('reattaches an existing record via tryReattach', () => {
     const room = new Room('test');
     room.addPlayer(makePlayer('a'));
-    room.applyBurst('a', 1, 1_000);
-    const spreadBefore = room.get('a')?.essenceSpread ?? 0;
+    room.setPosition('a', { x: 1, y: 2, z: 3 });
     room.markDisconnected('a', 2_000);
     const reattached = room.tryReattach('a');
     expect(reattached?.id).toBe('a');
     expect(reattached?.disconnected).toBe(false);
-    expect(room.get('a')?.essenceSpread).toBe(spreadBefore);
+    expect(room.get('a')?.position.x).toBeCloseTo(1, 5);
   });
 
   it('prunes only after the grace window elapses', () => {
@@ -98,16 +81,16 @@ describe('Room', () => {
     expect(room.totalRecords()).toBe(0);
   });
 
-  it('serializes and restores players with essence spread', () => {
+  it('serializes and restores players', () => {
     const room = new Room('test');
     room.addPlayer(makePlayer('a'));
-    room.applyBurst('a', 1, 1_000);
+    room.patchRoomSettings({ roomNote: 'Saved' });
     const data = room.serialize();
     const restored = Room.restore(data);
     expect(restored.totalRecords()).toBe(1);
     expect(restored.snapshot().players).toEqual([]);
-    const reattached = restored.tryReattach('a');
-    expect(reattached?.essenceSpread).toBeGreaterThanOrEqual(0);
+    restored.tryReattach('a');
     expect(restored.snapshot().players.length).toBe(1);
+    expect(restored.getSettings().roomNote).toBe('Saved');
   });
 });

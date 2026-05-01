@@ -1,11 +1,7 @@
 /**
- * Bots CLI.
+ * Bots CLI: real Socket.io clients for load and protocol checks.
  *
- * Usage:
- *   pnpm dev:bots -- --count 20 --mix wanderer,orbiter,clicker --seed 42 --url http://localhost:3001
- *
- * Bots are real Socket.io clients (not server-injected), so they exercise
- * the same validation, rate limiting, and logging paths a human would.
+ *   pnpm dev:bots -- --count 12 --mix wanderer,orbiter,drifter,afk --seed 42
  */
 import pino from 'pino';
 import { ALL_BEHAVIORS, createBehavior, type BehaviorName } from './behaviors.js';
@@ -39,14 +35,11 @@ function parseArgs(argv: string[]): ParsedArgs {
   }
 
   const count = Number(args.get('count') ?? '8');
-  // Accept commas, spaces, or both - some shells (PowerShell) eat commas.
   const mixRaw = (args.get('mix') ?? ALL_BEHAVIORS.join(','))
     .split(/[\s,]+/)
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
-  const mix = mixRaw.filter((m): m is BehaviorName =>
-    (ALL_BEHAVIORS as string[]).includes(m),
-  );
+  const mix = mixRaw.filter((m): m is BehaviorName => (ALL_BEHAVIORS as string[]).includes(m));
   if (mix.length === 0) mix.push('wanderer');
   const seed = Number(args.get('seed') ?? Date.now());
   const url = args.get('url') ?? process.env.SERVER_URL ?? 'http://localhost:3001';
@@ -59,7 +52,7 @@ async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const logger = pino({
     level: process.env.LOG_LEVEL ?? 'info',
-    base: { svc: 'tutelary-bots' },
+    base: { svc: 'rt-room-bots' },
     transport: process.stdout.isTTY
       ? {
           target: 'pino-pretty',
@@ -78,8 +71,6 @@ async function main(): Promise<void> {
     const rng = mulberry32((args.seed + i * 1013904223) >>> 0);
     const behavior = createBehavior(behaviorName, rng);
     const name = `BOT_${behaviorName}_${i.toString().padStart(2, '0')}`;
-    // Stable per-(seed, botId) so a `tsx watch` server restart re-attaches
-    // the same bot record (combined with server dev persistence).
     const resumeToken = `bot-${args.seed}-${i}`;
     const bot = new Bot({
       url: args.url,
@@ -108,6 +99,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  console.error('[tutelary-bots] fatal', err);
+  console.error('[rt-room-bots] fatal', err);
   process.exit(1);
 });

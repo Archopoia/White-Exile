@@ -1,36 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  RADIUS_BASE,
-  RADIUS_MAX,
-  clamp,
-  clampToPlayVolume,
-  distanceSquared3,
-  planetRadiusFromEssenceSpread,
-} from './math.js';
-
-describe('planetRadiusFromEssenceSpread', () => {
-  it('returns the base radius for zero or negative spread', () => {
-    expect(planetRadiusFromEssenceSpread(0)).toBe(RADIUS_BASE);
-    expect(planetRadiusFromEssenceSpread(-5)).toBe(RADIUS_BASE);
-  });
-
-  it('grows monotonically with aggregated spread', () => {
-    const a = planetRadiusFromEssenceSpread(10);
-    const b = planetRadiusFromEssenceSpread(100);
-    const c = planetRadiusFromEssenceSpread(1_000);
-    expect(a).toBeLessThan(b);
-    expect(b).toBeLessThan(c);
-  });
-
-  it('caps growth at RADIUS_MAX', () => {
-    expect(planetRadiusFromEssenceSpread(1e18)).toBe(RADIUS_MAX);
-  });
-
-  it('handles non-finite input by returning the base', () => {
-    expect(planetRadiusFromEssenceSpread(Number.NaN)).toBe(RADIUS_BASE);
-    expect(planetRadiusFromEssenceSpread(Number.POSITIVE_INFINITY)).toBe(RADIUS_BASE);
-  });
-});
+import { clamp, clampToPlayVolume, distanceSquared3, PLAY_VOLUME_RADIUS } from './math.js';
 
 describe('clamp', () => {
   it('clamps to the range', () => {
@@ -60,6 +29,6 @@ describe('clampToPlayVolume', () => {
     const far = { x: 5000, y: 0, z: 0 };
     const clamped = clampToPlayVolume(far);
     const len = Math.hypot(clamped.x, clamped.y, clamped.z);
-    expect(len).toBeCloseTo(1024, 3);
+    expect(len).toBeCloseTo(PLAY_VOLUME_RADIUS, 3);
   });
 });

@@ -1,31 +1,6 @@
 /**
- * Shared pure math.
- *
- * No imports of network or runtime code; safe to use on server, client, and
- * bots. Tested in math.test.ts.
+ * Shared pure math (no I/O). Safe on server, client, and tooling.
  */
-
-/**
- * Planet radius derived from the sum of per-player essence spread in the room.
- *
- * Radius scales as (aggregate spread) ^ 0.6, smoothed and clamped so the planet
- * is visible from the first contribution and does not overflow the scene
- * before art polish.
- */
-export const RADIUS_BASE = 0.5;
-export const RADIUS_SCALE = 0.25;
-export const RADIUS_EXPONENT = 0.6;
-export const RADIUS_MAX = 200;
-
-/**
- * @param aggregatedEssenceSpread — nonnegative sum of per-player essence spread (room aggregate).
- */
-export function planetRadiusFromEssenceSpread(aggregatedEssenceSpread: number): number {
-  if (!Number.isFinite(aggregatedEssenceSpread) || aggregatedEssenceSpread <= 0) return RADIUS_BASE;
-  const grown = RADIUS_BASE + RADIUS_SCALE * aggregatedEssenceSpread ** RADIUS_EXPONENT;
-  if (!Number.isFinite(grown) || grown <= RADIUS_BASE) return RADIUS_BASE;
-  return Math.min(grown, RADIUS_MAX);
-}
 
 /** Clamp a value to a closed range. */
 export function clamp(value: number, min: number, max: number): number {
@@ -34,7 +9,7 @@ export function clamp(value: number, min: number, max: number): number {
   return value;
 }
 
-/** Squared euclidean distance in 3D. Avoids sqrt where only ordering matters. */
+/** Squared euclidean distance in 3D. */
 export function distanceSquared3(
   ax: number,
   ay: number,
@@ -51,7 +26,7 @@ export function distanceSquared3(
 
 export const PLAY_VOLUME_RADIUS = 1024;
 
-/** Clamp a 3D point to the playable cosmic volume around the planet. */
+/** Clamp a 3D point to a sphere of radius PLAY_VOLUME_RADIUS around the origin. */
 export function clampToPlayVolume<T extends { x: number; y: number; z: number }>(
   point: T,
 ): { x: number; y: number; z: number } {

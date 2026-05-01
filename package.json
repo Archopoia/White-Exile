@@ -1,8 +1,8 @@
 {
-  "name": "tutelary-online",
+  "name": "realtime-room-skeleton",
   "private": true,
   "version": "0.0.0",
-  "description": "Tutelary - Dust to Dominion: shared 3D globe MMO clicker",
+  "description": "Authoritative multiplayer room skeleton (Fastify, Socket.io, Vite, shared Zod protocol)",
   "type": "module",
   "engines": {
     "node": ">=20.0.0"
@@ -10,11 +10,12 @@
   "packageManager": "pnpm@10.33.2",
   "scripts": {
     "build": "pnpm -r --filter './packages/**' --filter './apps/**' --filter './tools/**' build",
-    "dev:server": "pnpm --filter @tutelary/server dev",
-    "dev:client": "pnpm --filter @tutelary/client dev",
-    "dev:bots": "pnpm --filter @tutelary/bots start",
+    "dev:server": "pnpm --filter @realtime-room/server dev",
+    "dev:client": "pnpm --filter @realtime-room/client dev",
+    "dev:bots": "pnpm --filter @realtime-room/bots start",
+    "smoke:net": "pnpm --filter @realtime-room/bots smoke:net",
     "dev:all": "concurrently -n server,client -c blue,magenta \"pnpm dev:server\" \"pnpm dev:client\"",
-    "dev:full": "concurrently -n server,client,bots -c blue,magenta,yellow \"pnpm dev:server\" \"pnpm dev:client\" \"pnpm dev:bots -- --count 8 --mix wanderer,orbiter,clicker,afk\"",
+    "dev:full": "concurrently -n server,client,bots -c blue,magenta,yellow \"pnpm dev:server\" \"pnpm dev:client\" \"pnpm dev:bots -- --count 8 --mix wanderer,orbiter,drifter,afk\"",
     "lint": "eslint . --ext .ts,.tsx",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\"",
     "typecheck": "pnpm -r typecheck",
