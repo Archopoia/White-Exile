@@ -1,0 +1,29 @@
+{
+  "name": "@tutelary/server",
+  "version": "0.0.0",
+  "type": "module",
+  "private": true,
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fastify/cors": "^10.0.1",
+    "@tutelary/shared": "workspace:*",
+    "fastify": "^5.1.0",
+    "pino": "^9.5.0",
+    "pino-pretty": "^13.0.0",
+    "socket.io": "^4.8.1",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8",
+    "@types/node": "^22.9.0"
+  }
+}

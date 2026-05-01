@@ -1,0 +1,25 @@
+{
+  "name": "@tutelary/client",
+  "version": "0.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@tutelary/shared": "workspace:*",
+    "socket.io-client": "^4.8.1",
+    "three": "^0.171.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/three": "^0.171.0",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.3",
+    "vitest": "^2.1.8"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "name": "@tutelary/bots",
+  "version": "0.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@tutelary/shared": "workspace:*",
+    "pino": "^9.5.0",
+    "pino-pretty": "^13.0.0",
+    "socket.io-client": "^4.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tutelary - Dust to Dominion</title>
+    <link rel="icon" href="data:," />
+    <style>
+      :root {
+        color-scheme: dark;
+        --hud-fg: #e8eaff;
+        --hud-bg: rgba(8, 10, 28, 0.66);
+        --hud-border: rgba(120, 140, 220, 0.35);
+        --hud-shadow: 0 0 18px rgba(80, 100, 220, 0.25);
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        background: #000;
+        color: var(--hud-fg);
+        font-family:
+          'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, system-ui, sans-serif;
+        overflow: hidden;
+      }
+      #scene {
+        position: fixed;
+        inset: 0;
+      }
+      .hud {
+        position: fixed;
+        z-index: 10;
+        padding: 10px 14px;
+        background: var(--hud-bg);
+        border: 1px solid var(--hud-border);
+        border-radius: 10px;
+        box-shadow: var(--hud-shadow);
+        backdrop-filter: blur(6px);
+        font-size: 13px;
+        line-height: 1.4;
+        pointer-events: none;
+      }
+      .hud--top-left {
+        top: 12px;
+        left: 12px;
+      }
+      .hud--top-right {
+        top: 12px;
+        right: 12px;
+        text-align: right;
+      }
+      .hud--bottom-center {
+        bottom: 16px;
+        left: 50%;
+        transform: translateX(-50%);
+        text-align: center;
+        font-size: 12px;
+        opacity: 0.85;
+      }
+      .hud strong {
+        color: #ffe6a4;
+        font-weight: 600;
+      }
+      .status-dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        margin-right: 6px;
+        background: #f55;
+        box-shadow: 0 0 6px currentColor;
+      }
+      .status-dot.connected {
+        background: #6cf6a3;
+      }
+      .status-dot.connecting {
+        background: #ffe070;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="scene"></canvas>
+    <div class="hud hud--top-left" id="hud-stats">
+      <div><span id="hud-status-dot" class="status-dot"></span><span id="hud-status">connecting...</span></div>
+      <div>Essence <strong id="hud-essence">0</strong></div>
+      <div>Total dust <strong id="hud-total-dust">0</strong></div>
+      <div>Planet radius <strong id="hud-radius">0</strong></div>
+      <div>Spirits <strong id="hud-players">0</strong></div>
+    </div>
+    <div class="hud hud--top-right" id="hud-name">
+      <div>You: <strong id="hud-display-name">spirit</strong></div>
+      <div style="opacity: 0.7">tier <strong id="hud-tier">dust</strong></div>
+    </div>
+    <div class="hud hud--bottom-center">
+      Move mouse to drift. Click for burst. Click planet to extract Essence.
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

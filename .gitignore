@@ -1,0 +1,26 @@
+node_modules/
+dist/
+build/
+.turbo/
+.cache/
+
+# Logs
+logs/
+*.log
+*.ndjson
+
+# Env
+.env
+.env.*.local
+.env.local
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+!.vscode/extensions.json
+.idea/
+
+# Coverage
+coverage/
+*.lcov
