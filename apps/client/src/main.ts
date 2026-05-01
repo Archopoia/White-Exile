@@ -35,6 +35,7 @@ import { debugLogger } from './debug.js';
 import { type FxTier } from './flameLighting.js';
 import { updateHud, type HudState } from './hud.js';
 import { NetClient } from './net.js';
+import { getNprSettings, saveNprSettings, type NprSettings } from './nprSettings.js';
 import { createRoomOptionsOverlay, type RoomOptionsOverlay } from './options.js';
 import { RoomScene } from './scene.js';
 import type { SceneVisualSettings } from './scene.js';
@@ -77,6 +78,7 @@ function boot(): RunningClient {
     skyHazeMul,
     torchReachMul,
   };
+  const nprSettings = getNprSettings();
 
   const hud: HudState = {
     status: 'connecting',
@@ -107,6 +109,7 @@ function boot(): RunningClient {
     fxTier,
     fogEnabled,
     bootVisual,
+    nprSettings,
   );
   scene.setLocalRace(race);
   scene.setLabelMode(labelMode);
@@ -154,6 +157,10 @@ function boot(): RunningClient {
       scene.setDuneHeightScale(scale);
       net?.sendRoomSettingsPatch({ duneHeightScale: scale });
     },
+    onNprSettingsChange: (next: NprSettings) => {
+      saveNprSettings(next);
+      scene.setNprSettings(next);
+    },
     initial: {
       fxTier,
       labelMode,
@@ -166,6 +173,7 @@ function boot(): RunningClient {
       displayName,
       race,
       duneHeightScale: DEFAULT_WORLD_CONFIG.duneHeightScale,
+      nprSettings,
     },
   });
 

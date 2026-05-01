@@ -52,6 +52,8 @@ import {
   type OtherFlame,
   createFlameLighting,
 } from './flameLighting.js';
+import { createNprPost, type NprPostHandle } from './nprPost.js';
+import type { NprSettings } from './nprSettings.js';
 import { type DeadSky, createDeadSky } from './sky.js';
 import { makeTooltip, nextLabelMode, setTooltipText, type WorldLabelMode } from './tooltips.js';
 import {
@@ -167,6 +169,8 @@ export class RoomScene {
   private readonly groundTip: CSS2DObject;
   private readonly lighting: FlameLighting;
   private readonly sky: DeadSky;
+  private nprPost: NprPostHandle | null = null;
+  private nprEnabled = false;
   private readonly markers = new Map<string, { core: THREE.Mesh; label: CSS2DObject }>();
   private readonly followerMeshes = new Map<string, { mesh: THREE.Mesh; label: CSS2DObject }>();
   private readonly ruinMeshes = new Map<string, { mesh: THREE.Mesh; label: CSS2DObject }>();
@@ -211,6 +215,7 @@ export class RoomScene {
     initialTier: FxTier,
     fogEnabled = true,
     visual?: Partial<SceneVisualSettings>,
+    nprInitial?: NprSettings,
   ) {
     this.canvas = canvas;
     this.callbacks = callbacks;
@@ -305,6 +310,11 @@ export class RoomScene {
     this.groundTip.position.set(0, 0.95, 0);
     this.ground.add(this.groundTip);
 
+    if (nprInitial) {
+      this.nprPost = createNprPost(this.renderer, nprInitial);
+      this.nprEnabled = nprInitial.enabled;
+    }
+
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
     window.addEventListener('resize', this.onResize);
@@ -314,6 +324,15 @@ export class RoomScene {
     window.addEventListener('mouseup', this.onMouseUp);
     window.addEventListener('mousemove', this.onMouseMove);
     this.canvas.addEventListener('wheel', this.onWheel, { passive: false });
+  }
+
+  setNprSettings(s: NprSettings): void {
+    if (!this.nprPost) {
+      this.nprPost = createNprPost(this.renderer, s);
+    } else {
+      this.nprPost.setSettings(s);
+    }
+    this.nprEnabled = s.enabled;
   }
 
   setLocalPlayerId(id: string): void {
@@ -749,6 +768,7 @@ export class RoomScene {
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h, false);
     this.labelRenderer.setSize(w, h);
+    if (this.nprPost) this.nprPost.setSize(w, h);
   };
 
   private dunePhaseSeconds(): number {
@@ -831,7 +851,12 @@ export class RoomScene {
       this.refreshLabelTexts();
     }
 
-    this.renderer.render(this.scene, this.camera);
+    if (this.nprEnabled && this.nprPost) {
+      // Sky is hidden during the normal prepass to avoid sphere-vs-geometry edges.
+      this.nprPost.render(this.scene, this.camera, [this.sky.mesh]);
+    } else {
+      this.renderer.render(this.scene, this.camera);
+    }
     this.labelRenderer.render(this.scene, this.camera);
   };
 
@@ -903,6 +928,7 @@ export class RoomScene {
     this.groundMat.dispose();
     this.lighting.dispose();
     this.sky.dispose();
+    if (this.nprPost) this.nprPost.dispose();
     this.renderer.dispose();
   }
 }

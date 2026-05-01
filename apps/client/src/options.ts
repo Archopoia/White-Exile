@@ -4,6 +4,16 @@
  */
 import { FX_TIERS, LABEL_MODES, LABEL_MODE_LABEL } from './clientSettings.js';
 import { type FxTier } from './flameLighting.js';
+import {
+  applyPreset,
+  HATCH_PATTERNS,
+  HATCH_PATTERN_LABEL,
+  NPR_STYLES,
+  NPR_STYLE_LABEL,
+  type HatchPattern,
+  type NprSettings,
+  type NprStyle,
+} from './nprSettings.js';
 import { type WorldLabelMode } from './tooltips.js';
 
 import type { Race } from '@realtime-room/shared';
@@ -28,6 +38,8 @@ export interface RoomOptionsCallbacks {
   onDuneHeightScalePreview: (scale: number) => void;
   /** Sent on slider release; server rebroadcasts authoritative `worldConfig`. */
   onDuneHeightScaleCommit: (scale: number) => void;
+  /** Whole NPR settings bundle changed (preset switch or knob tweak). */
+  onNprSettingsChange: (settings: NprSettings) => void;
   initial: {
     readonly fxTier: FxTier;
     readonly labelMode: WorldLabelMode;
@@ -41,6 +53,7 @@ export interface RoomOptionsCallbacks {
     readonly displayName: string;
     readonly race: Race;
     readonly duneHeightScale: number;
+    readonly nprSettings: NprSettings;
   };
 }
 
@@ -56,7 +69,7 @@ const RACE_LABEL: Readonly<Record<Race, string>> = Object.freeze({
   'lumen-kin': 'Lumen Kin',
 });
 
-type TabId = 'general' | 'graphics' | 'help';
+type TabId = 'general' | 'graphics' | 'npr' | 'help';
 
 function compactRow(label: string, control: HTMLElement): HTMLElement {
   const row = document.createElement('div');
@@ -235,6 +248,200 @@ function makeFloatSlider(
   return { row: wrap, input: range };
 }
 
+function makeBoolToggle(label: string, value: boolean, onChange: (v: boolean) => void): HTMLElement {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;align-items:center;gap:8px;flex:1;min-width:0';
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.checked = value;
+  cb.setAttribute('aria-label', label);
+  cb.style.cssText = 'width:14px;height:14px;accent-color:#5b7cff;cursor:pointer;flex-shrink:0';
+  cb.addEventListener('change', () => onChange(cb.checked));
+  wrap.appendChild(cb);
+  return wrap;
+}
+
+function colorToHexString(c: readonly [number, number, number]): string {
+  const r = Math.round(Math.max(0, Math.min(1, c[0])) * 255);
+  const g = Math.round(Math.max(0, Math.min(1, c[1])) * 255);
+  const b = Math.round(Math.max(0, Math.min(1, c[2])) * 255);
+  return '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
+}
+
+function hexStringToColor(hex: string): [number, number, number] {
+  const m = /^#?([0-9a-fA-F]{6})$/.exec(hex.trim());
+  if (!m || m[1] === undefined) return [0, 0, 0];
+  const n = parseInt(m[1], 16);
+  return [((n >> 16) & 0xff) / 255, ((n >> 8) & 0xff) / 255, (n & 0xff) / 255];
+}
+
+function makeColorPicker(value: readonly [number, number, number], onChange: (c: [number, number, number]) => void): HTMLElement {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;align-items:center;gap:8px;flex:1;min-width:0';
+  const input = document.createElement('input');
+  input.type = 'color';
+  input.value = colorToHexString(value);
+  input.style.cssText = 'width:36px;height:22px;border:1px solid rgba(120,140,220,0.35);background:transparent;cursor:pointer;padding:0';
+  input.addEventListener('input', () => onChange(hexStringToColor(input.value)));
+  wrap.appendChild(input);
+  return wrap;
+}
+
+function makeDetails(summary: string, body: HTMLElement): HTMLElement {
+  const det = document.createElement('details');
+  det.style.cssText = 'margin-bottom:6px;border:1px solid rgba(120,140,220,0.18);border-radius:6px;background:rgba(20,24,36,0.6)';
+  const sm = document.createElement('summary');
+  sm.textContent = summary;
+  sm.style.cssText = 'cursor:pointer;padding:5px 8px;font-size:11px;font-weight:600;opacity:0.92';
+  det.appendChild(sm);
+  const inner = document.createElement('div');
+  inner.style.cssText = 'padding:6px 8px';
+  inner.appendChild(body);
+  det.appendChild(inner);
+  return det;
+}
+
+/**
+ * Builds the NPR tab body. The body is rebuilt whenever the style preset
+ * changes (so all knob values reflect the new preset values). Individual
+ * knob edits flip the active style to 'custom' and emit the patched bundle.
+ */
+function buildNprPanel(
+  initial: NprSettings,
+  emit: (next: NprSettings) => void,
+): HTMLElement {
+  const root = document.createElement('div');
+  root.setAttribute('role', 'tabpanel');
+  root.id = 'session-tab-npr';
+  root.style.display = 'none';
+
+  let current: NprSettings = initial;
+
+  const stylePicker = document.createElement('select');
+  stylePicker.setAttribute('aria-label', 'NPR style');
+  stylePicker.style.cssText =
+    'flex:1;min-width:0;padding:4px 6px;background:#0c0e18;color:#e8eaff;border:1px solid rgba(120,140,220,0.35);border-radius:6px;font:12px system-ui,sans-serif;cursor:pointer';
+  for (const s of NPR_STYLES) {
+    const o = document.createElement('option');
+    o.value = s;
+    o.textContent = NPR_STYLE_LABEL[s];
+    stylePicker.appendChild(o);
+  }
+  stylePicker.value = current.style;
+
+  const enableWrap = makeBoolToggle('NPR enabled', current.enabled, (v) => {
+    current = { ...current, enabled: v };
+    emit(current);
+  });
+
+  const body = document.createElement('div');
+
+  const patch = (delta: Partial<NprSettings>): void => {
+    current = { ...current, ...delta, style: 'custom' };
+    stylePicker.value = 'custom';
+    emit(current);
+  };
+
+  const rebuildBody = (): void => {
+    body.innerHTML = '';
+    const s = current;
+
+    // --- Outline ---
+    const outlineBody = document.createElement('div');
+    outlineBody.append(
+      compactRow('On', makeBoolToggle('Outline enabled', s.outlineEnabled, (v) => patch({ outlineEnabled: v }))),
+      compactRow('Width', makeFloatSlider(0.25, 4, 0.05, s.outlineThicknessPx, 2, (v) => patch({ outlineThicknessPx: v })).row),
+      compactRow('Depth ×', makeFloatSlider(0, 60, 0.5, s.outlineDepthWeight, 1, (v) => patch({ outlineDepthWeight: v })).row),
+      compactRow('Thin', makeFloatSlider(0, 8, 0.25, s.outlineMinFeaturePx, 2, (v) => patch({ outlineMinFeaturePx: v })).row),
+      compactRow('Color', makeColorPicker(s.outlineColor, (c) => patch({ outlineColor: c }))),
+    );
+
+    // --- Cel ---
+    const celBody = document.createElement('div');
+    celBody.append(
+      compactRow('On', makeBoolToggle('Cel enabled', s.celEnabled, (v) => patch({ celEnabled: v }))),
+      compactRow('Steps', makeFloatSlider(2, 12, 1, s.celSteps, 0, (v) => patch({ celSteps: v })).row),
+      compactRow('Edge', makeFloatSlider(0, 0.5, 0.01, s.celStepSmoothness, 2, (v) => patch({ celStepSmoothness: v })).row),
+      compactRow('Floor', makeFloatSlider(0, 0.4, 0.01, s.celMinLight, 2, (v) => patch({ celMinLight: v })).row),
+      compactRow('Mix', makeFloatSlider(0, 1, 0.05, s.celMix, 2, (v) => patch({ celMix: v })).row),
+      compactRow('Tint ×', makeFloatSlider(0, 1, 0.05, s.celShadowTintAmount, 2, (v) => patch({ celShadowTintAmount: v })).row),
+      compactRow('Tint', makeColorPicker(s.celShadowTint, (c) => patch({ celShadowTint: c }))),
+    );
+
+    // --- Hatch ---
+    const hatchBody = document.createElement('div');
+    const hatchPattern = makeDiscreteKnob<HatchPattern>(
+      HATCH_PATTERNS,
+      HATCH_PATTERN_LABEL,
+      s.hatchPattern,
+      (next) => patch({ hatchPattern: next }),
+    );
+    hatchBody.append(
+      compactRow('On', makeBoolToggle('Hatch enabled', s.hatchEnabled, (v) => patch({ hatchEnabled: v }))),
+      compactRow('Style', hatchPattern),
+      compactRow('Step', makeFloatSlider(2, 24, 0.5, s.hatchModPx, 1, (v) => patch({ hatchModPx: v })).row),
+      compactRow('Dark', makeFloatSlider(0, 1, 0.01, s.hatchLumaDark, 2, (v) => patch({ hatchLumaDark: v })).row),
+      compactRow('Mid', makeFloatSlider(0, 1, 0.01, s.hatchLumaMid, 2, (v) => patch({ hatchLumaMid: v })).row),
+      compactRow('Light', makeFloatSlider(0, 1, 0.01, s.hatchLumaLight, 2, (v) => patch({ hatchLumaLight: v })).row),
+      compactRow('Lift', makeFloatSlider(0, 1, 0.05, s.tonalShadowLift, 2, (v) => patch({ tonalShadowLift: v })).row),
+      compactRow('Cell', makeFloatSlider(4, 32, 1, s.rasterCellPx, 0, (v) => patch({ rasterCellPx: v })).row),
+    );
+
+    // --- Oil (Rembrandt) ---
+    const oilBody = document.createElement('div');
+    oilBody.append(
+      compactRow('On', makeBoolToggle('Oil enabled', s.oilEnabled, (v) => patch({ oilEnabled: v }))),
+      compactRow('Radius', makeFloatSlider(1, 8, 0.25, s.oilRadiusPx, 2, (v) => patch({ oilRadiusPx: v })).row),
+      compactRow('Amount', makeFloatSlider(0, 3, 0.05, s.oilIntensity, 2, (v) => patch({ oilIntensity: v })).row),
+    );
+
+    // --- Mist (Rembrandt) ---
+    const mistBody = document.createElement('div');
+    mistBody.append(
+      compactRow('On', makeBoolToggle('Mist enabled', s.mistEnabled, (v) => patch({ mistEnabled: v }))),
+      compactRow('Amount', makeFloatSlider(0, 2, 0.05, s.mistIntensity, 2, (v) => patch({ mistIntensity: v })).row),
+      compactRow('Edge', makeFloatSlider(0.001, 0.25, 0.001, s.mistDepthThreshold, 3, (v) => patch({ mistDepthThreshold: v })).row),
+      compactRow('Spread', makeFloatSlider(0, 32, 0.5, s.mistSpreadPx, 1, (v) => patch({ mistSpreadPx: v })).row),
+      compactRow('Tint ×', makeFloatSlider(0, 1, 0.05, s.mistTintStrength, 2, (v) => patch({ mistTintStrength: v })).row),
+      compactRow('Color', makeColorPicker(s.mistColor, (c) => patch({ mistColor: c }))),
+      compactRow('Geom', makeFloatSlider(0, 2, 0.05, s.mistGeomEdgeScale, 2, (v) => patch({ mistGeomEdgeScale: v })).row),
+    );
+
+    // --- Wiggle ---
+    const wiggleBody = document.createElement('div');
+    wiggleBody.append(
+      compactRow('On', makeBoolToggle('Wiggle enabled', s.wiggleEnabled, (v) => patch({ wiggleEnabled: v }))),
+      compactRow('Freq', makeFloatSlider(0.001, 0.3, 0.001, s.wiggleFrequency, 3, (v) => patch({ wiggleFrequency: v })).row),
+      compactRow('Amp', makeFloatSlider(0, 6, 0.1, s.wiggleAmplitudePx, 2, (v) => patch({ wiggleAmplitudePx: v })).row),
+      compactRow('Noise', makeFloatSlider(0, 1, 0.05, s.wiggleIrregularity, 2, (v) => patch({ wiggleIrregularity: v })).row),
+    );
+
+    body.append(
+      makeDetails('Outline (Toon / Moebius)', outlineBody),
+      makeDetails('Cel — stepped shadows', celBody),
+      makeDetails('Hatching (Moebius)', hatchBody),
+      makeDetails('Oil (Rembrandt)', oilBody),
+      makeDetails('Mist (Rembrandt)', mistBody),
+      makeDetails('Hand-drawn wiggle', wiggleBody),
+    );
+  };
+
+  stylePicker.addEventListener('change', () => {
+    const next = stylePicker.value as NprStyle;
+    current = applyPreset(current, next);
+    rebuildBody();
+    emit(current);
+  });
+
+  root.append(
+    compactRow('NPR', enableWrap),
+    compactRow('Style', stylePicker),
+    body,
+  );
+  rebuildBody();
+  return root;
+}
+
 export function createRoomOptionsOverlay(cb: RoomOptionsCallbacks): RoomOptionsOverlay {
   const root = document.createElement('div');
   root.id = 'room-options';
@@ -377,6 +584,9 @@ export function createRoomOptionsOverlay(cb: RoomOptionsCallbacks): RoomOptionsO
     compactRow('Dunes', duneKnob.row),
   );
 
+  // --- NPR (toon / Moebius / Rembrandt) ---
+  const panelNpr = buildNprPanel(cb.initial.nprSettings, (next) => cb.onNprSettingsChange(next));
+
   // --- Help ---
   const panelHelp = document.createElement('div');
   panelHelp.setAttribute('role', 'tabpanel');
@@ -434,6 +644,7 @@ export function createRoomOptionsOverlay(cb: RoomOptionsCallbacks): RoomOptionsO
 
   mkTab('general', 'General', panelGeneral);
   mkTab('graphics', 'Graphics', panelGraphics);
+  mkTab('npr', 'NPR', panelNpr);
   mkTab('help', 'Help', panelHelp);
 
   panel.append(header, tabList, tabPanels);
