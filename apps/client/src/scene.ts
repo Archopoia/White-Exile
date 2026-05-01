@@ -399,10 +399,9 @@ export class RoomScene {
     const coreMat = new THREE.MeshStandardMaterial({ color: 0x3c4450, roughness: 0.91, metalness: 0.05 });
     applyAshCaravanCoreMaterial(coreMat, RACE_PROFILES.emberfolk.lightColor);
     this.localCore = new THREE.Mesh(coreGeom, coreMat);
-    // No cast: the caravan ball would otherwise self-shadow the dunes in its own
-    // point light — reads as a fuel-scaling dark disk underfoot (umbra shrinks as
-    // torch `distance` grows). Sun + other props still cast normally.
-    this.localCore.castShadow = false;
+    // Cast like every other prop so sun + pooled torches see occlusion; torch bias tuning
+    // keeps self-shadow on the dunes from reading as a huge fuel-linked foot umbra.
+    this.localCore.castShadow = true;
     this.localCore.receiveShadow = true;
     this.localGroup.add(this.localCore);
     this.localLabel = makeTooltip('');
