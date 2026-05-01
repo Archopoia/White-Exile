@@ -81,7 +81,7 @@ Pure-data results (`derived`, `caravans`, counters) feed `Room.snapshot()`.
   - Graphics quality tier (`low` / `med` / `high`) is set in the ESC menu and toggles shadows + map sizes live without recreating lights. Backed by `localStorage.rtRoom.fx`; **no URL parameter** exists for it (or any other tunable).
 - Fog density is still set per zone using `fogDensityForZone`; sky tone, ground emissive, hemisphere intensity, and clear color also shift per zone via `zoneIntensityScale`/`zoneClearColor`/`zoneGroundColor` in [`scene.ts`](../apps/client/src/scene.ts).
 - Local prediction for movement; server clamps and rebroadcasts.
-- **Esc** opens a compact tabbed Session dialog ([`options.ts`](../apps/client/src/options.ts)): identity, graphics (quality + labels), and a short controls reference. The room note is HUD-only. In-world labels can still surface **R** / **F** when you are close to a stranded follower (inside your light) or an inactive ruin.
+- **Esc** opens a compact tabbed Session dialog ([`options.ts`](../apps/client/src/options.ts)): identity, graphics (quality, labels, **dune height** → `roomSettingsPatch.duneHeightScale`), and Help. The room note is HUD-only. In-world labels can still surface **R** / **F** when you are close to a stranded follower (inside your light) or an inactive ruin.
 
 ## Dev persistence
 

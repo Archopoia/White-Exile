@@ -18,16 +18,22 @@ export interface RoomOptionsCallbacks {
   onFxTierChange: (tier: FxTier) => void;
   onLabelModeChange: (mode: WorldLabelMode) => void;
   onDisplayNameChange: (name: string) => void;
+  /** Live client preview while dragging the dune scale slider. */
+  onDuneHeightScalePreview: (scale: number) => void;
+  /** Sent on slider release; server rebroadcasts authoritative `worldConfig`. */
+  onDuneHeightScaleCommit: (scale: number) => void;
   initial: {
     readonly fxTier: FxTier;
     readonly labelMode: WorldLabelMode;
     readonly displayName: string;
     readonly race: Race;
+    readonly duneHeightScale: number;
   };
 }
 
 export interface RoomOptionsOverlay {
   setOpen(open: boolean): void;
+  syncDuneHeightScale(scale: number): void;
   dispose(): void;
 }
 
@@ -94,6 +100,78 @@ function makeDiscreteKnob<T extends string>(
 
   wrap.append(range, badge);
   return wrap;
+}
+
+const DUNE_SLIDER_MIN = 0.1;
+const DUNE_SLIDER_MAX = 20;
+const DUNE_SLIDER_STEP = 0.1;
+
+function clampDuneSliderDisplay(v: number): number {
+  const stepped =
+    Math.round((v - DUNE_SLIDER_MIN) / DUNE_SLIDER_STEP) * DUNE_SLIDER_STEP + DUNE_SLIDER_MIN;
+  return Math.min(DUNE_SLIDER_MAX, Math.max(DUNE_SLIDER_MIN, Number(stepped.toFixed(5))));
+}
+
+function makeDuneScaleKnob(
+  value: number,
+  onPreview: (scale: number) => void,
+  onCommit: (scale: number) => void,
+): { row: HTMLElement; sync: (scale: number) => void; input: HTMLInputElement } {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;align-items:center;gap:8px;flex:1;min-width:0';
+
+  const range = document.createElement('input');
+  range.type = 'range';
+  range.min = String(DUNE_SLIDER_MIN);
+  range.max = String(DUNE_SLIDER_MAX);
+  range.step = String(DUNE_SLIDER_STEP);
+  range.value = String(clampDuneSliderDisplay(value));
+  range.setAttribute('aria-valuemin', String(DUNE_SLIDER_MIN));
+  range.setAttribute('aria-valuemax', String(DUNE_SLIDER_MAX));
+  range.setAttribute('aria-label', 'Dune height scale');
+  range.style.cssText = [
+    'flex:1',
+    'min-width:64px',
+    'height:4px',
+    'accent-color:#5b7cff',
+    'cursor:pointer',
+  ].join(';');
+
+  const badge = document.createElement('span');
+  badge.style.cssText = 'flex:0 0 44px;text-align:right;font-size:12px;opacity:0.92';
+
+  const readScale = (): number => clampDuneSliderDisplay(Number(range.value));
+
+  const setBadge = (s: number): void => {
+    badge.textContent = s.toFixed(1);
+    range.setAttribute('aria-valuetext', s.toFixed(1));
+  };
+
+  setBadge(readScale());
+
+  range.addEventListener('input', () => {
+    const s = readScale();
+    setBadge(s);
+    onPreview(s);
+  });
+  range.addEventListener('change', () => {
+    const s = readScale();
+    setBadge(s);
+    onCommit(s);
+  });
+
+  wrap.append(range, badge);
+
+  return {
+    row: wrap,
+    sync: (scale: number): void => {
+      if (document.activeElement === range) return;
+      const s = clampDuneSliderDisplay(scale);
+      range.value = String(s);
+      setBadge(s);
+    },
+    input: range,
+  };
 }
 
 export function createRoomOptionsOverlay(cb: RoomOptionsCallbacks): RoomOptionsOverlay {
@@ -192,7 +270,13 @@ export function createRoomOptionsOverlay(cb: RoomOptionsCallbacks): RoomOptionsO
     cb.onLabelModeChange(next);
   });
 
-  panelGraphics.append(compactRow('Quality', fxKnob), compactRow('Labels', labelKnob));
+  const duneKnob = makeDuneScaleKnob(cb.initial.duneHeightScale, cb.onDuneHeightScalePreview, cb.onDuneHeightScaleCommit);
+
+  panelGraphics.append(
+    compactRow('Quality', fxKnob),
+    compactRow('Labels', labelKnob),
+    compactRow('Dunes', duneKnob.row),
+  );
 
   // --- Help ---
   const panelHelp = document.createElement('div');
@@ -280,6 +364,9 @@ export function createRoomOptionsOverlay(cb: RoomOptionsCallbacks): RoomOptionsO
     setOpen(open: boolean): void {
       root.style.display = open ? 'flex' : 'none';
       if (open) setTab('general');
+    },
+    syncDuneHeightScale(scale: number): void {
+      duneKnob.sync(scale);
     },
     dispose(): void {
       window.removeEventListener('keydown', onKey);

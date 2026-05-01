@@ -77,6 +77,16 @@ describe('ClientRoomSettingsPatchSchema', () => {
     const parsed = ClientRoomSettingsPatchSchema.parse({});
     expect(parsed).toEqual({});
   });
+
+  it('accepts dune height scale', () => {
+    const parsed = ClientRoomSettingsPatchSchema.parse({ duneHeightScale: 5.2 });
+    expect(parsed.duneHeightScale).toBe(5.2);
+  });
+
+  it('rejects invalid dune height scale', () => {
+    const result = ClientRoomSettingsPatchSchema.safeParse({ duneHeightScale: 0 });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe('Server schemas', () => {

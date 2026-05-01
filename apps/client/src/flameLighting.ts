@@ -43,8 +43,11 @@ const TIER_CONFIG: Readonly<Record<FxTier, FlameTierConfig>> = Object.freeze({
     poolShadow: false,
     poolShadowMapSize: 0,
     poolShadowCount: 0,
-    hemisphereIntensity: 0.65,
-    sunIntensity: 0.35,
+    // Hemisphere is the cheap fill; the sun is the directional that creates
+    // slope shading on the dunes. We keep the sun clearly stronger than the
+    // hemisphere so dune crests and lee sides actually read as different.
+    hemisphereIntensity: 0.32,
+    sunIntensity: 0.85,
   },
   med: {
     sunShadow: true,
@@ -54,8 +57,8 @@ const TIER_CONFIG: Readonly<Record<FxTier, FlameTierConfig>> = Object.freeze({
     poolShadow: false,
     poolShadowMapSize: 0,
     poolShadowCount: 0,
-    hemisphereIntensity: 0.55,
-    sunIntensity: 0.45,
+    hemisphereIntensity: 0.28,
+    sunIntensity: 0.95,
   },
   high: {
     sunShadow: true,
@@ -65,8 +68,8 @@ const TIER_CONFIG: Readonly<Record<FxTier, FlameTierConfig>> = Object.freeze({
     poolShadow: true,
     poolShadowMapSize: 256,
     poolShadowCount: 3,
-    hemisphereIntensity: 0.5,
-    sunIntensity: 0.5,
+    hemisphereIntensity: 0.25,
+    sunIntensity: 1.05,
   },
 });
 
@@ -270,10 +273,11 @@ export function createFlameLighting(
   const hemi = new THREE.HemisphereLight(0x4a5878, 0x322628, cfg.hemisphereIntensity);
   scene.add(hemi);
 
-  // Dead sun: cool desaturated tone (the player called it "moonlight"). Wide
-  // ortho shadow camera tracks the player so we get long subtle shadows in
-  // the area visible through the fog without paying for a global shadow.
-  const sun = new THREE.DirectionalLight(0xb6c6dc, cfg.sunIntensity);
+  // Dead sun: warm desaturated red-orange — a dying star bleeding through
+  // the fog. Wide ortho shadow camera tracks the player so we get long
+  // shadows in the area visible through the fog without paying for a global
+  // shadow.
+  const sun = new THREE.DirectionalLight(0xc78a72, cfg.sunIntensity);
   sun.position.set(60, 120, -90);
   sun.target.position.set(0, 0, 0);
   scene.add(sun);

@@ -134,7 +134,7 @@ export class RoomScene {
     });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(window.innerWidth, window.innerHeight, false);
-    this.renderer.setClearColor(0x07080d, 1);
+    this.renderer.setClearColor(0x231b26, 1);
 
     this.scene = new THREE.Scene();
     this.scene.fog = new THREE.FogExp2(0x111522, fogDensityForZone('safe'));
@@ -149,16 +149,22 @@ export class RoomScene {
     this.lighting = createFlameLighting(this.scene, this.renderer, initialTier);
     // Stored convention: sky's `uSunDir` points TOWARD the sun, lighting's
     // `setSunDirection` takes the FROM-the-sun vector. They are inverses.
-    const towardSun = new THREE.Vector3(0.35, 0.55, -0.4).normalize();
+    // The sun sits low (~12° above horizon) and slightly to the player's
+    // front-right of the default camera, so it's visible in the sky AND
+    // the directional light grazes the dune crests for clear slope shading.
+    const towardSun = new THREE.Vector3(0.55, 0.22, -0.8).normalize();
     this.sky.setSunDirection(towardSun);
     this.lighting.setSunDirection(towardSun.clone().negate());
 
     const groundGeom = new THREE.PlaneGeometry(3600, 3600, 320, 320);
     this.groundMat = new THREE.MeshStandardMaterial({
-      color: 0x1c2032,
-      roughness: 0.94,
-      metalness: 0.04,
-      emissive: 0x0a0d18,
+      // Mid-grey ash base. Bright enough that the directional sun's grazing
+      // light actually reads as "sun-side" vs "shadow-side" on dune slopes,
+      // dim enough to fit the foggy night mood.
+      color: 0x6b6976,
+      roughness: 0.92,
+      metalness: 0.02,
+      emissive: 0x0c0a12,
     });
     applyAshDuneTerrainShader(this.groundMat);
     this.ground = new THREE.Mesh(groundGeom, this.groundMat);
@@ -740,27 +746,33 @@ function zoneIntensityScale(zone: Zone): number {
 }
 
 function zoneClearColor(zone: Zone): number {
+  // Used as the WebGL clear color, only visible if the sky shader fails. We
+  // match the sky's horizon tone so even in that fallback case we don't get
+  // a pitch-black abyss.
   switch (zone) {
     case 'safe':
-      return 0x0c1018;
+      return 0x231b26;
     case 'grey':
-      return 0x080a12;
+      return 0x1a141e;
     case 'deep':
-      return 0x05060a;
+      return 0x110d18;
     case 'dead':
-      return 0x020205;
+      return 0x09060c;
   }
 }
 
 function zoneGroundColor(zone: Zone): number {
+  // Emissive baseline added to the dune material so even fully shadowed
+  // areas keep a tiny bit of detail. Kept very dim — the lighting carries
+  // the look.
   switch (zone) {
     case 'safe':
-      return 0x0a0e18;
+      return 0x141018;
     case 'grey':
-      return 0x080b14;
+      return 0x100c14;
     case 'deep':
-      return 0x05070d;
+      return 0x0a070f;
     case 'dead':
-      return 0x020308;
+      return 0x050308;
   }
 }

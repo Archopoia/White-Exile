@@ -48,11 +48,11 @@ pnpm smoke:net
 
 ## Client
 
-- **Esc** opens **Session** (tabbed, compact): **graphics quality** and **world labels** (sliders, live), **display name** (next session), **race** (read-only, server-assigned), plus a short **Help** tab. The shared **room note** still appears on the **HUD** only (no in-menu editor).
+- **Esc** opens **Session** (tabbed, compact): **graphics quality**, **world labels**, and **dune height** (slider; live preview, commit on release → server `worldConfig.duneHeightScale` for everyone), **display name** (next session), **race** (read-only, server-assigned), plus **Help**. The shared **room note** is **HUD** only (no in-menu editor).
 - **T** cycles floating **CSS2D** world labels (**off** → **keywords** → **full**; default **full**). Copy in `apps/client/src/worldLabels.ts`; proximity can surface **R** / **F** on nearby followers and ruins.
 - HUD (corners): connection, room note, tick, race, zone, light, caravan, fuel, followers.
 
-There are intentionally **no URL query parameters** for tunables. Player tunables (graphics, labels, display name) are edited in the ESC menu and persisted to `localStorage` (`rtRoom.displayName`, `rtRoom.resumeToken`, `rtRoom.race`, `rtRoom.fx`, `rtRoomLabelsMode`). The room note is server state (`roomSettingsPatch`), shown on the HUD.
+There are intentionally **no URL query parameters** for tunables. Per-client choices (graphics, labels, display name) use the ESC menu and `localStorage` (`rtRoom.displayName`, `rtRoom.resumeToken`, `rtRoom.race`, `rtRoom.fx`, `rtRoomLabelsMode`). **Dune height** and the **room note** are room state (`roomSettingsPatch`); dune scale is authoritative for sim + visuals once applied.
 
 ## Bots
 

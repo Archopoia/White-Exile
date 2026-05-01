@@ -9,13 +9,19 @@
  * grace window expires. Broadcasting lives in net.ts.
  */
 import {
+  ASH_DUNE_FOLLOWER_CENTER_OFFSET,
+  ASH_DUNE_RELIC_CENTER_OFFSET,
+  ASH_DUNE_RUIN_CENTER_OFFSET,
+  ashDuneSurfaceWorldY,
   DEFAULT_ROOM_SETTINGS,
   DEFAULT_WORLD_CONFIG,
   RACE_PROFILES,
   RoomSettingsSchema,
+  WorldConfigSchema,
   classifyZone,
   clampPlayerPosition,
   type CaravanSnapshot,
+  type ClientRoomSettingsPatch,
   type FollowerKind,
   type FollowerSnapshot,
   type Race,
@@ -165,12 +171,45 @@ export class Room {
     return { ...this.worldConfig };
   }
 
-  patchRoomSettings(patch: Partial<RoomSettings>): void {
-    const merged = { ...this.settings, ...patch };
-    if (merged.roomNote !== undefined) {
-      merged.roomNote = merged.roomNote.slice(0, 200);
+  patchRoomSettings(patch: ClientRoomSettingsPatch): void {
+    if (patch.roomNote !== undefined) {
+      const merged = { ...this.settings, roomNote: patch.roomNote.slice(0, 200) };
+      this.settings = RoomSettingsSchema.parse(merged);
     }
-    this.settings = RoomSettingsSchema.parse(merged);
+    if (patch.duneHeightScale !== undefined) {
+      this.worldConfig = WorldConfigSchema.parse({
+        ...this.worldConfig,
+        duneHeightScale: patch.duneHeightScale,
+      });
+      this.snapEntitiesToDuneSurface();
+    }
+  }
+
+  /** After `duneHeightScale` changes: re-seat everyone on the new surface (XZ unchanged). */
+  private snapEntitiesToDuneSurface(): void {
+    const simT = this.simulationTimeSec;
+    const scale = this.worldConfig.duneHeightScale;
+    for (const pl of this.players.values()) {
+      pl.position = clampPlayerPosition(pl.position, simT, scale);
+    }
+    for (const f of this.followers.values()) {
+      const y =
+        ashDuneSurfaceWorldY(f.position.x, f.position.z, simT, { heightScale: scale }) +
+        ASH_DUNE_FOLLOWER_CENTER_OFFSET;
+      f.position = { ...f.position, y };
+    }
+    for (const r of this.ruins.values()) {
+      const y =
+        ashDuneSurfaceWorldY(r.position.x, r.position.z, simT, { heightScale: scale }) +
+        ASH_DUNE_RUIN_CENTER_OFFSET;
+      r.position = { ...r.position, y };
+    }
+    for (const rel of this.relics.values()) {
+      const y =
+        ashDuneSurfaceWorldY(rel.position.x, rel.position.z, simT, { heightScale: scale }) +
+        ASH_DUNE_RELIC_CENTER_OFFSET;
+      rel.position = { ...rel.position, y };
+    }
   }
 
   size(): number {

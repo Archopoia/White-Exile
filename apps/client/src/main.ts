@@ -18,6 +18,7 @@ import {
   setRace,
   setResumeToken,
 } from './clientSettings.js';
+import { DEFAULT_WORLD_CONFIG } from '@realtime-room/shared';
 import { debugLogger } from './debug.js';
 import { type FxTier } from './flameLighting.js';
 import { updateHud, type HudState } from './hud.js';
@@ -94,11 +95,19 @@ function boot(): RunningClient {
     onDisplayNameChange: (name: string) => {
       setDisplayName(name);
     },
+    onDuneHeightScalePreview: (scale: number) => {
+      scene.setDuneHeightScale(scale);
+    },
+    onDuneHeightScaleCommit: (scale: number) => {
+      scene.setDuneHeightScale(scale);
+      net?.sendRoomSettingsPatch({ duneHeightScale: scale });
+    },
     initial: {
       fxTier,
       labelMode,
       displayName,
       race,
+      duneHeightScale: DEFAULT_WORLD_CONFIG.duneHeightScale,
     },
   });
 
@@ -122,6 +131,7 @@ function boot(): RunningClient {
         appliedServerPos = false;
         scene.setLocalPlayerId(welcome.playerId);
         scene.setDuneHeightScale(welcome.worldConfig.duneHeightScale);
+        options.syncDuneHeightScale(welcome.worldConfig.duneHeightScale);
         scene.setLocalRace(welcome.race);
         hud.race = welcome.race;
         setRace(welcome.race);
@@ -135,6 +145,7 @@ function boot(): RunningClient {
       },
       onSnapshot: (snap) => {
         scene.applySnapshot(snap);
+        options.syncDuneHeightScale(snap.worldConfig.duneHeightScale);
         hud.players = snap.players.length;
         hud.roomNote = snap.settings.roomNote;
         hud.tick = snap.tick;

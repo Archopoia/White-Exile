@@ -41,6 +41,19 @@ describe('Room', () => {
     expect(snap.followers.length).toBeGreaterThan(0);
   });
 
+  it('patchRoomSettings updates dune height and resnaps entities', () => {
+    const room = newRoom();
+    room.addPlayer(makePlayer('a'));
+    room.tick();
+    const yBefore = room.get('a')?.position.y;
+    room.patchRoomSettings({ duneHeightScale: 6 });
+    expect(room.snapshot().worldConfig.duneHeightScale).toBe(6);
+    const yAfter = room.get('a')?.position.y;
+    expect(typeof yBefore).toBe('number');
+    expect(typeof yAfter).toBe('number');
+    expect(yAfter).not.toBe(yBefore);
+  });
+
   it('hides soft-disconnected players from snapshots and counts', () => {
     const room = newRoom();
     room.addPlayer(makePlayer('a'));

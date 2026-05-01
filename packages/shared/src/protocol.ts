@@ -61,7 +61,12 @@ export const ClientMoveSchema = z.object({
 });
 export type ClientMove = z.infer<typeof ClientMoveSchema>;
 
-export const ClientRoomSettingsPatchSchema = RoomSettingsSchema.partial();
+/** Room display fields plus live world knobs any client may propose (server broadcasts result). */
+export const ClientRoomSettingsPatchSchema = RoomSettingsSchema.partial().and(
+  z.object({
+    duneHeightScale: WorldConfigSchema.shape.duneHeightScale.optional(),
+  }),
+);
 export type ClientRoomSettingsPatch = z.infer<typeof ClientRoomSettingsPatchSchema>;
 
 /** "Try to rescue any stranded follower currently inside my light radius." */

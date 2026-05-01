@@ -46,32 +46,32 @@ interface ZoneTone {
 
 const ZONE_TONES: Readonly<Record<Zone, ZoneTone>> = Object.freeze({
   safe: {
-    zenith: 0x0a0e1a,
-    horizon: 0x2c2230,
-    ground: 0x1a1620,
-    sun: 0xc6606a,
-    haze: 0.55,
+    zenith: 0x141a2c,
+    horizon: 0x4a3744,
+    ground: 0x231d28,
+    sun: 0xe08a78,
+    haze: 0.5,
   },
   grey: {
-    zenith: 0x070912,
-    horizon: 0x241a26,
-    ground: 0x141017,
-    sun: 0xa84e58,
-    haze: 0.7,
+    zenith: 0x0d1120,
+    horizon: 0x3a2a34,
+    ground: 0x1c1720,
+    sun: 0xc46c5a,
+    haze: 0.65,
   },
   deep: {
-    zenith: 0x040510,
-    horizon: 0x1c1322,
-    ground: 0x0d0a14,
-    sun: 0x803944,
-    haze: 0.85,
+    zenith: 0x070a14,
+    horizon: 0x281c26,
+    ground: 0x12101a,
+    sun: 0x9a4b3c,
+    haze: 0.8,
   },
   dead: {
-    zenith: 0x010108,
-    horizon: 0x130b1a,
-    ground: 0x06040a,
-    sun: 0x5a232f,
-    haze: 0.97,
+    zenith: 0x03040c,
+    horizon: 0x18101e,
+    ground: 0x0a070d,
+    sun: 0x6b2a28,
+    haze: 0.95,
   },
 });
 
@@ -79,10 +79,10 @@ const VERT = /* glsl */ `
   varying vec3 vDir;
 
   void main() {
+    // The sphere is centered on (and follows) the camera. World-space
+    // direction from the camera to the vertex IS the view ray we want.
     vDir = normalize((modelMatrix * vec4(position, 0.0)).xyz);
-    vec4 mvp = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    // Force depth = far plane so other geometry always wins.
-    gl_Position = mvp.xyww;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `;
 
@@ -174,15 +174,23 @@ export function createDeadSky(scene: THREE.Scene): DeadSky {
     fragmentShader: FRAG,
     side: THREE.BackSide,
     depthWrite: false,
-    depthTest: true,
+    depthTest: false,
     fog: false,
   });
 
   const geom = new THREE.SphereGeometry(SKY_RADIUS, 32, 16);
   const mesh = new THREE.Mesh(geom, mat);
   mesh.frustumCulled = false;
+  // Render before everything else; depth is disabled so it never fights with
+  // world geometry. The sphere also tracks the camera every frame (see the
+  // `onBeforeRender` hook below) so it can never be left behind as the
+  // player walks far from the world origin.
   mesh.renderOrder = -1;
   mesh.name = 'dead-sky';
+  mesh.onBeforeRender = (_renderer, _scene, camera) => {
+    mesh.position.copy(camera.position);
+    mesh.updateMatrixWorld();
+  };
   scene.add(mesh);
 
   function setZoneTone(zone: Zone): void {
