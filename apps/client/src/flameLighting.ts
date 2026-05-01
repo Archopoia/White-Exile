@@ -10,8 +10,8 @@
  *     plus a PointLight at the player position. The PointLight casts shadows
  *     (cube map) on med/high. **Torch** shadows are one cubemap split over the
  *     whole flame reach: big props (ruins) span many texels; small props
- *     (followers, relics) need modest bias / small PCF radius or contact shows a lit
- *     gap (Peter Panning); map size still matters for blur — same `castShadow` flags as else.
+ *     Point-light `shadow.radius` must stay 0 (Three fans PCF in angle space → lit discs under props).
+ *     Map size still matters; same `castShadow` flags as everything else.
  *   - All flame lights are pre-pooled. Tier change toggles `castShadow` and
  *     resizes shadow maps in place — no shader recompiles, no allocations
  *     during play.
@@ -304,12 +304,12 @@ export function createFlameLighting(
 
   // Shadow map type doesn't change per tier — only sizes & enable flags do.
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  // PCF (non-soft): PCFSoft's wider kernel inflated a lit band under small casters (followers, props).
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.shadowMap.autoUpdate = true;
-  // Note: Three's PCFSoft for directional lights uses a fixed 3×3 UV kernel (no
-  // `shadow.radius`). Sun softness here is mostly texel size on a huge ortho
-  // frustum. Point lights use `getPointShadow()` where `shadow.radius` scales
-  // angular PCF offsets — keep radius high so torch penumbra matches that look.
+  // Sun softness is mostly ortho texel size. Point-light `shadow.radius` must stay 0: Three's getPointShadow
+  // PCF offsets *bd3D* in angular space; non-zero radius makes taps miss the occluder and hit cleared cubemap
+  // texels → a hard lit disc under spheres/boxes (reads like "culling", not penumbra).
 
   // Hemisphere: brighter sky vs warm ground so dunes pick up N·(sky-hemi).
   const hemi = new THREE.HemisphereLight(0x92a8d0, 0x6a5850, cfg.hemisphereIntensity);
@@ -394,11 +394,11 @@ export function createFlameLighting(
     heroLight.shadow.camera.far = far;
     heroLight.shadow.camera.updateProjectionMatrix();
     const inv = THREE.MathUtils.clamp(HERO_SHADOW_FAR_REF / far, 0.1, 1);
-    // Keep normalBias + PCFSoft radius low: both inflate a bright band at contact (Peter Panning).
-    // Cubemap res is already med/high; if dunes pick up acne, nudge normalBias up slightly, not radius.
-    heroLight.shadow.normalBias = 0.0038 * inv;
-    heroLight.shadow.bias = -0.00042 * inv;
-    heroLight.shadow.radius = THREE.MathUtils.clamp(2.35 * inv, 0.7, 2.65);
+    // Point shadows: normalBias shifts receiver depth along normal (Peter Panning). radius≠0 fans PCF
+    // rays and often samples empty cubemap texels → round "holes". Prefer bias-only acne fight.
+    heroLight.shadow.normalBias = 0;
+    heroLight.shadow.bias = -0.00012 * inv;
+    heroLight.shadow.radius = 0;
   }
 
   function syncPoolTorchShadowBias(light: THREE.PointLight): void {
@@ -408,9 +408,9 @@ export function createFlameLighting(
     light.shadow.camera.far = far;
     light.shadow.camera.updateProjectionMatrix();
     const inv = THREE.MathUtils.clamp(50 / far, 0.1, 1);
-    light.shadow.normalBias = 0.0065 * inv;
-    light.shadow.bias = -0.00042 * inv;
-    light.shadow.radius = THREE.MathUtils.clamp(4.2 * inv, 1.25, 4.75);
+    light.shadow.normalBias = 0;
+    light.shadow.bias = -0.00012 * inv;
+    light.shadow.radius = 0;
   }
 
   function applyShadowSettings(): void {
@@ -424,11 +424,9 @@ export function createFlameLighting(
       sun.shadow.camera.bottom = -SUN_SHADOW_RADIUS;
       sun.shadow.camera.near = 2;
       sun.shadow.camera.far = 3200;
-      sun.shadow.bias = -0.0006;
-      // Large displaced sheet self-shadows: a bit more offset than small props.
-      sun.shadow.normalBias = 0.08;
-      // Used only if renderer switches to basic PCF; kept for parity with point radii.
-      sun.shadow.radius = 4;
+      sun.shadow.bias = -0.00038;
+      sun.shadow.normalBias = 0.012;
+      sun.shadow.radius = 1.5;
       sun.shadow.camera.updateProjectionMatrix();
       // Force the shadow map to re-allocate at the new size.
       sun.shadow.map?.dispose();
@@ -439,7 +437,7 @@ export function createFlameLighting(
     heroLight.castShadow = cfg.heroShadow;
     if (cfg.heroShadow && cfg.heroShadowMapSize > 0) {
       heroLight.shadow.mapSize.set(cfg.heroShadowMapSize, cfg.heroShadowMapSize);
-      heroLight.shadow.camera.near = 0.2;
+      heroLight.shadow.camera.near = 0.08;
       syncHeroTorchShadowBias();
       heroLight.shadow.map?.dispose();
       heroLight.shadow.map = null;
@@ -453,7 +451,7 @@ export function createFlameLighting(
       slot.light.castShadow = enable;
       if (enable && cfg.poolShadowMapSize > 0) {
         slot.light.shadow.mapSize.set(cfg.poolShadowMapSize, cfg.poolShadowMapSize);
-        slot.light.shadow.camera.near = 0.2;
+        slot.light.shadow.camera.near = 0.08;
         syncPoolTorchShadowBias(slot.light);
         slot.light.shadow.map?.dispose();
         slot.light.shadow.map = null;

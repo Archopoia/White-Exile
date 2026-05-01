@@ -203,6 +203,13 @@ interface EntityVisual<S extends { id: string; position: Vec3 }> {
   afterUpdate?: (mesh: THREE.Mesh, s: S) => void;
 }
 
+/** Matches {@link FOLLOWER_VISUAL} sphere radius; center Y = surface + this × scale so the ball sits on the sand. */
+const FOLLOWER_MESH_BASE_RADIUS = 0.32;
+
+function followerMeshScale(morale: number): number {
+  return 0.85 + morale * 0.6;
+}
+
 const OTHER_PLAYER_VISUAL: EntityVisual<PlayerSnapshot> = {
   labelY: 1.95,
   geometry: () => new THREE.SphereGeometry(0.55, 24, 18),
@@ -228,12 +235,15 @@ const FOLLOWER_VISUAL: EntityVisual<FollowerSnapshot> = {
     return mat;
   },
   refreshMaterial: (mat, f) => applyAshFollowerMaterial(mat, f.ownerId === null),
-  placeAt: (f, scene) => ({
-    x: f.position.x,
-    y: scene.surfaceYAt(f.position.x, f.position.z) + WORLD_PLACEMENT_OFFSET.follower,
-    z: f.position.z,
-  }),
-  afterUpdate: (mesh, f) => mesh.scale.setScalar(0.85 + f.morale * 0.6),
+  placeAt: (f, scene) => {
+    const s = followerMeshScale(f.morale);
+    return {
+      x: f.position.x,
+      y: scene.surfaceYAt(f.position.x, f.position.z) + FOLLOWER_MESH_BASE_RADIUS * s,
+      z: f.position.z,
+    };
+  },
+  afterUpdate: (mesh, f) => mesh.scale.setScalar(followerMeshScale(f.morale)),
 };
 
 const RUIN_VISUAL: EntityVisual<RuinSnapshot> = {
@@ -580,7 +590,8 @@ export class RoomScene {
     renderLabels({
       items: snap.followers,
       pool: this.followerMeshes,
-      surfaceY: (f) => this.surfaceYAt(f.position.x, f.position.z) + WORLD_PLACEMENT_OFFSET.follower,
+      surfaceY: (f) =>
+        this.surfaceYAt(f.position.x, f.position.z) + FOLLOWER_MESH_BASE_RADIUS * followerMeshScale(f.morale),
       text: (f, prox) => labelFollower(f, mode, prox),
     });
     renderLabels({
