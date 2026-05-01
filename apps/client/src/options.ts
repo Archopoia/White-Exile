@@ -452,8 +452,10 @@ export function createRoomOptionsOverlay(cb: RoomOptionsCallbacks): RoomOptionsO
     'position:fixed',
     'inset:0',
     'z-index:20',
-    'align-items:center',
-    'justify-content:center',
+    'box-sizing:border-box',
+    'padding:16px',
+    'align-items:flex-end',
+    'justify-content:flex-start',
     'background:rgba(0,0,0,0.5)',
     'backdrop-filter:blur(3px)',
   ].join(';');
@@ -609,6 +611,10 @@ export function createRoomOptionsOverlay(cb: RoomOptionsCallbacks): RoomOptionsO
   panelHelp.appendChild(helpUl);
 
   const setTab = (id: TabId): void => {
+    const livePreviewTab = id === 'graphics' || id === 'npr';
+    root.style.background = livePreviewTab ? 'transparent' : 'rgba(0,0,0,0.5)';
+    root.style.backdropFilter = livePreviewTab ? 'none' : 'blur(3px)';
+
     for (const t of tabs) {
       const on = t.id === id;
       t.button.setAttribute('aria-selected', on ? 'true' : 'false');
