@@ -57,7 +57,7 @@ Canonical definitions: [`packages/shared/src/protocol.ts`](../packages/shared/sr
 
 [`apps/server/src/world/sim.ts`](../apps/server/src/world/sim.ts) does, in order:
 
-1. **Solo light radius** per player via `computeSoloLightRadius` (race base + diminishing follower bonus + relic bonus + fuel gate + zone multiplier).
+1. **Solo light radius** per player via `computeSoloLightRadius` (race base + diminishing follower bonus + relic bonus, multiplied by **fuel in [0,1]** and zone multiplier).
 2. **Caravan formation** via `buildCaravans` — union-find over light-field overlap pairs.
 3. **Relic claim** for unclaimed relics within range.
 4. **Fuel step** via `stepFuel` (decay if alone, recover when sheltered by a multi-member caravan or inside an active ruin).

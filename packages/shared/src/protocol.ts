@@ -108,7 +108,7 @@ export const PlayerSnapshotSchema = z.object({
   race: RaceSchema,
   /** Effective solo light radius (already includes followers + relics + race). */
   lightRadius: z.number().nonnegative(),
-  /** 0..1 fuel; <0.2 means light is dimming. */
+  /** 0..1 fuel; scales effective light radius and client torch brightness. */
   fuel: z.number().min(0).max(1),
   followerCount: z.number().int().nonnegative(),
   /** Caravan id this player belongs to (their own id when alone). */

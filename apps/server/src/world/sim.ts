@@ -179,9 +179,16 @@ export function tickWorld(
     });
     const distFromOriginAfter = distOrigin;
     const zone = classifyZone(distFromOriginAfter);
+    const soloPostFuel = computeSoloLightRadius({
+      race: p.race,
+      followers: p.followers,
+      relicBonus: p.relicBonus,
+      fuel: p.fuel,
+      distanceFromOrigin: distFromOriginAfter,
+    });
     derived.set(p.id, {
       id: p.id,
-      lightRadius: tempSolo.get(p.id) ?? 0,
+      lightRadius: soloPostFuel,
       caravanId: cid,
       zone,
     });

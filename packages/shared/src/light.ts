@@ -27,7 +27,7 @@ export interface LightInputs {
   followers: ReadonlyArray<{ kind: FollowerKind }>;
   /** Sum of `radiusBonus` from relics already claimed by this player. */
   relicBonus: number;
-  /** Current fuel; <0.2 dampens light radius linearly to enforce dependency. */
+  /** Current fuel in [0, 1]; effective radius scales linearly with fuel. */
   fuel: number;
   /** Distance from world origin; deep zones may amplify per-race. */
   distanceFromOrigin: number;
@@ -41,10 +41,10 @@ export function computeSoloLightRadius(inputs: LightInputs): number {
     followerSum += FOLLOWER_RADIUS_GAIN[f.kind] ?? 0;
   }
   const followerBonus = withDiminishingReturns(followerSum);
-  const fuelGate = inputs.fuel < 0.2 ? Math.max(0.25, inputs.fuel / 0.2) : 1;
+  const fuelMul = Math.min(1, Math.max(0, inputs.fuel));
   const zone = classifyZone(inputs.distanceFromOrigin);
   const zoneMul = zone === 'deep' || zone === 'dead' ? profile.deepZoneBonus : 1;
-  return (profile.baseLightRadius + followerBonus + inputs.relicBonus) * fuelGate * zoneMul;
+  return (profile.baseLightRadius + followerBonus + inputs.relicBonus) * zoneMul * fuelMul;
 }
 
 export interface CaravanLightInput {

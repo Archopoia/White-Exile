@@ -57,7 +57,8 @@ const TIER_CONFIG: Readonly<Record<FxTier, FlameTierConfig>> = Object.freeze({
     sunShadow: true,
     sunShadowMapSize: 1024,
     heroShadow: true,
-    heroShadowMapSize: 256,
+    // Wider PCF kernel (`shadow.radius`) needs resolution so penumbra stays smooth not noisy.
+    heroShadowMapSize: 512,
     poolShadow: false,
     poolShadowMapSize: 0,
     poolShadowCount: 0,
@@ -277,6 +278,10 @@ export function createFlameLighting(
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.shadowMap.autoUpdate = true;
+  // Note: Three's PCFSoft for directional lights uses a fixed 3×3 UV kernel (no
+  // `shadow.radius`). Sun softness here is mostly texel size on a huge ortho
+  // frustum. Point lights use `getPointShadow()` where `shadow.radius` scales
+  // angular PCF offsets — keep radius high so torch penumbra matches that look.
 
   // Hemisphere: brighter sky vs warm ground so dunes pick up N·(sky-hemi).
   const hemi = new THREE.HemisphereLight(0x92a8d0, 0x6a5850, cfg.hemisphereIntensity);
@@ -339,6 +344,7 @@ export function createFlameLighting(
       sun.shadow.bias = -0.0006;
       // Large displaced sheet self-shadows: a bit more offset than small props.
       sun.shadow.normalBias = 0.08;
+      // Used only if renderer switches to basic PCF; kept for parity with point radii.
       sun.shadow.radius = 4;
       sun.shadow.camera.updateProjectionMatrix();
       // Force the shadow map to re-allocate at the new size.
@@ -352,7 +358,7 @@ export function createFlameLighting(
       heroLight.shadow.mapSize.set(cfg.heroShadowMapSize, cfg.heroShadowMapSize);
       heroLight.shadow.bias = -0.005;
       heroLight.shadow.normalBias = 0.06;
-      heroLight.shadow.radius = 3;
+      heroLight.shadow.radius = 18;
       heroLight.shadow.camera.near = 0.2;
       heroLight.shadow.camera.far = Math.max(20, localRadius * 2);
       heroLight.shadow.camera.updateProjectionMatrix();
@@ -370,7 +376,7 @@ export function createFlameLighting(
         slot.light.shadow.mapSize.set(cfg.poolShadowMapSize, cfg.poolShadowMapSize);
         slot.light.shadow.bias = -0.005;
         slot.light.shadow.normalBias = 0.06;
-        slot.light.shadow.radius = 2;
+        slot.light.shadow.radius = 14;
         slot.light.shadow.camera.near = 0.2;
         slot.light.shadow.camera.far = slot.light.distance;
         slot.light.shadow.camera.updateProjectionMatrix();
@@ -403,13 +409,13 @@ export function createFlameLighting(
   }
 
   function setLocalRadius(radius: number): void {
-    localRadius = Math.max(4, radius);
-    // PointLight `distance` is the hard cutoff for forward decay — making it
-    // proportional to lightRadius means more fuel/followers literally lights
-    // a wider patch of dune. Intensity scales mildly so a small flame still
-    // reads as a flame and a big one feels powerful, without blowing out.
-    heroLight.distance = Math.max(8, localRadius * 2.2);
-    heroBaseIntensity = 2.6 + localRadius * 0.08;
+    // Radius already reflects server fuel × followers × zone; no floor — low
+    // fuel must mean short reach and low intensity (see intensity curve below).
+    localRadius = Math.max(0, radius);
+    const r = Math.max(0.15, localRadius);
+    heroLight.distance = Math.max(2.5, r * 2.2);
+    // Avoid a large constant term: it used to keep torches bright even at ~0 radius.
+    heroBaseIntensity = Math.max(0.08, 0.12 + r * 0.24);
     if (heroLight.castShadow) {
       heroLight.shadow.camera.far = heroLight.distance;
       heroLight.shadow.camera.updateProjectionMatrix();
@@ -426,13 +432,14 @@ export function createFlameLighting(
       slot.ownerId = o.id;
       slot.light.color.setHex(o.color);
       // Same scaling rule as the hero: wider radius = wider illuminated area.
-      slot.light.distance = Math.max(8, o.lightRadius * 2.0);
+      const or = Math.max(0.15, o.lightRadius);
+      slot.light.distance = Math.max(2.5, or * 2.0);
       slot.light.position.set(o.position.x, o.position.y + 1.1, o.position.z);
       slot.light.visible = true;
       slot.mesh.setColor(o.color);
       slot.mesh.group.position.set(o.position.x, o.position.y + 0.55, o.position.z);
       slot.mesh.group.visible = true;
-      slot.baseIntensity = 1.6 + o.lightRadius * 0.06;
+      slot.baseIntensity = Math.max(0.06, 0.1 + or * 0.2);
       if (slot.light.castShadow) {
         slot.light.shadow.camera.far = slot.light.distance;
         slot.light.shadow.camera.updateProjectionMatrix();

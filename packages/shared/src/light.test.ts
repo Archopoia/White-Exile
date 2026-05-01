@@ -76,6 +76,24 @@ describe('computeSoloLightRadius', () => {
     expect(dim).toBeLessThan(lit);
   });
 
+  it('light radius scales linearly with fuel', () => {
+    const full = computeSoloLightRadius({
+      race: 'emberfolk',
+      followers: [],
+      relicBonus: 0,
+      fuel: 1,
+      distanceFromOrigin: 0,
+    });
+    const half = computeSoloLightRadius({
+      race: 'emberfolk',
+      followers: [],
+      relicBonus: 0,
+      fuel: 0.5,
+      distanceFromOrigin: 0,
+    });
+    expect(half).toBeCloseTo(full * 0.5, 5);
+  });
+
   it('ashborn gets a deep-zone bonus', () => {
     const safe = computeSoloLightRadius({
       race: 'ashborn',

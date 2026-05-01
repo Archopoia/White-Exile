@@ -424,9 +424,8 @@ export class RoomScene {
     this.setDuneHeightScale(snap.worldConfig.duneHeightScale);
     this.knownRuins = snap.ruins;
 
-    // Players: a small lit core mesh + a real PointLight whose `distance`
-    // tracks `lightRadius`. No fake halo spheres — wider radius means the
-    // actual cast light reaches farther.
+    // Players: core mesh + PointLight; `lightRadius` from server is fuel×followers×zone
+    // (see `computeSoloLightRadius`); flame intensity tracks radius without a bright floor.
     const seenPlayers = new Set<string>();
     const otherFlames: OtherFlame[] = [];
     for (const p of snap.players) {
@@ -470,7 +469,7 @@ export class RoomScene {
         id: p.id,
         position: entry.core.position,
         color: profile.lightColor,
-        lightRadius: Math.max(1, p.lightRadius),
+        lightRadius: Math.max(0, p.lightRadius),
       });
     }
     this.lighting.setOtherFlames(otherFlames);
