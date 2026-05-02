@@ -75,9 +75,9 @@ export interface NprSettings {
   celShadowTintAmount: number;
   celMinLight: number;
   celMix: number;
-  /** 0 = off. Feathers real-time cast shadow edges in screen space (prepass luma Sobel). */
+  /** 0 = off. Mixes wide prepass blur into shadow-side pixels so boundaries fade into lit ground. */
   castShadowEdgeFade: number;
-  /** Shadow-edge ramp width; higher = gentler fade (pairs with {@link castShadowEdgeFade}). */
+  /** Blur footprint (screen px, scaled); larger = wider bleed / softer terminator. */
   castShadowEdgeSoftness: number;
 
   hatchEnabled: boolean;

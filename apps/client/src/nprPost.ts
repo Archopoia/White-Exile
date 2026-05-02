@@ -393,27 +393,29 @@ const FRAG = /* glsl */ `
       col = mix(col, lit, clamp(uCelMix, 0.0, 1.0));
     }
 
-    // ---- Cast-shadow edge fade (prepass luma Sobel, same family as cel "Edge" smoothing) ----
+    // ---- Cast-shadow edge fade: wide prepass blur → mix into dark pixels where neighborhood is
+    // brighter (lit sand bleeding into umbra). Additive/Sobel-only lifts sharpened boundaries;
+    // spatial averaging is what reads as "fade into surroundings" like soft cel bands.
     if (uCastShadowEdgeFade > 0.0001) {
+      vec2 rpx = pxSz * (1.2 + clamp(uCastShadowEdgeSoftness, 0.05, 1.0) * 16.0);
+      vec3 acc = sc.rgb;
+      acc += texture2D(tDiffuse, uv + vec2(rpx.x, 0.0)).rgb;
+      acc += texture2D(tDiffuse, uv - vec2(rpx.x, 0.0)).rgb;
+      acc += texture2D(tDiffuse, uv + vec2(0.0, rpx.y)).rgb;
+      acc += texture2D(tDiffuse, uv - vec2(0.0, rpx.y)).rgb;
+      vec2 dd = rpx * 0.70710678;
+      acc += texture2D(tDiffuse, uv + vec2(dd.x, dd.y)).rgb;
+      acc += texture2D(tDiffuse, uv + vec2(-dd.x, dd.y)).rgb;
+      acc += texture2D(tDiffuse, uv + vec2(dd.x, -dd.y)).rgb;
+      acc += texture2D(tDiffuse, uv + vec2(-dd.x, -dd.y)).rgb;
+      vec3 blurW = acc * (1.0 / 9.0);
       float lC0 = luminance(sc.rgb);
-      float shGrad = diffuseLumaEdge(uv, pxSz);
-      float wS = clamp(uCastShadowEdgeSoftness, 0.02, 1.0);
-      float edgeK = smoothstep(0.015 * wS, 0.1 + 0.45 * wS, shGrad);
-      float inSh = 1.0 - smoothstep(0.06, 0.3, lC0);
-      vec3 sR = texture2D(tDiffuse, uv + vec2(pxSz.x, 0.0)).rgb;
-      vec3 sL = texture2D(tDiffuse, uv - vec2(pxSz.x, 0.0)).rgb;
-      vec3 sU = texture2D(tDiffuse, uv + vec2(0.0, pxSz.y)).rgb;
-      vec3 sD = texture2D(tDiffuse, uv - vec2(0.0, pxSz.y)).rgb;
-      float lR = luminance(sR), lL = luminance(sL), lU = luminance(sU), lD = luminance(sD);
-      vec3 bright = sR;
-      float lb = lR;
-      if (lL > lb) { bright = sL; lb = lL; }
-      if (lU > lb) { bright = sU; lb = lU; }
-      if (lD > lb) { bright = sD; lb = lD; }
-      float towardLit = smoothstep(0.015, 0.1, lb - lC0);
-      float gate = clamp(uCastShadowEdgeFade, 0.0, 1.0) * inSh * edgeK * towardLit;
-      vec3 deltaLift = bright - sc.rgb;
-      col = max(col + deltaLift * gate, vec3(0.0));
+      float lBl = luminance(blurW);
+      float bleed = smoothstep(0.004, 0.055, max(0.0, lBl - lC0));
+      float inUnlit = 1.0 - smoothstep(0.08, 0.48, lC0);
+      float gate = clamp(uCastShadowEdgeFade, 0.0, 1.0) * bleed * inUnlit;
+      gate = min(gate, 0.9);
+      col = mix(col, blurW, gate);
     }
 
     // ---- Sobel outline signal (fed to outline + mist + oil) ----

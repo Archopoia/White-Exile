@@ -556,7 +556,7 @@ function buildNprPanel(
       nprFloat('Tint ×', 'celShadowTintAmount', 0, 1, 0.05, 2),
       nprColor('Tint', 'celShadowTint'),
       nprFloat('Shadow fade', 'castShadowEdgeFade', 0, 1, 0.05, 2),
-      nprFloat('Shadow edge', 'castShadowEdgeSoftness', 0.02, 1, 0.02, 2),
+      nprFloat('Shadow blur', 'castShadowEdgeSoftness', 0.05, 1, 0.02, 2),
     );
 
     const hatchBody = document.createElement('div');

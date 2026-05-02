@@ -104,10 +104,10 @@ export const NPR_FIELDS = Object.freeze({
   celMinLight:           { kind: 'float', default: 0.06, min: 0, max: 0.5 } satisfies FloatField,
   celMix:                { kind: 'float', default: 1,    min: 0, max: 1 } satisfies FloatField,
 
-  /** Screen-space feather for Three cast-shadow boundaries (luma Sobel on prepass, like cel edge width). */
+  /** Mixes wide prepass blur into dark pixels so cast-shadow edges bleed into lit sand (0 = off). */
   castShadowEdgeFade:    { kind: 'float', default: 0,    min: 0, max: 1 } satisfies FloatField,
-  /** Wider = softer shadow silhouette (maps to smoothstep range on luma gradient). */
-  castShadowEdgeSoftness: { kind: 'float', default: 0.32, min: 0.02, max: 1 } satisfies FloatField,
+  /** Blur reach in pixels (scaled); larger = wider penumbra-like fade into surroundings. */
+  castShadowEdgeSoftness: { kind: 'float', default: 0.45, min: 0.05, max: 1 } satisfies FloatField,
 
   hatchEnabled:          { kind: 'bool',  default: true  } satisfies BoolField,
   hatchPattern:          { kind: 'enum',  default: 'crosshatch', values: HATCH_PATTERNS } as EnumField<HatchPattern>,
